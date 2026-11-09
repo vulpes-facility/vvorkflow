@@ -54,6 +54,7 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -109,12 +110,16 @@
   #root {
     @apply h-full overflow-hidden;
   }
+  /*
+   * The root keeps the default font size of 16 px: Tailwind sizes are in rem,
+   * so a smaller root would make every target smaller than designed.
+   */
   html {
-    @apply font-sans text-ui antialiased;
+    @apply font-sans antialiased;
     text-rendering: optimizeLegibility;
   }
   body {
-    @apply cursor-default bg-chrome text-foreground select-none;
+    @apply cursor-default bg-chrome text-ui text-foreground select-none;
   }
   /* Thin scrollbars that keep their space, in each engine. */
   * {

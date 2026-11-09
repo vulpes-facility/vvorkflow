@@ -40,6 +40,7 @@ export function EditorTab({
       */}
       <span
         aria-hidden
+        data-pointer-target
         title={`Close ${title}`}
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => {

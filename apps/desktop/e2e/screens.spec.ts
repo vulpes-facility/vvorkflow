@@ -30,6 +30,39 @@ for (const id of screens) {
       })),
     ).toEqual([])
 
+    // WCAG 2.2 SC 2.5.8: each pointer target is 24 by 24 CSS pixels or more.
+    // A separator is left out: it is a 1 px line that passes by the spacing
+    // exception of the criterion, and the arrow keys also move it.
+    const smallTargets = await page.evaluate(() => {
+      const selector = [
+        'button',
+        'a[href]',
+        'input',
+        'select',
+        'textarea',
+        '[role="tab"]',
+        '[role="button"]',
+        '[data-pointer-target]',
+      ].join(', ')
+      return [
+        ...document.querySelectorAll<HTMLElement>(
+          `#storybook-root :is(${selector})`,
+        ),
+      ]
+        .filter((element) => element.getClientRects().length > 0)
+        .map((element) => {
+          const { width, height } = element.getBoundingClientRect()
+          const name = element.getAttribute('aria-label') ?? element.title ?? ''
+          return {
+            target: `${element.tagName.toLowerCase()} ${name || element.textContent?.trim()}`,
+            width,
+            height,
+          }
+        })
+        .filter(({ width, height }) => width < 24 || height < 24)
+    })
+    expect(smallTargets).toEqual([])
+
     await page.screenshot({
       path: `screens/${testInfo.project.name}/${id}.png`,
     })

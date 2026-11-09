@@ -18,11 +18,15 @@ There is no separate design file.
 
 The app MUST conform to WCAG 2.2 Level AA.
 
-1. Text MUST have a contrast of 4.5:1 or more against each surface that it is on.\
+1. Text MUST have a contrast of 4.5:1 or more against each surface that it is on, also in the hover and pressed states.\
+   Give a state its own opaque semantic color, such as `--primary-hover`, and not a color with alpha, so that the test can check it.\
    Icons, focus indicators, and control boundaries MUST have 3:1 or more.\
    `--subtle-foreground` is for icons only, because it meets 3:1 and not 4.5:1.
 2. Each pointer target MUST be 24 by 24 CSS pixels or more.\
-   This is why a list row is 24 px high.
+   This is why a list row is 24 px high.\
+   Keep the root font size at the default 16 px, because the Tailwind sizes are in rem.\
+   `pnpm screens` measures each target of each screen.\
+   Mark a target that is not a control, such as the close icon of a tab, with `data-pointer-target`.
 3. Each control MUST work with the keyboard, and MUST show the focus with the `--ring` color.
 4. Each control without visible text MUST have an accessible name.\
    When a control has visible text, its accessible name MUST contain that text.
@@ -58,7 +62,9 @@ The shell follows value 5 of the [core values](../core-values.md).
 ## Stories and screens
 
 1. Keep the stories in `apps/desktop/stories/` and their sample data in `apps/desktop/fixtures/`.\
-   Do not put sample data in `src/`.
+   Do not put sample data in `src/`.\
+   A fixture MAY draw system UI that the app does not render, such as the macOS window buttons, in the colors of that system.\
+   Those colors are not design tokens of vvorkflow, so they stay in the fixture and outside `tokens.css`.
 2. Give each screen a story under `Screens/`, and add its id to `apps/desktop/e2e/screens.spec.ts`.
 3. `pnpm --filter @vvorkflow/desktop screens` writes a screenshot of each screen to `apps/desktop/screens/`, in Chromium and in WebKit.\
    Chromium stands for WebView2 and Android.\

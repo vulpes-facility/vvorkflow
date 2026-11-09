@@ -108,6 +108,7 @@
   --popover-foreground: var(--vv-gray-900);
   --primary: var(--vv-indigo-600);
   --primary-foreground: var(--vv-gray-0);
+  --primary-hover: var(--vv-indigo-700);
   --secondary: var(--vv-gray-100);
   --secondary-foreground: var(--vv-gray-900);
   --muted: var(--vv-gray-100);
@@ -166,6 +167,7 @@
   --popover-foreground: var(--vv-gray-150);
   --primary: var(--vv-indigo-600);
   --primary-foreground: var(--vv-gray-0);
+  --primary-hover: var(--vv-indigo-700);
   --secondary: var(--vv-gray-850);
   --secondary-foreground: var(--vv-gray-150);
   --muted: var(--vv-gray-850);

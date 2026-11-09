@@ -70,7 +70,13 @@ export function Welcome({
   ].filter((action): action is StartAction => Boolean(action))
 
   return (
-    <div className="h-full overflow-auto bg-editor">
+    // The scroll area takes the focus, so that the keyboard can scroll it.
+    <div
+      role="region"
+      aria-label="Welcome"
+      tabIndex={0}
+      className="h-full overflow-auto bg-editor outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+    >
       <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-12 px-12 py-16">
         <header className="flex items-center gap-4">
           <LogoMark className="size-11 text-foreground" />

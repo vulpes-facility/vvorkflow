@@ -68,7 +68,12 @@ function Group({
 
 function Tokens() {
   return (
-    <div className="h-screen overflow-auto bg-editor p-10 text-foreground">
+    <div
+      role="region"
+      aria-label="Design tokens"
+      tabIndex={0}
+      className="h-screen overflow-auto bg-editor p-10 text-foreground"
+    >
       <div className="mx-auto grid max-w-5xl grid-cols-3 gap-10">
         <Group title="Surfaces">
           {surfaces.map((name) => (

@@ -49,7 +49,15 @@ export function SideBar({
           </h2>
           {actions}
         </div>
-        <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+        {/* The scroll area takes the focus, so that the keyboard can scroll it. */}
+        <div
+          tabIndex={0}
+          aria-label={`${title} content`}
+          role="region"
+          className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+        >
+          {children}
+        </div>
       </section>
     </div>
   )

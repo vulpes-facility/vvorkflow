@@ -14,13 +14,20 @@ export function WindowControls({ controls, variant }: WindowControlsProps) {
   useEffect(() => controls.watchMaximized(setMaximized), [controls])
 
   const buttons = [
-    { label: 'Minimize', onClick: controls.minimize, glyph: <MinimizeGlyph /> },
     {
+      id: 'minimize',
+      label: 'Minimize',
+      onClick: controls.minimize,
+      glyph: <MinimizeGlyph />,
+    },
+    {
+      id: 'maximize',
       label: maximized ? 'Restore' : 'Maximize',
       onClick: controls.toggleMaximize,
       glyph: maximized ? <RestoreGlyph /> : <MaximizeGlyph />,
     },
     {
+      id: 'close',
       label: 'Close',
       onClick: controls.close,
       glyph: <CloseGlyph />,
@@ -39,7 +46,7 @@ export function WindowControls({ controls, variant }: WindowControlsProps) {
     >
       {buttons.map((button) => (
         <button
-          key={button.label}
+          key={button.id}
           type="button"
           aria-label={button.label}
           title={button.label}

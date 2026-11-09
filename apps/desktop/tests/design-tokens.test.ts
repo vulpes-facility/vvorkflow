@@ -187,7 +187,7 @@ const textPairs: [string, string[]][] = [
   ['accent-foreground', ['accent']],
   ['secondary-foreground', ['secondary']],
   ['sidebar-foreground', ['sidebar', 'sidebar-accent']],
-  ['primary-foreground', ['primary']],
+  ['primary-foreground', ['primary', 'primary-hover']],
   ['link', ['editor', 'chrome', 'sidebar', 'popover']],
   ['destructive', ['editor', 'popover']],
   ['git-added', ['sidebar', 'editor', 'hover', 'selection']],

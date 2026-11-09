@@ -24,7 +24,8 @@ export function StatusBar({ start = [], end = [] }: StatusBarProps) {
   return (
     <footer
       aria-label="Status"
-      className="flex h-statusbar shrink-0 items-stretch justify-between border-t border-hairline bg-chrome px-1 text-xs text-chrome-foreground"
+      // The top hairline is drawn over the items, so that they keep the full 24 px height.
+      className="relative flex h-statusbar shrink-0 items-stretch justify-between bg-chrome px-1 text-xs text-chrome-foreground before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-px before:bg-hairline"
     >
       <div className="flex min-w-0 items-stretch">{start.map(renderItem)}</div>
       <div className="flex min-w-0 items-stretch">{end.map(renderItem)}</div>

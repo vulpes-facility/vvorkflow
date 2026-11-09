@@ -24,6 +24,7 @@ import { TitleBar, type WindowContext } from './title-bar/title-bar'
 import { Welcome, type RecentProject } from './welcome/welcome'
 import { useLayout } from '../model/layout'
 import { useEditorShortcuts } from '../model/use-editor-shortcuts'
+import { useStartShortcuts } from '../model/use-start-shortcuts'
 import { useViewShortcuts } from '../model/use-view-shortcuts'
 import { views } from '../model/views'
 
@@ -68,6 +69,10 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const view = useLayout((state) => state.view)
   const showView = useLayout((state) => state.showView)
   useViewShortcuts(platform, showView)
+  useStartShortcuts(platform, {
+    onNewProject: props.onNewProject,
+    onOpenFolder: props.onOpenFolder,
+  })
 
   const editor = useRef<DockviewApi | undefined>(undefined)
   const getEditor = useCallback(() => editor.current, [])
@@ -149,7 +154,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
               </SideBar>
             </ResizablePanel>
             {/* The line starts at the border of the header row, so that the header row looks like one row. */}
-            <ResizableHandle className="w-px bg-transparent before:absolute before:inset-x-0 before:top-[calc(var(--vv-titlebar-h)-1px)] before:bottom-0 before:bg-hairline before:transition-colors before:delay-300 before:duration-150 data-[separator=active]:before:bg-indicator data-[separator=hover]:before:bg-indicator" />
+            <ResizableHandle className="w-px bg-transparent before:absolute before:inset-x-0 before:top-[calc(var(--vv-titlebar-h)-1px)] before:bottom-0 before:bg-hairline before:transition-colors before:delay-300 before:duration-150 after:w-2 data-[separator=active]:before:bg-indicator data-[separator=hover]:before:bg-indicator" />
             <ResizablePanel className="flex min-w-0 flex-col">
               <TitleBar
                 platform={platform}

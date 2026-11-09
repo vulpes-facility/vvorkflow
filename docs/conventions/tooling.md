@@ -8,7 +8,8 @@ This file gives only the rules that are different from that plugin, or that it d
 2. Keep the shadcn components in `apps/desktop/src/shared/ui/`.\
    `components.json` points shadcn at the `shared` segments of Feature-Sliced Design.\
    You MAY change their classes to fit the design, but keep their structure and their exports, so that the diff of a later `shadcn add` stays small.\
-   The oxlint rule `react/only-export-components` is off only in that folder, because shadcn components also export their variants.
+   The oxlint rule `react/only-export-components` is off in that folder, because shadcn components also export their variants.\
+   It is also off in `apps/desktop/.storybook/`, because the Storybook preview exports its configuration next to a decorator component, and fast refresh does not apply to it.
 3. Pin Node.js with `devEngines.runtime` in the root `package.json`, and let pnpm download it.\
    Do not add a different Node.js version manager.
 4. Pin Rust in `rust-toolchain.toml`.
