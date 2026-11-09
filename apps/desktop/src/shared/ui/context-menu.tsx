@@ -52,7 +52,10 @@ function ContextMenuContent({
   )
 }
 
-/** A menu item: a row of at least 24 px, highlighted with opaque colors. */
+/**
+ * A menu item: a row of at least 24 px, highlighted with opaque colors. The
+ * highlight is faint, so the keyboard focus also has the ring (SC 1.4.11).
+ */
 function ContextMenuItem({
   className,
   ...props
@@ -61,7 +64,7 @@ function ContextMenuItem({
     <ContextMenuPrimitive.Item
       data-slot="context-menu-item"
       className={cn(
-        'flex h-row cursor-default items-center gap-2 rounded-sm px-2 outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground',
+        'flex h-row cursor-default items-center gap-2 rounded-sm px-2 outline-hidden select-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset data-highlighted:bg-accent data-highlighted:text-accent-foreground',
         className,
       )}
       {...props}

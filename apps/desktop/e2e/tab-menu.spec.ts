@@ -73,9 +73,10 @@ test('Shift+F10 opens the menu of the focused tab, and the focus stays on a tab'
   // Close takes the tab away, so the focus goes to the tab that is active next.
   await page.keyboard.press('Shift+F10')
   await page.keyboard.press('ArrowDown')
-  await expect(
-    menu.getByRole('menuitem', { name: 'Close', exact: true }),
-  ).toBeFocused()
+  const close = menu.getByRole('menuitem', { name: 'Close', exact: true })
+  await expect(close).toBeFocused()
+  // The keyboard focus has the ring, because the highlight alone is faint.
+  await expect(close).not.toHaveCSS('box-shadow', 'none')
   await page.keyboard.press('Enter')
   await expect(shellTab(page)).toBeHidden()
   await expect(
@@ -100,4 +101,39 @@ test('the menu of the side bar header sets its width without a drag', async ({
   await page.getByRole('menuitem', { name: 'Default width' }).click()
   await expect.poll(width).toBe(300)
   await expect(page.locator('body')).not.toBeFocused()
+})
+
+test('the Menu key opens one menu, also when the browser sends its own contextmenu event', async ({
+  page,
+}) => {
+  await shellTab(page).focus()
+  await page.keyboard.press('ContextMenu')
+  const menu = page.getByRole('menu')
+  await expect(menu).toBeVisible()
+  // A browser may also send contextmenu to the focused tab element. The open
+  // menu hides the rest of the page from the accessibility tree, so find the
+  // tab by its class.
+  await page.locator('.dv-tab.dv-active-tab').dispatchEvent('contextmenu')
+  await expect(menu).toHaveCount(1)
+  await page.keyboard.press('Escape')
+  await expect(menu).toHaveCount(0)
+  await expect(shellTab(page)).toBeFocused()
+})
+
+test('when the menu closes the last tab, the focus goes to the activity bar', async ({
+  page,
+}) => {
+  await page.goto(
+    '/iframe.html?id=screens-workbench--macos-dark&viewMode=story&globals=a11y.manual:!true',
+  )
+  const welcome = page.getByRole('tab', { name: 'Welcome' })
+  await welcome.focus()
+  await page.keyboard.press('Shift+F10')
+  await expect(page.getByRole('menuitem')).toHaveText(['Close'])
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(welcome).toBeHidden()
+  await expect(
+    page.getByRole('tab', { name: 'Explorer', exact: true }),
+  ).toBeFocused()
 })

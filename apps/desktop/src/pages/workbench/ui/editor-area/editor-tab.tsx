@@ -82,14 +82,19 @@ export function EditorTab({
       </ContextMenuTrigger>
       <ContextMenuContent
         // The focus goes back to the tab, or to the tab that is active after
-        // the action, because a closed or moved tab is gone.
+        // the action, because a closed or moved tab is gone. When no tab is
+        // left, it goes to the activity bar.
         finalFocus={() => {
           const tab = trigger.current?.closest<HTMLElement>('[role="tab"]')
-          return tab?.isConnected
-            ? tab
-            : document.querySelector<HTMLElement>(
-                '.dv-active-group [role="tab"][aria-selected="true"]',
-              )
+          if (tab?.isConnected) return tab
+          return (
+            document.querySelector<HTMLElement>(
+              '.dv-active-group [role="tab"][aria-selected="true"]',
+            ) ??
+            document.querySelector<HTMLElement>(
+              '[data-region="activity-bar"] [role="tab"][tabindex="0"]',
+            )
+          )
         }}
       >
         <TabMenuItems api={api} editor={containerApi} />
