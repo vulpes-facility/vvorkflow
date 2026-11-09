@@ -1,4 +1,5 @@
 import { Files } from 'lucide-react'
+import { GitStatusMark } from '../../src/pages/workbench'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 
 const surfaces = [
@@ -16,12 +17,12 @@ const text = ['foreground', 'muted-foreground', 'chrome-foreground', 'link']
 const icons = ['subtle-foreground', 'indicator']
 const accent = ['primary', 'indicator', 'ring', 'destructive']
 const git = [
-  ['git-added', 'A', 'Added'],
-  ['git-modified', 'M', 'Modified'],
-  ['git-deleted', 'D', 'Deleted'],
-  ['git-untracked', 'U', 'Untracked'],
-  ['git-conflict', 'C', 'Conflict'],
-  ['git-ignored', 'I', 'Ignored'],
+  ['git-added', 'added'],
+  ['git-untracked', 'untracked'],
+  ['git-modified', 'modified'],
+  ['git-deleted', 'deleted'],
+  ['git-conflict', 'conflict'],
+  ['git-ignored', 'ignored'],
 ] as const
 const typeScale = [
   ['text-2xl', '28 / 34', 'vvorkflow'],
@@ -111,18 +112,19 @@ function Tokens() {
             <Swatch key={name} name={name} />
           ))}
         </Group>
-        <Group title="Git status: a color and a letter">
-          {git.map(([name, letter, label]) => (
-            <div key={name} className="flex h-row items-center gap-3 text-ui">
-              <span className="flex-1" style={{ color: `var(--${name})` }}>
-                {label.toLowerCase()}.ts
-              </span>
+        <Group title="Git status: a color and a shape">
+          {git.map(([name, status]) => (
+            <div
+              key={name}
+              className="flex h-row items-center gap-3 text-ui"
+              style={{ color: `var(--${name})` }}
+            >
               <span
-                className="w-4 text-center font-mono text-xs font-semibold"
-                style={{ color: `var(--${name})` }}
+                className={status === 'ignored' ? 'flex-1 italic' : 'flex-1'}
               >
-                {letter}
+                {status}.ts
               </span>
+              <GitStatusMark status={status} />
             </div>
           ))}
         </Group>

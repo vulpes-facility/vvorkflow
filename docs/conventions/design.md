@@ -39,7 +39,7 @@ The app MUST conform to WCAG 2.2 Level AA.
 4. Each control without visible text MUST have an accessible name.\
    When a control has visible text, its accessible name MUST contain that text.
 5. Do not show a meaning with color alone.\
-   For example, a git status has a color and a letter.
+   For example, a git status has a color and a shape.
 6. Each action that uses a drag MUST also have a way that does not use a drag, for example a context menu item or a command.
 7. A control that is inside a tab or a row, such as the close icon of a tab, is a pointer target only.\
    Give its action a keyboard shortcut or a menu item, so that interactive controls do not nest.
@@ -84,7 +84,10 @@ The Explorer follows value 3 of the [core values](../core-values.md).
    A worktree shows its branch and its path, and the current worktree has a heavier font.
 2. The tree follows the [tree pattern of WAI-ARIA](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/).\
    Its items are one flat list with `aria-level`, `aria-setsize`, and `aria-posinset`, so that the name of an item is only the text of its own row.
-3. A git status has a color, a letter, and a name for screen readers.\
+3. A git status has a color, a shape (`GitStatusMark`), and a name for screen readers, and no letter.\
+   There are three colors: green for a new file (added or untracked), amber for a change, and red for a deletion or a conflict.\
+   The shape tells them apart: a plus for a new file, a dot for a change, a minus for a deletion, and a warning for a conflict.\
+   An ignored file has the muted color, its name is in italics, and it has no shape.\
    A folder and a worktree show the most important status in them, in this order: conflict, deleted, modified, added, and untracked.\
    A folder shows ignored only when all of its files are ignored.
 4. Each level moves in by `--vv-tree-indent`, through the `tree-inset` utility.\

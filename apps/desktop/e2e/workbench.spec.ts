@@ -195,16 +195,27 @@ test('the Explorer tree has one tab stop and follows the tree keys', async ({
   await expect(dist).toHaveAttribute('aria-expanded', 'false')
 })
 
-test('a git status has a letter and a name, not only a color', async ({
+test('a git status has a shape and a name, not only a color', async ({
   page,
 }) => {
   await page.goto(explorerStory)
-  await expect(
-    page.getByRole('treeitem', { name: /^merge-notes\.md\s*,\s*conflict$/ }),
-  ).toBeVisible()
-  await expect(
-    page.getByRole('treeitem', { name: /^dist\s*,\s*contains ignored files$/ }),
-  ).toBeVisible()
+  const conflict = page.getByRole('treeitem', {
+    name: /^merge-notes\.md\s*,\s*conflict$/,
+  })
+  await expect(conflict.locator('[data-git-status="conflict"]')).toBeVisible()
+  const changed = page.getByRole('treeitem', {
+    name: /^editor-area\.tsx\s*,\s*modified$/,
+  })
+  await expect(changed.locator('[data-git-status="modified"]')).toBeVisible()
+  // An ignored file has no mark: its name is in italics.
+  const ignored = page.getByRole('treeitem', {
+    name: /^dist\s*,\s*contains ignored files$/,
+  })
+  await expect(ignored.locator('[data-git-status]')).toHaveCount(0)
+  await expect(ignored.getByText('dist', { exact: true })).toHaveCSS(
+    'font-style',
+    'italic',
+  )
 })
 
 test('the Explorer opens as a drawer at 320 px and keeps the tree usable', async ({

@@ -38,6 +38,7 @@
   --spacing-traffic-lights: var(--vv-traffic-lights-w);
   --spacing-caption-button: var(--vv-caption-button-w);
   --spacing-icon-sm: var(--vv-icon-sm);
+  --spacing-status-dot: var(--vv-status-dot);
   --spacing-icon: var(--vv-icon);
   --spacing-icon-lg: var(--vv-icon-lg);
   --spacing-tree-pad: var(--vv-tree-pad);

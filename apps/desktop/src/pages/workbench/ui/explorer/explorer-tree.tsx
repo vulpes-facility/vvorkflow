@@ -10,13 +10,13 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/shared/lib'
 import {
-  gitStatusLetters,
   gitStatusNames,
   survivingRow,
   visibleRows,
   type GitStatus,
   type TreeNode,
 } from '../../model/explorer'
+import { GitStatusMark } from './git-status-mark'
 
 interface ExplorerTreeProps {
   /** The accessible name of the tree. */
@@ -265,6 +265,7 @@ function Row({ node, level, isOpen, hasChildren, onClick }: RowProps) {
             tint ?? 'text-foreground',
             node.kind === 'repository' && 'font-semibold',
             node.current && 'font-medium',
+            node.status === 'ignored' && 'italic',
           )}
         >
           {node.label}
@@ -278,15 +279,7 @@ function Row({ node, level, isOpen, hasChildren, onClick }: RowProps) {
       </span>
       {node.status && (
         <>
-          <span
-            aria-hidden
-            className={cn(
-              'w-4 shrink-0 text-center font-mono text-xs font-semibold',
-              tint,
-            )}
-          >
-            {gitStatusLetters[node.status]}
-          </span>
+          <GitStatusMark status={node.status} className={tint} />
           <span className="sr-only">
             ,{' '}
             {node.kind === 'file'
