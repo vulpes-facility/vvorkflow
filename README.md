@@ -1,13 +1,12 @@
 # vvorkflow
 
-A light IDE for directing TUI coding agents across git worktrees.\
-A main agent in a terminal directs worker agents, such as Codex and Claude Code.\
-The workers run as their real TUIs, in terminal tabs, in the worktrees of a repository.
+A light IDE: open folders to see and edit them, and open terminals to run commands and agents, such as Claude Code and Codex.\
+Its front end and its Rust engine are separate, so the app works with the engine on its own computer or on a remote machine.
 
 ## Status
 
 The desktop app has its design tokens, its window shell, the Welcome tab, the terminal tabs on sample data, and an Explorer that reads real folders and their git status from the local Rust engine.\
-The design follows the [core values](docs/core-values.md) and [`docs/conventions/design.md`](docs/conventions/design.md).
+The design follows the [core values](docs/core-values.md), [`docs/architecture.md`](docs/architecture.md), and [`docs/conventions/design.md`](docs/conventions/design.md).
 
 ## Requirements
 
@@ -68,7 +67,7 @@ Each task MUST pass with no errors and no warnings before a pull request.
 │   ├── vv-protocol/        The protocol of the engine, and its JSON Schema
 │   └── vv-engine/          The engine: folders, worktrees, and git status
 ├── packages/               The shared packages (none yet)
-├── docs/                   The core values and the conventions
+├── docs/                   The core values, the architecture, and the conventions
 ├── Cargo.toml              The Cargo workspace
 ├── rust-toolchain.toml     The Rust version
 ├── pnpm-workspace.yaml     The pnpm workspace

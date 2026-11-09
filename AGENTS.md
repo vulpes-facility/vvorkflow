@@ -1,14 +1,16 @@
 # AGENTS.md
 
-vvorkflow is a light desktop IDE for directing TUI coding agents across git worktrees, on a Rust engine and Tauri 2.\
+vvorkflow is a light IDE on a Rust engine and Tauri 2.\
+The user opens folders to see and edit them, and opens terminals to run commands and agents, such as Claude Code and Codex.\
+The engine runs on the user's computer or headless on a remote machine.\
 Its owner uses it alone, for now.\
-A main agent in a terminal directs worker agents, such as Codex and Claude Code, that run as their real TUIs.\
 The desktop app has its design tokens, its window shell, the Welcome tab, the terminal tabs on sample data, and an Explorer that reads real folders and their git status from the local Rust engine.
 
 ## Index
 
 - `README.md` - The requirements, the start steps, the tasks, the folder layout, the generator commands, and the branch strategy.
-- `docs/core-values.md` - The quality bar, the core values in priority order, and the platform decisions that each design decision follows.
+- `docs/core-values.md` - The quality bar, the purpose, the core values in priority order, and the decisions that the owner confirmed.
+- `docs/architecture.md` - The parts, the transports, the protocol envelope, the projects root, the terminal sessions, the memory limits, the security rules, and the roadmap.
 - `docs/conventions/agent-instructions.md` - The rules for `CLAUDE.md`, `AGENTS.md`, `docs/conventions/`, and the format of each index.
 - `docs/conventions/writing.md` - How to write the documents: English, ASD-STE100, BCP 14 keywords, and Semantic Line Breaks.
 - `docs/conventions/git.md` - GitHub flow: branch names, Conventional Commits, signed commits, and the squash merge.
