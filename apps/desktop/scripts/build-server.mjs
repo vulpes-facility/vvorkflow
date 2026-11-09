@@ -1,6 +1,6 @@
 // Builds the engine process, `vvorkflow-server`, so that the app finds it next
 // to its own executable in `target/<profile>/`. Tauri runs this script before
-// `tauri dev` and `tauri build`, and sets TAURI_ENV_DEBUG for a debug build.
+// `tauri dev` and `tauri build`.
 //
 // With `--sidecar`, the script also copies the binary to
 // `src-tauri/binaries/vvorkflow-server-<target triple>`, which the bundle
@@ -9,7 +9,8 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-const debug = process.env.TAURI_ENV_DEBUG !== 'false'
+// Tauri sets TAURI_ENV_DEBUG to `true` for `tauri dev` and `tauri build --debug`.
+const debug = process.env.TAURI_ENV_DEBUG === 'true'
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 execFileSync(
   'cargo',
