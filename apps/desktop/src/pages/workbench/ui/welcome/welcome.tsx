@@ -81,14 +81,9 @@ export function Welcome({
       <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-10 px-6 py-10 @xl:gap-12 @xl:px-12 @xl:py-16">
         <header className="flex items-center gap-4">
           <LogoMark className="size-11 text-foreground" />
-          <div className="flex flex-col gap-0.5">
-            <h1 className="text-2xl font-semibold tracking-display text-foreground">
-              vvorkflow
-            </h1>
-            <p className="text-ui text-muted-foreground">
-              Direct TUI coding agents across git worktrees.
-            </p>
-          </div>
+          <h1 className="text-2xl font-semibold tracking-display text-foreground">
+            vvorkflow
+          </h1>
         </header>
 
         <div className="grid grid-cols-1 gap-8 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @2xl:gap-10">
@@ -127,25 +122,21 @@ export function Welcome({
             </section>
           )}
 
-          <section
-            aria-labelledby="welcome-recent"
-            className={
-              actions.length > 0
-                ? 'flex flex-col gap-2'
-                : 'flex flex-col gap-2 @2xl:col-span-2'
-            }
-          >
-            <h2
-              id="welcome-recent"
-              className="px-2 text-xs font-medium text-muted-foreground"
+          {recentProjects.length > 0 && (
+            <section
+              aria-labelledby="welcome-recent"
+              className={
+                actions.length > 0
+                  ? 'flex flex-col gap-2'
+                  : 'flex flex-col gap-2 @2xl:col-span-2'
+              }
             >
-              Recent
-            </h2>
-            {recentProjects.length === 0 ? (
-              <p className="px-2 text-ui text-muted-foreground">
-                No recent projects yet.
-              </p>
-            ) : (
+              <h2
+                id="welcome-recent"
+                className="px-2 text-xs font-medium text-muted-foreground"
+              >
+                Recent
+              </h2>
               <ul className="flex flex-col">
                 {recentProjects.map((project) => (
                   <li key={project.id}>
@@ -153,8 +144,8 @@ export function Welcome({
                   </li>
                 ))}
               </ul>
-            )}
-          </section>
+            </section>
+          )}
         </div>
 
         {commandPaletteShortcut && (

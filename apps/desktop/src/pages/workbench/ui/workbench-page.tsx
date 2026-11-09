@@ -3,7 +3,7 @@ import type {
   DockviewReadyEvent,
   IDockviewPanelProps,
 } from 'dockview-react'
-import { FolderOpen, Keyboard, Search, Settings, Workflow } from 'lucide-react'
+import { FolderOpen, Keyboard, Search, Settings } from 'lucide-react'
 import {
   createContext,
   useCallback,
@@ -172,11 +172,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             onOpenFile={props.onOpenFile}
           />
         ) : (
-          <EmptyState
-            icon={FolderOpen}
-            title="No project open"
-            description="Open a folder to see its worktrees and files."
-          >
+          <EmptyState icon={FolderOpen} title="No project open">
             {onOpenFolder && (
               <Button size="sm" onClick={onOpenFolder}>
                 Open folder…
@@ -185,18 +181,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
           </EmptyState>
         ))}
       {view === 'search' && (
-        <EmptyState
-          icon={Search}
-          title="Nothing to search"
-          description="Open a project to search its files."
-        />
-      )}
-      {view === 'graphs' && (
-        <EmptyState
-          icon={Workflow}
-          title="No agent graphs"
-          description="Open a project to see its agent graphs."
-        />
+        <EmptyState icon={Search} title="Nothing to search" />
       )}
     </>
   )
