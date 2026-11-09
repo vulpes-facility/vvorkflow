@@ -35,7 +35,7 @@ export function GitStatusMark({
   const Icon = icons[status]
   return (
     <span aria-hidden data-git-status={status} className={box}>
-      <Icon className="size-icon-sm" strokeWidth={2.25} />
+      <Icon className="size-icon-sm stroke-status" />
     </span>
   )
 }

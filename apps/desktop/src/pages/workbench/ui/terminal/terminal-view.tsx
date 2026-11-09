@@ -102,13 +102,10 @@ export function TerminalView({ session, platform }: TerminalViewProps) {
       session.resize?.(cols, rows),
     )
 
-    // Take the output from the start, and keep it until the terminal opens.
+    // Take the output from the start. Until the terminal opens, its buffer
+    // keeps the output, within the scrollback limit.
     let opened = false
-    const pending: string[] = []
-    const unsubscribe = session.subscribe((data) => {
-      if (opened) terminal.write(data)
-      else pending.push(data)
-    })
+    const unsubscribe = session.subscribe((data) => terminal.write(data))
 
     // Open only with the real font and a visible host: the font sets the
     // width of the cells, and a hidden host has no size to fit.
@@ -122,7 +119,6 @@ export function TerminalView({ session, platform }: TerminalViewProps) {
       terminal.open(element)
       terminal.textarea?.setAttribute('aria-describedby', hint)
       fit.fit()
-      for (const data of pending.splice(0)) terminal.write(data)
     }
     // A hidden tab has no size; a fit would squeeze the grid to 2 columns.
     const resize = new ResizeObserver(([entry]) => {
