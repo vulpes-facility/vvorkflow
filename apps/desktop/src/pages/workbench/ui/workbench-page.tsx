@@ -9,7 +9,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from 'react'
@@ -26,7 +25,7 @@ import {
 } from '@/shared/ui'
 import { ActivityAction, ActivityBar } from './activity-bar/activity-bar'
 import { EditorArea } from './editor-area/editor-area'
-import { ExplorerTree } from './explorer/explorer-tree'
+import { ExplorerView } from './explorer/explorer-view'
 import type { EditorTabParams } from './editor-area/editor-tab'
 import { SideBar } from './side-bar/side-bar'
 import { TerminalView } from './terminal/terminal-view'
@@ -34,7 +33,7 @@ import { StatusBar, type StatusItem } from './status-bar/status-bar'
 import { TitleBar, type WindowContext } from './title-bar/title-bar'
 import { Welcome, type RecentProject } from './welcome/welcome'
 import { useLayout } from '../model/layout'
-import { toTreeNodes, type RepositoryGroup } from '../model/explorer'
+import type { ExplorerRepository, ExplorerSource } from '../model/explorer'
 import type { TerminalSession } from '../model/terminal'
 import { useActionShortcuts } from '../model/use-action-shortcuts'
 import { useEditorShortcuts } from '../model/use-editor-shortcuts'
@@ -55,8 +54,10 @@ interface WorkbenchPageProps {
   context?: WindowContext
   recentProjects: RecentProject[]
   status?: { start?: StatusItem[]; end?: StatusItem[] }
-  /** The repositories and worktrees of the Explorer. Without them, the view shows its empty state. */
-  repositories?: RepositoryGroup[]
+  /** The open repositories of the Explorer. Without them, the view shows its empty state. */
+  repositories?: ExplorerRepository[]
+  /** Where the Explorer reads the folders and the git status. */
+  explorer?: ExplorerSource
   /** The worktree and folder ids that the Explorer shows open at the start. */
   expandedPaths?: string[]
   /** The terminal sessions, such as agents. Each one opens as a tab of the editor area. */
@@ -152,11 +153,8 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
 
   const activeView =
     views.find((candidate) => candidate.id === view) ?? views[0]
-  const treeNodes = useMemo(
-    () => toTreeNodes(repositories ?? []),
-    [repositories],
-  )
-  const hasTree = treeNodes.length > 0
+  const explorer = props.explorer
+  const hasTree = Boolean(explorer) && (repositories?.length ?? 0) > 0
   // A tree takes the focus itself, so its scroll area is not a second tab stop.
   const contentFocusable = !(view === 'explorer' && hasTree)
   useFocusRescue(root, { sideBarOpen, drawer, view, contentFocusable })
@@ -165,10 +163,11 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const sideBarContent = (
     <>
       {view === 'explorer' &&
-        (hasTree ? (
-          <ExplorerTree
+        (explorer && hasTree ? (
+          <ExplorerView
             label="Explorer"
-            nodes={treeNodes}
+            repositories={repositories ?? []}
+            source={explorer}
             defaultExpanded={props.expandedPaths}
             onOpenFile={props.onOpenFile}
           />

@@ -1,5 +1,6 @@
 import type { Decorator, Preview } from '@storybook/react-vite'
-import { useEffect } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import '../src/app/styles/index.css'
 import { applyColorScheme, type ColorScheme } from '../src/shared/lib'
 
@@ -13,6 +14,20 @@ function ColorSchemeRoot({
   useEffect(() => applyColorScheme(document.documentElement, scheme), [scheme])
   return children
 }
+
+/** Gives each story its own query cache, as the app has one. */
+function QueryRoot({ children }: { children: React.ReactNode }) {
+  const [client] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  )
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>
+}
+
+const withQueries: Decorator = (Story) => (
+  <QueryRoot>
+    <Story />
+  </QueryRoot>
+)
 
 /** Applies the color scheme of the toolbar to the whole document, as the app does. */
 const withColorScheme: Decorator = (Story, context) => (
@@ -44,7 +59,7 @@ const preview: Preview = {
       globals.colorScheme as ColorScheme,
     )
   },
-  decorators: [withColorScheme],
+  decorators: [withColorScheme, withQueries],
   parameters: {
     layout: 'fullscreen',
     a11y: {

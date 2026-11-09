@@ -1,0 +1,10 @@
+[package]
+name = "vv-engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+vv-protocol = { version = "0.1.0", path = "../vv-protocol" }
+
+[dev-dependencies]
+tempfile = "3.27.0"

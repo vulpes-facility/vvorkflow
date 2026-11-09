@@ -1,15 +1,42 @@
 // Sample repositories for the stories and the screen capture. It never goes into `src/`.
-import type { Entry, GitStatus, RepositoryGroup } from '../src/pages/workbench'
+import type {
+  ChangedItem,
+  DirectoryItem,
+  ExplorerRepository,
+  ExplorerSource,
+  GitStatus,
+} from '../src/pages/workbench'
 
-function file(id: string, name: string, status?: GitStatus): Entry {
+/** A sample file or folder: the whole tree at once, as the engine never sends it. */
+export type SampleEntry =
+  | { kind: 'file'; id: string; name: string; status?: GitStatus }
+  | { kind: 'folder'; id: string; name: string; children: SampleEntry[] }
+
+export interface SampleRepository {
+  id: string
+  name: string
+  worktrees: {
+    id: string
+    branch: string
+    path: string
+    current?: boolean
+    children: SampleEntry[]
+  }[]
+}
+
+function file(id: string, name: string, status?: GitStatus): SampleEntry {
   return { kind: 'file', id, name, status }
 }
 
-function folder(id: string, name: string, children: Entry[]): Entry {
+function folder(
+  id: string,
+  name: string,
+  children: SampleEntry[],
+): SampleEntry {
   return { kind: 'folder', id, name, children }
 }
 
-export const repositories: RepositoryGroup[] = [
+export const repositories: SampleRepository[] = [
   {
     id: 'vvorkflow',
     name: 'vvorkflow',
@@ -86,14 +113,81 @@ export const repositories: RepositoryGroup[] = [
 ]
 
 /** The nodes that the Explorer story shows open: the current worktree, down to the deep folder. */
+const current = '~/code/vvorkflow.terminal-tabs'
 export const expandedPaths = [
-  'vvorkflow',
-  'vvorkflow/terminal-tabs',
-  'tt/apps',
-  'tt/apps/desktop',
-  'tt/apps/desktop/src',
-  'tt/apps/desktop/src/pages',
-  'tt/apps/desktop/src/pages/workbench',
-  'tt/dist',
-  'atlas-api',
+  `repository:${current}`,
+  current,
+  `${current}/apps`,
+  `${current}/apps/desktop`,
+  `${current}/apps/desktop/src`,
+  `${current}/apps/desktop/src/pages`,
+  `${current}/apps/desktop/src/pages/workbench`,
+  `${current}/dist`,
+  'repository:~/code/atlas/api',
 ]
+
+/** The repositories of the samples, as the engine sends them when it opens a folder. */
+export function sampleRepositories(
+  samples: SampleRepository[],
+): ExplorerRepository[] {
+  return samples.map((sample) => ({
+    name: sample.name,
+    git: true,
+    worktrees: sample.worktrees.map(({ path, branch, current }) => ({
+      path,
+      branch,
+      current,
+    })),
+  }))
+}
+
+/**
+ * A source that serves the samples as the engine would: one folder at a time,
+ * and the changed paths of a worktree. A folder whose files are all ignored is
+ * one ignored path that ends with `/`, as git reports it.
+ *
+ * The id stays the same for new samples, so the queries keep their answers
+ * until they read again.
+ */
+export function sampleSource(samples: SampleRepository[]): ExplorerSource {
+  const worktree = (path: string) =>
+    samples
+      .flatMap((sample) => sample.worktrees)
+      .find((candidate) => candidate.path === path)
+  return {
+    id: 'sample',
+    listDirectory: (path, relative) => {
+      let entries = worktree(path)?.children ?? []
+      for (const name of relative.split('/').filter(Boolean)) {
+        const next = entries.find((entry) => entry.name === name)
+        entries = next?.kind === 'folder' ? next.children : []
+      }
+      return Promise.resolve(
+        entries.map(({ name, kind }): DirectoryItem => ({ name, kind })),
+      )
+    },
+    readStatus: (path) => {
+      const changes: ChangedItem[] = []
+      const walk = (entries: SampleEntry[], prefix: string) => {
+        for (const entry of entries) {
+          const relative = prefix + entry.name
+          if (entry.kind === 'file') {
+            if (entry.status)
+              changes.push({ path: relative, status: entry.status })
+          } else if (
+            entry.children.length > 0 &&
+            entry.children.every(
+              (child) => child.kind === 'file' && child.status === 'ignored',
+            )
+          ) {
+            changes.push({ path: `${relative}/`, status: 'ignored' })
+          } else {
+            walk(entry.children, `${relative}/`)
+          }
+        }
+      }
+      walk(worktree(path)?.children ?? [], '')
+      return Promise.resolve(changes)
+    },
+  }
+}

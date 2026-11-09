@@ -1,39 +1,48 @@
-/** The git status of a file, as the Explorer shows it. */
+/** The git status of a path, as the Explorer shows it. */
 export type GitStatus =
   'added' | 'modified' | 'deleted' | 'untracked' | 'conflict' | 'ignored'
 
-export interface FileEntry {
-  kind: 'file'
-  id: string
-  name: string
-  status?: GitStatus
-}
-
-export interface FolderEntry {
-  kind: 'folder'
-  id: string
-  name: string
-  children: Entry[]
-}
-
-export type Entry = FileEntry | FolderEntry
-
-/** A worktree of a repository: in vvorkflow, one worktree is one project. */
-export interface Worktree {
-  id: string
-  branch: string
-  /** The folder of the worktree, as the user sees it, for example `~/code/vvorkflow`. */
+/** One worktree of a repository: in vvorkflow, one worktree is one project. */
+export interface ExplorerWorktree {
+  /** The absolute path of the worktree on the machine of the engine. */
   path: string
+  /** The checked-out branch; none for a detached HEAD or a plain folder. */
+  branch?: string | null
   /** Whether the window works on this worktree now. */
   current?: boolean
-  children: Entry[]
 }
 
-/** The worktrees of one repository, which the Explorer shows as one group. */
-export interface RepositoryGroup {
-  id: string
+/** An open folder: a repository and its worktrees, or a plain folder. */
+export interface ExplorerRepository {
   name: string
-  worktrees: Worktree[]
+  /** False for a plain folder, which has no git status. */
+  git: boolean
+  worktrees: ExplorerWorktree[]
+}
+
+export interface DirectoryItem {
+  name: string
+  kind: 'file' | 'folder'
+}
+
+/**
+ * A path with a git status, relative to its worktree. A folder that git
+ * reports as a whole, such as an ignored folder, ends with `/`.
+ */
+export interface ChangedItem {
+  path: string
+  status: GitStatus
+}
+
+/**
+ * Where the Explorer reads the folders and the git status: the engine in the
+ * app, or sample data in the stories. Queries keep their answers under `id`,
+ * so a new source with a new id reads everything again.
+ */
+export interface ExplorerSource {
+  id: string
+  listDirectory: (worktree: string, path: string) => Promise<DirectoryItem[]>
+  readStatus: (worktree: string) => Promise<ChangedItem[]>
 }
 
 /** One row of the Explorer tree. */
@@ -46,6 +55,9 @@ export interface TreeNode {
   /** The status of a file, or the most important status in a folder or a worktree. */
   status?: GitStatus
   current?: boolean
+  /** Whether the row can open; a folder that is not read yet can. */
+  expandable: boolean
+  /** The rows in it, when they are known. */
   children?: TreeNode[]
 }
 
@@ -68,61 +80,124 @@ const importance: GitStatus[] = [
 ]
 
 /**
- * Gives a folder the status of its contents.
+ * Finds the status of a path from the changed paths of its worktree.
  *
- * @returns The most important status of the children. A folder whose changed
- * children are all ignored is `ignored`. A folder with no status in it has none.
+ * @param path The path relative to the worktree; empty for the worktree.
+ * @returns For a file, its own status. For a folder, the most important
+ * status of the paths in it, without the ignored ones. A path in a folder that
+ * git reports as a whole, or that folder itself, has the status of the folder.
+ * A path with no change has none.
  */
-export function rollUpStatus(
-  statuses: (GitStatus | undefined)[],
+export function pathStatus(
+  changes: readonly ChangedItem[] | undefined,
+  path: string,
+  folder: boolean,
 ): GitStatus | undefined {
-  const present = statuses.filter(
-    (status): status is GitStatus => status !== undefined,
+  if (!changes) return undefined
+  const asFolder = `${path}/`
+  const whole = changes.find(
+    (change) =>
+      path !== '' &&
+      change.path.endsWith('/') &&
+      (folder ? asFolder : path).startsWith(change.path),
   )
-  if (present.length === 0) return undefined
-  const top = importance.find((status) => present.includes(status))
-  if (top) return top
-  return present.length === statuses.length ? 'ignored' : undefined
+  if (whole) return whole.status
+  if (!folder) return changes.find((change) => change.path === path)?.status
+  const prefix = path === '' ? '' : asFolder
+  const inside = new Set(
+    changes
+      .filter(
+        (change) =>
+          change.path.startsWith(prefix) && change.status !== 'ignored',
+      )
+      .map((change) => change.status),
+  )
+  return importance.find((status) => inside.has(status))
 }
 
-function entryNode(entry: Entry): TreeNode {
-  if (entry.kind === 'file') {
-    return {
-      id: entry.id,
-      kind: 'file',
-      label: entry.name,
-      status: entry.status,
+/** The id of the row of a repository. */
+export function repositoryNodeId(repository: ExplorerRepository): string {
+  return `repository:${repository.worktrees[0]?.path ?? repository.name}`
+}
+
+/** A folder that the tree shows open, and that it has to read. */
+export interface FolderToRead {
+  worktree: string
+  path: string
+}
+
+/**
+ * Builds the rows of the Explorer from what is read so far.
+ *
+ * @param folders Gives the entries of a folder, or undefined when it is not
+ * read yet.
+ * @param changes Gives the changed paths of a worktree, or undefined when they
+ * are not read yet, or for a plain folder.
+ * @returns The tree, and each open folder that is not read yet. A folder is
+ * read only when it is open and each folder above it is open, so a large
+ * folder costs nothing until the user opens it.
+ */
+export function buildTree(
+  repositories: readonly ExplorerRepository[],
+  expanded: ReadonlySet<string>,
+  folders: (worktree: string, path: string) => DirectoryItem[] | undefined,
+  changes: (worktree: string) => readonly ChangedItem[] | undefined,
+): { nodes: TreeNode[]; toRead: FolderToRead[] } {
+  const toRead: FolderToRead[] = []
+
+  function entries(worktree: string, path: string): TreeNode[] | undefined {
+    const items = folders(worktree, path)
+    if (!items) {
+      toRead.push({ worktree, path })
+      return undefined
     }
-  }
-  const children = entry.children.map(entryNode)
-  return {
-    id: entry.id,
-    kind: 'folder',
-    label: entry.name,
-    status: rollUpStatus(children.map((child) => child.status)),
-    children,
-  }
-}
-
-/** Turns the repository groups into the rows of the Explorer tree. */
-export function toTreeNodes(groups: RepositoryGroup[]): TreeNode[] {
-  return groups.map((group) => ({
-    id: group.id,
-    kind: 'repository',
-    label: group.name,
-    children: group.worktrees.map((worktree) => {
-      const children = worktree.children.map(entryNode)
+    const changed = changes(worktree)
+    return items.map((item) => {
+      const relative = path === '' ? item.name : `${path}/${item.name}`
+      const id = `${worktree}/${relative}`
+      const folder = item.kind === 'folder'
+      const children =
+        folder && expanded.has(id) ? entries(worktree, relative) : undefined
       return {
-        id: worktree.id,
-        kind: 'worktree',
-        label: worktree.branch,
-        detail: worktree.path,
-        current: worktree.current,
-        status: rollUpStatus(children.map((child) => child.status)),
+        id,
+        kind: item.kind,
+        label: item.name,
+        status: pathStatus(changed, relative, folder),
+        expandable: folder && (children === undefined || children.length > 0),
         children,
       }
-    }),
-  }))
+    })
+  }
+
+  const nodes = repositories.map((repository): TreeNode => {
+    const id = repositoryNodeId(repository)
+    const worktrees = expanded.has(id)
+      ? repository.worktrees.map((worktree): TreeNode => {
+          const children = expanded.has(worktree.path)
+            ? entries(worktree.path, '')
+            : undefined
+          return {
+            id: worktree.path,
+            kind: 'worktree',
+            // A detached HEAD or a plain folder has no branch: show its folder.
+            label: worktree.branch ?? worktree.path.split('/').pop() ?? '',
+            detail: worktree.path,
+            current: worktree.current,
+            status: pathStatus(changes(worktree.path), '', true),
+            expandable: children === undefined || children.length > 0,
+            children,
+          }
+        })
+      : undefined
+    return {
+      id,
+      kind: 'repository',
+      label: repository.name,
+      expandable: repository.worktrees.length > 0,
+      children: worktrees,
+    }
+  })
+  return { nodes, toRead }
 }
 
 /** A row that the tree shows now, with its place in the tree. */
@@ -145,7 +220,7 @@ export function visibleRows(
 ): VisibleRow[] {
   return nodes.flatMap((node, index) => [
     { node, level, parentId, position: index + 1, siblings: nodes.length },
-    ...(node.children && expanded.has(node.id)
+    ...(node.expandable && node.children && expanded.has(node.id)
       ? visibleRows(node.children, expanded, level + 1, node.id)
       : []),
   ])

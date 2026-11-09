@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The permissions of the main window: the core defaults, and the window controls of the custom title bar.",
+  "description": "The permissions of the main window: the core defaults, the window controls of the custom title bar, and the requests to the engine.",
   "windows": [
     "main"
   ],
@@ -13,6 +13,11 @@
     "core:window:allow-close",
     "core:window:allow-destroy",
     "core:window:allow-start-dragging",
-    "core:window:allow-is-maximized"
+    "core:window:allow-is-maximized",
+    "allow-open-folder",
+    "allow-list-directory",
+    "allow-read-status",
+    "allow-startup-folders",
+    "dialog:allow-open"
   ]
 }
