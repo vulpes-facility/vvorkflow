@@ -1,21 +1,22 @@
 import {
+  Folder,
   FolderGit2,
   FolderOpen,
   GitBranchPlus,
   Plus,
+  TriangleAlert,
   type LucideIcon,
 } from 'lucide-react'
 import type { Platform } from '@/shared/lib'
 import { LogoMark, Shortcut } from '@/shared/ui'
 
-/** A project that the user opened before. */
-export interface RecentProject {
+/** A folder in the projects root of the engine. */
+export interface WelcomeProject {
+  /** The path of the folder in the engine. */
   id: string
   name: string
-  /** The folder of the project, as the user sees it, for example `~/code/vvorkflow`. */
-  path: string
-  /** The number of worktrees of the repository. */
-  worktrees: number
+  /** True for a git repository, which has its own icon. */
+  git: boolean
 }
 
 interface StartAction {
@@ -27,26 +28,30 @@ interface StartAction {
 
 interface WelcomeProps {
   platform: Platform
-  recentProjects: RecentProject[]
+  projects: WelcomeProject[]
+  /** The message of an engine that did not start. It shows in place of the projects. */
+  engineError?: string
   onNewProject?: () => void
   onOpenFolder?: () => void
   onAddWorktree?: () => void
-  onOpenRecent?: (project: RecentProject) => void
+  onOpenProject?: (project: WelcomeProject) => void
   /** The shortcut of the command palette, such as `mod+shift+p`, for the hint at the bottom. */
   commandPaletteShortcut?: string
 }
 
 /**
- * The landing tab of the editor area: the start actions and the recent projects.
- * It shows only the actions that have a handler.
+ * The landing tab of the editor area: the start actions and the projects of
+ * the projects root. It shows only the actions that have a handler, and no
+ * Projects section when the root has no project.
  */
 export function Welcome({
   platform,
-  recentProjects,
+  projects,
+  engineError,
   onNewProject,
   onOpenFolder,
   onAddWorktree,
-  onOpenRecent,
+  onOpenProject,
   commandPaletteShortcut,
 }: WelcomeProps) {
   const actions: StartAction[] = [
@@ -122,9 +127,9 @@ export function Welcome({
             </section>
           )}
 
-          {recentProjects.length > 0 && (
+          {(projects.length > 0 || engineError) && (
             <section
-              aria-labelledby="welcome-recent"
+              aria-labelledby="welcome-projects"
               className={
                 actions.length > 0
                   ? 'flex flex-col gap-2'
@@ -132,18 +137,29 @@ export function Welcome({
               }
             >
               <h2
-                id="welcome-recent"
+                id="welcome-projects"
                 className="px-2 text-xs font-medium text-muted-foreground"
               >
-                Recent
+                Projects
               </h2>
-              <ul className="flex flex-col">
-                {recentProjects.map((project) => (
-                  <li key={project.id}>
-                    <RecentProjectRow project={project} onOpen={onOpenRecent} />
-                  </li>
-                ))}
-              </ul>
+              {engineError ? (
+                <p className="flex items-start gap-2.5 px-2 py-1 text-ui text-foreground">
+                  <TriangleAlert
+                    className="mt-0.5 size-icon shrink-0 text-destructive"
+                    strokeWidth={1.75}
+                    aria-hidden
+                  />
+                  {engineError}
+                </p>
+              ) : (
+                <ul className="flex flex-col">
+                  {projects.map((project) => (
+                    <li key={project.id}>
+                      <ProjectRow project={project} onOpen={onOpenProject} />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           )}
         </div>
@@ -159,33 +175,25 @@ export function Welcome({
   )
 }
 
-function RecentProjectRow({
+function ProjectRow({
   project,
   onOpen,
 }: {
-  project: RecentProject
-  onOpen?: (project: RecentProject) => void
+  project: WelcomeProject
+  onOpen?: (project: WelcomeProject) => void
 }) {
+  const Icon = project.git ? FolderGit2 : Folder
   const content = (
     <>
-      <FolderGit2
+      <Icon
         className="size-icon shrink-0 text-subtle-foreground"
         strokeWidth={1.75}
         aria-hidden
       />
-      {/* On a narrow editor area, the path goes under the name. */}
-      <span className="flex min-w-0 flex-1 flex-col @md:flex-row @md:items-baseline @md:gap-2">
-        <span className="shrink-0 text-ui text-foreground">{project.name}</span>
-        <span
-          className="truncate text-xs text-muted-foreground"
-          title={project.path}
-        >
-          {project.path}
-        </span>
+      <span className="min-w-0 flex-1 truncate text-ui text-foreground">
+        {project.name}
       </span>
-      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-        {project.worktrees} {project.worktrees === 1 ? 'worktree' : 'worktrees'}
-      </span>
+      {project.git && <span className="sr-only">, git repository</span>}
     </>
   )
   const className =

@@ -15,6 +15,7 @@ const screens = [
   'screens-workbench--windows-dark',
   'screens-workbench--linux-dark',
   'screens-workbench--first-run',
+  'screens-workbench--root-error',
   'foundations-tokens--dark',
   'foundations-tokens--light',
 ]

@@ -31,7 +31,7 @@ import { SideBar } from './side-bar/side-bar'
 import { TerminalView } from './terminal/terminal-view'
 import { StatusBar, type StatusItem } from './status-bar/status-bar'
 import { TitleBar, type WindowContext } from './title-bar/title-bar'
-import { Welcome, type RecentProject } from './welcome/welcome'
+import { Welcome, type WelcomeProject } from './welcome/welcome'
 import { useLayout } from '../model/layout'
 import type { ExplorerRepository, ExplorerSource } from '../model/explorer'
 import type { TerminalSession } from '../model/terminal'
@@ -52,7 +52,10 @@ interface WorkbenchPageProps {
   windowControls?: WindowControls
   /** The project and the worktree in the title bar. */
   context?: WindowContext
-  recentProjects: RecentProject[]
+  /** The projects of the projects root, on the Welcome tab. */
+  projects: WelcomeProject[]
+  /** The message of an engine that did not start, on the Welcome tab. */
+  engineError?: string
   status?: { start?: StatusItem[]; end?: StatusItem[] }
   /** The open repositories of the Explorer. Without them, the view shows its empty state. */
   repositories?: ExplorerRepository[]
@@ -66,7 +69,7 @@ interface WorkbenchPageProps {
   onNewProject?: () => void
   onOpenFolder?: () => void
   onAddWorktree?: () => void
-  onOpenRecent?: (project: RecentProject) => void
+  onOpenProject?: (project: WelcomeProject) => void
   onOpenSettings?: () => void
   /** The shortcut of the command palette, for the hint on the Welcome tab. */
   commandPaletteShortcut?: string
@@ -335,11 +338,12 @@ function WelcomePanel() {
   return (
     <Welcome
       platform={props.platform}
-      recentProjects={props.recentProjects}
+      projects={props.projects}
+      engineError={props.engineError}
       onNewProject={props.onNewProject}
       onOpenFolder={props.onOpenFolder}
       onAddWorktree={props.onAddWorktree}
-      onOpenRecent={props.onOpenRecent}
+      onOpenProject={props.onOpenProject}
       commandPaletteShortcut={props.commandPaletteShortcut}
     />
   )
