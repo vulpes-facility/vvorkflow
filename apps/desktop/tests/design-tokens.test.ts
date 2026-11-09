@@ -117,17 +117,27 @@ describe('the source outside tokens.css', () => {
     })
   }
 
-  it('has no raw color value', () => {
-    const offenders = files(join(root, 'src'))
+  /** The lines of the source that match `pattern`, as `path:line`. */
+  function linesMatching(pattern: RegExp): string[] {
+    return files(join(root, 'src'))
       .filter((path) => path !== tokensPath)
       .flatMap((path) =>
         readFileSync(path, 'utf8')
           .split('\n')
           .map((line, index) => ({ line, index }))
-          .filter(({ line }) => rawColor.test(line))
+          .filter(({ line }) => pattern.test(line))
           .map(({ index }) => `${relative(root, path)}:${index + 1}`),
       )
-    expect(offenders).toEqual([])
+  }
+
+  it('has no raw color value, also not in an arbitrary class', () => {
+    expect(linesMatching(rawColor)).toEqual([])
+  })
+
+  it('uses no color of the Tailwind palette', () => {
+    const paletteUtility =
+      /\b(?:bg|text|border|ring|outline|fill|stroke|shadow|divide|placeholder|caret|accent|decoration|from|via|to)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone|black|white)\b/
+    expect(linesMatching(paletteUtility)).toEqual([])
   })
 })
 
@@ -185,6 +195,7 @@ const textPairs: [string, string[]][] = [
   ['popover-foreground', ['popover']],
   ['card-foreground', ['card']],
   ['accent-foreground', ['accent']],
+  ['muted-foreground', ['muted']],
   ['secondary-foreground', ['secondary']],
   ['sidebar-foreground', ['sidebar', 'sidebar-accent']],
   ['primary-foreground', ['primary', 'primary-hover']],
@@ -204,6 +215,7 @@ const nonTextPairs: [string, string[]][] = [
   ['indicator', ['chrome', 'sidebar', 'editor']],
   ['ring', ['editor', 'chrome', 'sidebar', 'popover']],
   ['input', ['editor', 'sidebar', 'popover']],
+  ['scrollbar-thumb', ['editor', 'chrome', 'sidebar', 'popover']],
   ['window-close-hover-foreground', ['window-close-hover']],
 ]
 

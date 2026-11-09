@@ -3,6 +3,8 @@ import { expect, test } from '@playwright/test'
 
 /** The screen stories to capture, by Storybook id. */
 const screens = [
+  'screens-workbench--app-start',
+  'screens-workbench--zoomed-200',
   'screens-workbench--macos-dark',
   'screens-workbench--macos-light',
   'screens-workbench--windows-dark',
@@ -12,8 +14,15 @@ const screens = [
   'foundations-tokens--light',
 ]
 
+/** The viewport of a screen that needs a size other than the default 1440 by 900. */
+const viewports: Record<string, { width: number; height: number }> = {
+  'screens-workbench--zoomed-200': { width: 720, height: 450 },
+}
+
 for (const id of screens) {
   test(id, async ({ page }, testInfo) => {
+    const viewport = viewports[id]
+    if (viewport) await page.setViewportSize(viewport)
     await page.goto(`/iframe.html?id=${id}&viewMode=story`)
     await page.locator('#storybook-root > *').first().waitFor()
     await page.evaluate(() => document.fonts.ready)
@@ -63,8 +72,10 @@ for (const id of screens) {
     })
     expect(smallTargets).toEqual([])
 
+    // A foundation sheet is taller than the viewport, so take the full page.
     await page.screenshot({
       path: `screens/${testInfo.project.name}/${id}.png`,
+      fullPage: id.startsWith('foundations-'),
     })
   })
 }

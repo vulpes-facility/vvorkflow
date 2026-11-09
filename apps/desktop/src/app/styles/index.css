@@ -124,7 +124,7 @@
   /* Thin scrollbars that keep their space, in each engine. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: var(--selection) transparent;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 }
 

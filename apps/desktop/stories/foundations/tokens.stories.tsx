@@ -68,12 +68,8 @@ function Group({
 
 function Tokens() {
   return (
-    <div
-      role="region"
-      aria-label="Design tokens"
-      tabIndex={0}
-      className="h-screen overflow-auto bg-editor p-10 text-foreground"
-    >
+    // The sheet grows with its content, so that the screen capture takes all of it.
+    <div className="min-h-screen bg-editor p-10 text-foreground">
       <div className="mx-auto grid max-w-5xl grid-cols-3 gap-10">
         <Group title="Surfaces">
           {surfaces.map((name) => (

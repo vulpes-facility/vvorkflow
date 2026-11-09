@@ -11,7 +11,9 @@ There is no separate design file.
 3. Use the semantic variables only through the Tailwind utilities of `src/app/styles/index.css`, for example `bg-editor` and `text-muted-foreground`.\
    Do not write a raw color in a component, and do not use an arbitrary color class.
 4. Map each third-party theme, such as dockview, to the semantic variables, as `src/app/styles/dockview-theme.css` does.
-5. `apps/desktop/tests/design-tokens.test.ts` checks rules 1 to 3 and the contrast rules below.\
+5. `apps/desktop/tests/design-tokens.test.ts` checks these rules in part:\
+   the structure of `tokens.css` (rules 1 and 2), raw color values and Tailwind palette colors in `src/` (rule 3), and the contrast rules below.\
+   It does not check raw sizes or opacity modifiers such as `bg-primary/80`, so check those in review.\
    When you add a semantic color, add its pairs to that test.
 
 ## Accessibility

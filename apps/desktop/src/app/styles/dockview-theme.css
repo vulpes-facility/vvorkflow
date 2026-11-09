@@ -35,8 +35,8 @@
   --dv-drag-over-border-color: var(--indicator);
   --dv-edge-dock-indicator-color: var(--indicator);
   --dv-icon-hover-background-color: var(--hover);
-  --dv-tabs-container-scrollbar-color: var(--selection);
-  --dv-scrollbar-background-color: var(--selection);
+  --dv-tabs-container-scrollbar-color: var(--scrollbar-thumb);
+  --dv-scrollbar-background-color: var(--scrollbar-thumb);
 
   --dv-context-menu-background-color: var(--popover);
   --dv-context-menu-color: var(--popover-foreground);

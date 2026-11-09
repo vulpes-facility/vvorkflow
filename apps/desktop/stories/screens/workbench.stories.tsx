@@ -55,3 +55,29 @@ export const LinuxDark: Story = { args: { platform: 'linux', windowControls } }
 export const FirstRun: Story = {
   args: { recentProjects: [], context: undefined, status: undefined },
 }
+
+/**
+ * The window as the app opens it today: no handlers, so no start actions, no
+ * settings, and no command hint.
+ */
+export const AppStart: Story = {
+  args: {
+    recentProjects: [],
+    context: undefined,
+    status: undefined,
+    onNewProject: undefined,
+    onOpenFolder: undefined,
+    onAddWorktree: undefined,
+    onOpenRecent: undefined,
+    onOpenSettings: undefined,
+    commandPaletteShortcut: undefined,
+  },
+}
+
+/**
+ * The window at 200 % zoom (WCAG 2.2 SC 1.4.4). The screen capture opens it
+ * in a 720 by 450 viewport, which is a 1440 by 900 window at 200 %. The
+ * editor area is then about as narrow as at the minimum window width with the
+ * widest side bar.
+ */
+export const Zoomed200: Story = {}

@@ -75,9 +75,10 @@ export function Welcome({
       role="region"
       aria-label="Welcome"
       tabIndex={0}
-      className="h-full overflow-auto bg-editor outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+      className="@container h-full overflow-auto bg-editor outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
     >
-      <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-12 px-12 py-16">
+      {/* The layout follows the width of the editor area, which the side bar changes. */}
+      <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-10 px-6 py-10 @xl:gap-12 @xl:px-12 @xl:py-16">
         <header className="flex items-center gap-4">
           <LogoMark className="size-11 text-foreground" />
           <div className="flex flex-col gap-0.5">
@@ -90,7 +91,7 @@ export function Welcome({
           </div>
         </header>
 
-        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-10">
+        <div className="grid grid-cols-1 gap-8 @2xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] @2xl:gap-10">
           {actions.length > 0 && (
             <section
               aria-labelledby="welcome-start"
@@ -108,14 +109,14 @@ export function Welcome({
                     <button
                       type="button"
                       onClick={action.onSelect}
-                      className="group flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left text-ui text-foreground outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-ring"
+                      className="group flex min-h-8 w-full items-center gap-2.5 rounded-md px-2 py-1 text-left text-ui text-foreground outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-ring"
                     >
                       <action.icon
                         className="size-icon text-link"
                         strokeWidth={1.75}
                         aria-hidden
                       />
-                      <span className="flex-1">{action.label}</span>
+                      <span className="min-w-0 flex-1">{action.label}</span>
                       {action.shortcut && (
                         <Shortcut keys={action.shortcut} platform={platform} />
                       )}
@@ -131,7 +132,7 @@ export function Welcome({
             className={
               actions.length > 0
                 ? 'flex flex-col gap-2'
-                : 'col-span-2 flex flex-col gap-2'
+                : 'flex flex-col gap-2 @2xl:col-span-2'
             }
           >
             <h2
@@ -181,9 +182,13 @@ function RecentProjectRow({
         strokeWidth={1.75}
         aria-hidden
       />
-      <span className="flex min-w-0 flex-1 items-baseline gap-2">
+      {/* On a narrow editor area, the path goes under the name. */}
+      <span className="flex min-w-0 flex-1 flex-col @md:flex-row @md:items-baseline @md:gap-2">
         <span className="shrink-0 text-ui text-foreground">{project.name}</span>
-        <span className="truncate text-xs text-muted-foreground">
+        <span
+          className="truncate text-xs text-muted-foreground"
+          title={project.path}
+        >
           {project.path}
         </span>
       </span>
@@ -193,7 +198,7 @@ function RecentProjectRow({
     </>
   )
   const className =
-    'flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-left'
+    'flex min-h-8 w-full items-center gap-2.5 rounded-md px-2 py-1 text-left'
   if (!onOpen) return <div className={className}>{content}</div>
   return (
     <button
