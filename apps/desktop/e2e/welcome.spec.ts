@@ -91,6 +91,35 @@ test('when an error takes the place of the projects, the focus moves to the tab 
   ).toBeFocused()
 })
 
+test('the error of the engine is an icon, with its message in a tooltip on focus and on hover', async ({
+  page,
+}) => {
+  const message = 'VVORKFLOW_ROOT is not an absolute path: projects.'
+  await update(page, { projects: [], engineError: message })
+  const mark = page.getByRole('button', { name: 'Engine error' })
+  // On the screen only the icon shows; the alert is for assistive technology.
+  await expect(
+    page.getByRole('region', { name: 'Projects' }).getByRole('alert'),
+  ).toHaveClass(/\bsr-only\b/)
+
+  // The tooltip opens on a keyboard focus.
+  await mark.focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await expect(mark).toBeFocused()
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
+    message,
+  )
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-slot="tooltip-content"]')).toBeHidden()
+
+  await page.mouse.move(0, 0)
+  await mark.hover()
+  await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
+    message,
+  )
+})
+
 test('an update does not take the focus from another part of the window', async ({
   page,
 }) => {

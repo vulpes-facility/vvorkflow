@@ -9,7 +9,13 @@ import {
 } from 'lucide-react'
 import { useLayoutEffect, useRef } from 'react'
 import type { Platform } from '@/shared/lib'
-import { LogoMark, Shortcut } from '@/shared/ui'
+import {
+  LogoMark,
+  Shortcut,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/shared/ui'
 
 /** A folder in the projects root of the engine. */
 export interface WelcomeProject {
@@ -157,26 +163,16 @@ export function Welcome({
                   : 'flex flex-col gap-2 @2xl:col-span-2'
               }
             >
-              <h2
-                id="welcome-projects"
-                className="px-2 text-xs font-medium text-muted-foreground"
-              >
-                Projects
-              </h2>
-              {engineError ? (
-                // The message can come after the tab shows, so it is an alert.
-                <p
-                  role="alert"
-                  className="flex items-start gap-2.5 px-2 py-1 text-ui text-foreground"
+              <div className="flex items-center gap-1 px-2">
+                <h2
+                  id="welcome-projects"
+                  className="text-xs font-medium text-muted-foreground"
                 >
-                  <TriangleAlert
-                    className="mt-0.5 size-icon shrink-0 text-destructive"
-                    strokeWidth={1.75}
-                    aria-hidden
-                  />
-                  <span className="min-w-0 wrap-anywhere">{engineError}</span>
-                </p>
-              ) : (
+                  Projects
+                </h2>
+                {engineError && <EngineErrorMark message={engineError} />}
+              </div>
+              {engineError ? null : (
                 <ul className="flex flex-col">
                   {projects.map((project) => (
                     <li key={project.id}>
@@ -255,5 +251,37 @@ function ProjectRow({
     >
       {content}
     </button>
+  )
+}
+
+/**
+ * The error of an engine that did not start: a warning icon, with the
+ * message in a tooltip on hover and on keyboard focus, and no text on the
+ * screen. The message is also an alert for assistive technology, because it
+ * can come after the tab shows (WCAG 2.2 SC 4.1.3).
+ */
+function EngineErrorMark({ message }: { message: string }) {
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Engine error"
+              className="flex size-6 items-center justify-center rounded-md text-destructive outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          }
+        >
+          <TriangleAlert className="size-icon" strokeWidth={1.75} aria-hidden />
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="start" className="wrap-anywhere">
+          {message}
+        </TooltipContent>
+      </Tooltip>
+      <p role="alert" className="sr-only">
+        {message}
+      </p>
+    </>
   )
 }
