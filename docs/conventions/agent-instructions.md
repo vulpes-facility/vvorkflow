@@ -15,7 +15,8 @@ Write these files in English.
    Then Claude Code loads `AGENTS.md` with `CLAUDE.md`.\
    Claude Code does not load an import in a code block or a code span.
 4. Do not write other instructions in `CLAUDE.md`.\
-   Write each rule in a file in `docs/conventions/`, and add that file to the index of `AGENTS.md`, so that all agents read the same instructions.
+   Write each rule in a file in `docs/conventions/`.\
+   Add that file to the index of `AGENTS.md`, so that all agents read the same instructions.
 
 ```markdown
 # CLAUDE.md

@@ -58,8 +58,8 @@ The owner confirmed these decisions on 2026-11-09.
 - **Users:** vvorkflow is for its owner alone, for now.
 - **Platforms:** The desktop app on macOS, Windows, and Linux comes first.\
   iOS and Android come later (value 1).
-- **Webview:** The app uses Tauri 2 with the system webview of each platform:\
-  WebView2 on Windows, WKWebView on macOS and iOS, WebKitGTK on Linux, and Android System WebView.\
+- **Webview:** The app uses Tauri 2 with the system webview of each platform.\
+  These are WebView2 on Windows, WKWebView on macOS and iOS, WebKitGTK on Linux, and Android System WebView on Android.\
   The app is not limited to Chromium, so check the UI on both Chromium and WebKit.
 - **Browser panel:** The IDE has a browser panel, which is a child webview of Tauri 2 multiwebview.\
   Multiwebview needs the `unstable` feature of the `tauri` crate.\
