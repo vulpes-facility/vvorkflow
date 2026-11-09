@@ -6,7 +6,7 @@ The workers run as their real TUIs, in terminal tabs, in the worktrees of a repo
 
 ## Status
 
-The desktop app has its design tokens, its window shell, the Welcome tab, and the Explorer tree and the terminal tabs on sample data, and no engine yet.\
+The desktop app has its design tokens, its window shell, the Welcome tab, the terminal tabs on sample data, and an Explorer that reads real folders and their git status from the local Rust engine.\
 The design follows the [core values](docs/core-values.md) and [`docs/conventions/design.md`](docs/conventions/design.md).
 
 ## Requirements
@@ -64,6 +64,9 @@ Each task MUST pass with no errors and no warnings before a pull request.
 │       ├── fixtures/       The sample data of the stories
 │       ├── e2e/            The Playwright screen capture
 │       └── tests/          The Vitest tests, such as the token and contrast checks
+├── crates/
+│   ├── vv-protocol/        The protocol of the engine, and its JSON Schema
+│   └── vv-engine/          The engine: folders, worktrees, and git status
 ├── packages/               The shared packages (none yet)
 ├── docs/                   The core values and the conventions
 ├── Cargo.toml              The Cargo workspace

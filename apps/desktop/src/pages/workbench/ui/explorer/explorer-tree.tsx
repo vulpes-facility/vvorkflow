@@ -22,8 +22,10 @@ interface ExplorerTreeProps {
   /** The accessible name of the tree. */
   label: string
   nodes: TreeNode[]
-  /** The ids of the nodes that are open at the start. */
-  defaultExpanded?: string[]
+  /** The ids of the open nodes. */
+  expanded: ReadonlySet<string>
+  /** Gives the ids of the open nodes after the user opens or closes one. */
+  onExpandedChange: (expanded: ReadonlySet<string>) => void
   /** Opens a file, on a click or on Enter. */
   onOpenFile?: (id: string) => void
 }
@@ -46,12 +48,10 @@ const statusText: Record<GitStatus, string> = {
 export function ExplorerTree({
   label,
   nodes,
-  defaultExpanded = [],
+  expanded,
+  onExpandedChange,
   onOpenFile,
 }: ExplorerTreeProps) {
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
-    () => new Set(defaultExpanded),
-  )
   const [selectedId, setSelectedId] = useState<string | undefined>()
   const [focusedId, setFocusedId] = useState<string | undefined>()
   const items = useRef(new Map<string, HTMLLIElement>())
@@ -89,12 +89,10 @@ export function ExplorerTree({
   }, [rows, activeId])
 
   function toggle(id: string, open?: boolean) {
-    setExpanded((current) => {
-      const next = new Set(current)
-      if (open ?? !next.has(id)) next.add(id)
-      else next.delete(id)
-      return next
-    })
+    const next = new Set(expanded)
+    if (open ?? !next.has(id)) next.add(id)
+    else next.delete(id)
+    onExpandedChange(next)
   }
 
   function focus(id: string) {
@@ -105,7 +103,7 @@ export function ExplorerTree({
 
   function activate(node: TreeNode) {
     if (node.kind === 'file') onOpenFile?.(node.id)
-    else if (node.children?.length) toggle(node.id)
+    else if (node.expandable) toggle(node.id)
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
@@ -113,7 +111,7 @@ export function ExplorerTree({
     const row = rows[index]
     if (!row) return
     const { node } = row
-    const hasChildren = Boolean(node.children?.length)
+    const hasChildren = node.expandable
     const isOpen = hasChildren && expanded.has(node.id)
     let handled = true
     switch (event.key) {
@@ -161,7 +159,7 @@ export function ExplorerTree({
     >
       {rows.map(({ node, level, position, siblings }) => {
         // An empty folder has nothing to open, so it has no expanded state.
-        const hasChildren = Boolean(node.children?.length)
+        const hasChildren = node.expandable
         const isOpen = hasChildren && expanded.has(node.id)
         return (
           <li

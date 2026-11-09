@@ -9,11 +9,12 @@ import {
   windowContext,
   windowControls,
 } from '../../fixtures/workbench'
-import { WorkbenchPage } from '../../src/pages/workbench'
+import { SampleWorkbench } from '../../fixtures/sample-workbench'
 
 const meta = {
   title: 'Screens/Workbench',
-  component: WorkbenchPage,
+  // The page, with the sample repositories served as the engine would.
+  component: SampleWorkbench,
   decorators: [
     (Story, context) => (
       <div style={{ height: '100vh' }}>
@@ -34,7 +35,7 @@ const meta = {
     onOpenSettings: fn(),
     commandPaletteShortcut: 'mod+shift+p',
   },
-} satisfies Meta<typeof WorkbenchPage>
+} satisfies Meta<typeof SampleWorkbench>
 
 export default meta
 type Story = StoryObj<typeof meta>

@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Protocol",
+  "type": "object",
+  "properties": {
+    "changed_path": {
+      "description": "A path with a git status, relative to its worktree, with `/` between the\nnames. A folder that git reports as a whole, such as an ignored or an\nuntracked folder, ends with `/`.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "added",
+            "modified",
+            "deleted",
+            "untracked",
+            "conflict",
+            "ignored"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "status"
+      ]
+    },
+    "directory_entry": {
+      "description": "An entry of a folder.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "file",
+            "folder"
+          ]
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ]
+    },
+    "engine_error": {
+      "description": "A refused or failed request.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "description": "The kind of an error: `notFound`, the path does not exist;\n`permissionDenied`, the path is outside the roots that the engine can\nreach; `invalidArgument`, the request is not valid, for example a relative\npath; `failedPrecondition`, the state does not let the request occur, for\nexample git is missing. The variants have no doc comments of their own,\nso that the schema keeps them as one plain enum.",
+          "type": "string",
+          "enum": [
+            "notFound",
+            "permissionDenied",
+            "invalidArgument",
+            "failedPrecondition"
+          ]
+        },
+        "message": {
+          "description": "A sentence for the user.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "list_directory": {
+      "description": "Lists one folder of a worktree. The engine reads only this folder, so that\na large tree, such as `node_modules`, costs nothing until the user opens it.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "The folder, relative to the worktree, with `/` between the names.\nAn empty path is the worktree itself.",
+          "type": "string"
+        },
+        "worktree": {
+          "description": "The absolute path of the worktree.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "worktree",
+        "path"
+      ]
+    },
+    "open_folder": {
+      "description": "Opens a folder: a git repository, or a plain folder.\nThe engine adds the folder, and each worktree of its repository, to the\nroots that later requests can reach (core value 6).",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "An absolute path on the machine of the engine.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "read_status": {
+      "description": "Reads the git status of a worktree.",
+      "type": "object",
+      "properties": {
+        "worktree": {
+          "description": "The absolute path of the worktree.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "worktree"
+      ]
+    },
+    "repository": {
+      "description": "A repository and its worktrees, or a plain folder as one worktree.",
+      "type": "object",
+      "properties": {
+        "git": {
+          "description": "False for a plain folder, which has no git status.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "The name of the folder of the main worktree.",
+          "type": "string"
+        },
+        "worktrees": {
+          "type": "array",
+          "items": {
+            "description": "One worktree of a repository. In vvorkflow, one worktree is one project.",
+            "type": "object",
+            "properties": {
+              "branch": {
+                "description": "The checked-out branch, without `refs/heads/`. None when the HEAD is\ndetached, or for a plain folder.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "current": {
+                "description": "True for the worktree of the opened folder.",
+                "type": "boolean"
+              },
+              "path": {
+                "description": "The absolute path of the worktree.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "current"
+            ]
+          }
+        }
+      },
+      "required": [
+        "name",
+        "git",
+        "worktrees"
+      ]
+    }
+  },
+  "required": [
+    "open_folder",
+    "repository",
+    "list_directory",
+    "directory_entry",
+    "read_status",
+    "changed_path",
+    "engine_error"
+  ]
+}

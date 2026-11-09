@@ -95,8 +95,11 @@ The Explorer follows value 3 of the [core values](../core-values.md).
    The shape tells them apart: a plus for a new file, a dot for a change, a minus for a deletion, and a warning for a conflict.\
    An ignored file has the muted color, its name is in italics, and it has no shape.\
    A folder and a worktree show the most important status in them, in this order: conflict, deleted, modified, added, and untracked.\
-   A folder shows ignored only when all of its files are ignored.
-4. Each level moves in by `--vv-tree-indent`, through the `tree-inset` utility.\
+   A folder that git reports as a whole, such as an ignored or an untracked folder, and each path in it, have the status of that folder.
+4. The Explorer reads a folder only when the user opens it, and each folder above it is open (`buildTree`).\
+   So a large folder, such as `node_modules`, costs nothing until the user opens it.\
+   The stories serve sample data through the same `ExplorerSource` as the engine.
+5. Each level moves in by `--vv-tree-indent`, through the `tree-inset` utility.\
    An empty folder has no expanded state.\
    When an update takes away the focused row, the focus and the selection move to its next sibling, its previous sibling, or its nearest visible ancestor, in this order.
 

@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles/index.css'
@@ -11,8 +12,16 @@ if (!root) throw new Error('index.html has no #root element')
 // other theme and then fades to this one.
 applyColorScheme(document.documentElement, systemColorScheme())
 
+// The engine answers on this machine: a failed request does not get better
+// with a second try.
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+})
+
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>
   </StrictMode>,
 )
