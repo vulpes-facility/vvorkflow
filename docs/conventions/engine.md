@@ -1,6 +1,6 @@
 # Engine
 
-The engine follows values 4 and 6 of the [core values](../core-values.md).\
+The engine follows values 2 and 6 of the [core values](../core-values.md).\
 These rules keep each request of the protocol inside the folders that the user opened.
 
 1. A request can reach only a root: a folder that the user opened, or a worktree of its repository.\

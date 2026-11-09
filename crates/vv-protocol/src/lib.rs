@@ -1,7 +1,7 @@
 //! The protocol of the vvorkflow engine: the requests that a client sends, and
 //! the values and the errors that the engine sends back.
 //!
-//! A client does not know if the engine is local or remote (core value 4), so
+//! A client does not know if the engine is local or remote (core value 2), so
 //! each type is plain data that serializes to JSON. `schema/protocol.schema.json`
 //! is generated from these types, and the TypeScript client is generated from it.
 
