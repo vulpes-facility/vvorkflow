@@ -545,3 +545,41 @@ fn the_root_comes_from_the_variable_or_the_home_folder() {
         assert_eq!(refused.code, ErrorCode::FailedPrecondition);
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn a_project_with_a_broken_git_link_is_still_git() {
+    let base = tempfile::tempdir().unwrap();
+    let root = base.path().canonicalize().unwrap();
+    std::fs::create_dir(root.join("app")).unwrap();
+    std::os::unix::fs::symlink("../gone", root.join("app/.git")).unwrap();
+    let projects = Engine::new(&root)
+        .unwrap()
+        .list_projects(ListProjects {})
+        .unwrap();
+    assert!(projects[0].git);
+}
+
+// macOS refuses a file name that is not UTF-8, so only Linux can make one.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_name_that_is_not_utf8_is_not_a_project() {
+    use std::os::unix::ffi::OsStrExt;
+    let base = tempfile::tempdir().unwrap();
+    let root = base.path().canonicalize().unwrap();
+    std::fs::create_dir(root.join(std::ffi::OsStr::from_bytes(b"bad\xff"))).unwrap();
+    std::fs::create_dir(root.join("bad\u{fffd}")).unwrap();
+    let names: Vec<String> = Engine::new(&root)
+        .unwrap()
+        .list_projects(ListProjects {})
+        .unwrap()
+        .into_iter()
+        .map(|project| project.name)
+        .collect();
+    assert_eq!(names, ["bad\u{fffd}"]);
+
+    let not_text = root.join(std::ffi::OsStr::from_bytes(b"root\xff"));
+    std::fs::create_dir(&not_text).unwrap();
+    let refused = projects_root(Some(not_text.into()), None).unwrap_err();
+    assert_eq!(refused.code, ErrorCode::FailedPrecondition);
+}

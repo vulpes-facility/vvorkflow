@@ -33,8 +33,9 @@ pub fn projects_root_from_env() -> Result<PathBuf, EngineError> {
 /// Returns the canonical path of `value` when it is set and not empty. Else
 /// returns `vvorkflow` in `home`, and makes that folder when it does not
 /// exist. Refuses (`failedPrecondition`) a value that is not an absolute path
-/// to a folder, a missing home folder, and a default root that is not a folder
-/// or that the engine cannot make.
+/// to a folder, a missing home folder, a default root that is not a folder or
+/// that the engine cannot make, and a root whose path is not UTF-8, because
+/// the protocol sends paths as text.
 pub fn projects_root(
     value: Option<OsString>,
     home: Option<PathBuf>,
@@ -72,7 +73,11 @@ pub fn projects_root(
         }
     };
     match path.canonicalize() {
-        Ok(folder) if folder.is_dir() => Ok(folder),
+        Ok(folder) if folder.is_dir() && folder.to_str().is_some() => Ok(folder),
+        Ok(folder) if folder.is_dir() => Err(refused(format!(
+            "The path of the projects root is not UTF-8: {}.",
+            folder.display()
+        ))),
         _ => Err(refused(format!(
             "The projects root {} is not a folder.",
             path.display()
@@ -163,8 +168,8 @@ impl Engine {
     /// Lists the projects: the folders directly in the projects root, in name
     /// order.
     ///
-    /// Leaves out the files, the names that start with `.`, and the symbolic
-    /// links that lead out of the root. Fails when the engine cannot read the
+    /// Leaves out the files, the names that start with `.` or that are not
+    /// UTF-8, and the symbolic links that lead out of the root. Fails when the engine cannot read the
     /// root (`notFound` or `failedPrecondition`).
     pub fn list_projects(&self, _request: ListProjects) -> Result<Vec<Project>, EngineError> {
         let root = &self.projects;
@@ -174,14 +179,18 @@ impl Engine {
             .map_err(|error| io_error(error, &display(&root.path)))?;
         let mut list: Vec<Project> = entries
             .filter_map(Result::ok)
-            .map(|entry| entry.file_name())
-            .filter(|name| !name.to_string_lossy().starts_with('.'))
+            // A name that is not UTF-8 has no exact text in the protocol.
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter(|name| !name.starts_with('.'))
             // The handle does not follow a link out of the root.
             .filter(|name| root.dir.metadata(name).is_ok_and(|data| data.is_dir()))
             .map(|name| Project {
-                git: root.dir.exists(Path::new(&name).join(".git")),
+                git: root
+                    .dir
+                    .symlink_metadata(Path::new(&name).join(".git"))
+                    .is_ok(),
                 path: display(&root.path.join(&name)),
-                name: name.to_string_lossy().into_owned(),
+                name,
             })
             .collect();
         list.sort_by_key(|project| project.name.to_lowercase());

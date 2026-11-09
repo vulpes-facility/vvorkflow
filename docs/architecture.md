@@ -54,12 +54,13 @@ The receiver checks each message against the schema, at run time.
 
 1. The engine has one projects root: `~/vvorkflow`, or the folder in `VVORKFLOW_ROOT`.\
    `VVORKFLOW_ROOT` MUST be an absolute path to a folder.\
-   An empty value is the same as no value.
+   An empty value is the same as no value.\
+   The path of the root MUST be UTF-8, because the protocol sends paths as text.
 2. At start, the engine checks the root, and stops with a message when it is not correct.\
    It makes `~/vvorkflow` when that folder does not exist.\
    While the engine is in the app process, it does not stop: each request answers that message.
 3. A project is a folder directly in the root.\
-   A name that starts with `.` is not a project.\
+   A name that starts with `.`, or that is not UTF-8, is not a project.\
    A symbolic link that leads out of the root is not a project, because the engine reads the root through a directory handle.
 4. The worktrees of one repository are in one group in the Explorer.
 5. The desktop app can also open other folders on its own computer, as in VS Code.\
