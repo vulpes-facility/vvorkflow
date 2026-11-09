@@ -93,6 +93,8 @@
   --vv-tree-pad: 8px;
   --vv-tree-indent: 12px;
   --vv-icon-sm: 14px;
+  /* The dot of a changed file in the Explorer. */
+  --vv-status-dot: 6px;
   --vv-icon: 16px;
   --vv-icon-lg: 20px;
   /* The width of one Windows caption button. */
@@ -177,8 +179,8 @@
   --git-added: var(--vv-green-600);
   --git-modified: var(--vv-amber-600);
   --git-deleted: var(--vv-red-600);
-  --git-untracked: var(--vv-teal-600);
-  --git-conflict: var(--vv-magenta-600);
+  --git-untracked: var(--vv-green-600);
+  --git-conflict: var(--vv-red-600);
   --git-ignored: var(--vv-gray-600);
   --window-close-hover: var(--vv-red-600);
   --window-close-hover-foreground: var(--vv-gray-0);
@@ -238,8 +240,8 @@
   --git-added: var(--vv-green-400);
   --git-modified: var(--vv-amber-400);
   --git-deleted: var(--vv-red-400);
-  --git-untracked: var(--vv-teal-400);
-  --git-conflict: var(--vv-magenta-400);
+  --git-untracked: var(--vv-green-400);
+  --git-conflict: var(--vv-red-400);
   --git-ignored: var(--vv-gray-400);
   --window-close-hover: var(--vv-red-600);
   --window-close-hover-foreground: var(--vv-gray-0);

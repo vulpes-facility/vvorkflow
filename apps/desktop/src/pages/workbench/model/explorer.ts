@@ -49,15 +49,6 @@ export interface TreeNode {
   children?: TreeNode[]
 }
 
-export const gitStatusLetters: Record<GitStatus, string> = {
-  added: 'A',
-  modified: 'M',
-  deleted: 'D',
-  untracked: 'U',
-  conflict: 'C',
-  ignored: 'I',
-}
-
 export const gitStatusNames: Record<GitStatus, string> = {
   added: 'added',
   modified: 'modified',
