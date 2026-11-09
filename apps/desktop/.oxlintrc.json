@@ -16,6 +16,12 @@
       "rules": {
         "react/only-export-components": "off"
       }
+    },
+    {
+      "files": [".storybook/**"],
+      "rules": {
+        "react/only-export-components": "off"
+      }
     }
   ]
 }

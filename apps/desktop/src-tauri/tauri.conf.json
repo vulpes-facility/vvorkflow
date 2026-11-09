@@ -12,17 +12,20 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "vvorkflow",
         "width": 1440,
         "height": 900,
-        "resizable": true,
-        "fullscreen": false,
         "minWidth": 960,
-        "minHeight": 600
+        "minHeight": 600,
+        "resizable": true,
+        "decorations": false,
+        "zoomHotkeysEnabled": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src ipc: http://ipc.localhost",
+      "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src ipc: http://ipc.localhost ws://localhost:5173 http://localhost:5173"
     }
   },
   "bundle": {

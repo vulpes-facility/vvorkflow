@@ -1,0 +1,231 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { join, relative } from 'node:path'
+import { describe, expect, it } from 'vitest'
+
+const root = join(import.meta.dirname, '..')
+const tokensPath = join(root, 'src/app/styles/tokens.css')
+const tokens = readFileSync(tokensPath, 'utf8')
+
+/** Reads the custom properties of each `selector { ... }` block, in order. */
+function blocks(css: string, selector: string): Map<string, string>[] {
+  const result: Map<string, string>[] = []
+  const pattern = new RegExp(
+    `(^|\\n)${selector.replace('.', '\\.')} \\{([^}]*)\\}`,
+    'g',
+  )
+  for (const match of css.matchAll(pattern)) {
+    const body = match[2].replace(/\/\*[\s\S]*?\*\//g, '')
+    const properties = new Map<string, string>()
+    for (const declaration of body.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+      properties.set(declaration[1], declaration[2].trim())
+    }
+    result.push(properties)
+  }
+  return result
+}
+
+const [primitives, light] = blocks(tokens, ':root')
+const [dark] = blocks(tokens, '.dark')
+const themes = { light, dark }
+
+/** The semantic variables that shadcn components read. */
+const shadcnVariables = [
+  'background',
+  'foreground',
+  'card',
+  'card-foreground',
+  'popover',
+  'popover-foreground',
+  'primary',
+  'primary-foreground',
+  'secondary',
+  'secondary-foreground',
+  'muted',
+  'muted-foreground',
+  'accent',
+  'accent-foreground',
+  'destructive',
+  'border',
+  'input',
+  'ring',
+  'chart-1',
+  'chart-2',
+  'chart-3',
+  'chart-4',
+  'chart-5',
+  'radius',
+  'sidebar',
+  'sidebar-foreground',
+  'sidebar-primary',
+  'sidebar-primary-foreground',
+  'sidebar-accent',
+  'sidebar-accent-foreground',
+  'sidebar-border',
+  'sidebar-ring',
+]
+
+describe('tokens.css', () => {
+  it('has primitives, a light theme, and a dark theme', () => {
+    expect(primitives.size).toBeGreaterThan(0)
+    expect(light.size).toBeGreaterThan(0)
+    expect(dark.size).toBeGreaterThan(0)
+  })
+
+  it('names each primitive --vv-*, and no semantic variable --vv-*', () => {
+    expect(
+      [...primitives.keys()].filter((name) => !name.startsWith('--vv-')),
+    ).toEqual([])
+    for (const theme of Object.values(themes)) {
+      expect(
+        [...theme.keys()].filter((name) => name.startsWith('--vv-')),
+      ).toEqual([])
+    }
+  })
+
+  it('defines the same semantic variables in both themes', () => {
+    expect([...dark.keys()].sort()).toEqual([...light.keys()].sort())
+  })
+
+  it('defines every shadcn variable', () => {
+    for (const name of shadcnVariables)
+      expect(light.has(`--${name}`), name).toBe(true)
+  })
+
+  it('maps each semantic variable to one primitive', () => {
+    for (const [themeName, theme] of Object.entries(themes)) {
+      for (const [name, value] of theme) {
+        const match = /^var\((--vv-[\w-]+)\)$/.exec(value)
+        expect(match, `${themeName} ${name}: ${value}`).not.toBeNull()
+        expect(
+          primitives.has(match![1]),
+          `${themeName} ${name} -> ${match![1]}`,
+        ).toBe(true)
+      }
+    }
+  })
+})
+
+describe('the source outside tokens.css', () => {
+  const rawColor =
+    /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb)\(/
+
+  function files(directory: string): string[] {
+    return readdirSync(directory).flatMap((name) => {
+      const path = join(directory, name)
+      if (statSync(path).isDirectory()) return files(path)
+      return /\.(tsx?|css)$/.test(name) ? [path] : []
+    })
+  }
+
+  it('has no raw color value', () => {
+    const offenders = files(join(root, 'src'))
+      .filter((path) => path !== tokensPath)
+      .flatMap((path) =>
+        readFileSync(path, 'utf8')
+          .split('\n')
+          .map((line, index) => ({ line, index }))
+          .filter(({ line }) => rawColor.test(line))
+          .map(({ index }) => `${relative(root, path)}:${index + 1}`),
+      )
+    expect(offenders).toEqual([])
+  })
+})
+
+/** Converts an `oklch(L C h)` value to the WCAG relative luminance of its sRGB color. */
+function luminance(value: string): number {
+  const match = /^oklch\(([\d.]+) ([\d.]+) ([\d.]+)\)$/.exec(value)
+  if (!match) throw new Error(`not an opaque oklch color: ${value}`)
+  const [lightness, chroma, hue] = match.slice(1).map(Number)
+  const a = chroma * Math.cos((hue * Math.PI) / 180)
+  const b = chroma * Math.sin((hue * Math.PI) / 180)
+  const l = (lightness + 0.3963377774 * a + 0.2158037573 * b) ** 3
+  const m = (lightness - 0.1055613458 * a - 0.0638541728 * b) ** 3
+  const s = (lightness - 0.0894841775 * a - 1.291485548 * b) ** 3
+  const clamp = (channel: number) => Math.min(1, Math.max(0, channel))
+  const red = clamp(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s)
+  const green = clamp(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s)
+  const blue = clamp(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+}
+
+function resolve(theme: Map<string, string>, name: string): string {
+  const reference = /^var\((--vv-[\w-]+)\)$/.exec(theme.get(`--${name}`) ?? '')
+  if (!reference) throw new Error(`--${name} is not a reference`)
+  return primitives.get(reference[1])!
+}
+
+function contrast(
+  theme: Map<string, string>,
+  foreground: string,
+  background: string,
+): number {
+  const [high, low] = [
+    luminance(resolve(theme, foreground)),
+    luminance(resolve(theme, background)),
+  ].sort((x, y) => y - x)
+  return (high + 0.05) / (low + 0.05)
+}
+
+const surfaces = [
+  'editor',
+  'chrome',
+  'sidebar',
+  'background',
+  'card',
+  'popover',
+  'hover',
+  'selection',
+]
+
+/** WCAG 2.2 SC 1.4.3: text needs 4.5:1 against each surface that it is on. */
+const textPairs: [string, string[]][] = [
+  ['foreground', surfaces],
+  ['muted-foreground', surfaces],
+  ['chrome-foreground', ['chrome', 'sidebar', 'hover', 'selection']],
+  ['popover-foreground', ['popover']],
+  ['card-foreground', ['card']],
+  ['accent-foreground', ['accent']],
+  ['secondary-foreground', ['secondary']],
+  ['sidebar-foreground', ['sidebar', 'sidebar-accent']],
+  ['primary-foreground', ['primary']],
+  ['link', ['editor', 'chrome', 'sidebar', 'popover']],
+  ['destructive', ['editor', 'popover']],
+  ['git-added', ['sidebar', 'editor', 'hover', 'selection']],
+  ['git-modified', ['sidebar', 'editor', 'hover', 'selection']],
+  ['git-deleted', ['sidebar', 'editor', 'hover', 'selection']],
+  ['git-untracked', ['sidebar', 'editor', 'hover', 'selection']],
+  ['git-conflict', ['sidebar', 'editor', 'hover', 'selection']],
+  ['git-ignored', ['sidebar', 'editor', 'hover', 'selection']],
+]
+
+/** WCAG 2.2 SC 1.4.11: icons, focus indicators, and control boundaries need 3:1. */
+const nonTextPairs: [string, string[]][] = [
+  ['subtle-foreground', ['chrome', 'sidebar', 'editor']],
+  ['indicator', ['chrome', 'sidebar', 'editor']],
+  ['ring', ['editor', 'chrome', 'sidebar', 'popover']],
+  ['input', ['editor', 'sidebar', 'popover']],
+  ['window-close-hover-foreground', ['window-close-hover']],
+]
+
+describe('WCAG 2.2 contrast', () => {
+  for (const [themeName, theme] of Object.entries(themes)) {
+    for (const [foreground, backgrounds] of textPairs) {
+      for (const background of backgrounds) {
+        it(`${themeName}: ${foreground} on ${background} >= 4.5`, () => {
+          expect(
+            contrast(theme, foreground, background),
+          ).toBeGreaterThanOrEqual(4.5)
+        })
+      }
+    }
+    for (const [foreground, backgrounds] of nonTextPairs) {
+      for (const background of backgrounds) {
+        it(`${themeName}: ${foreground} on ${background} >= 3`, () => {
+          expect(
+            contrast(theme, foreground, background),
+          ).toBeGreaterThanOrEqual(3)
+        })
+      }
+    }
+  }
+})
