@@ -241,7 +241,10 @@ impl Endpoint {
                 ));
             };
             let stream = pipe::open(name).await?;
-            if pipe::server_process(&stream)? != engine {
+            let server = pipe::server_process(&stream)?;
+            // The process id alone can come back for another process after
+            // the engine stops, so the user of the process must match too.
+            if server != engine || !pipe::runs_as_this_user(server)? {
                 return Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
                     "Another process holds the pipe of this endpoint.",
@@ -318,8 +321,22 @@ fn unix_folder(runtime: Option<PathBuf>, temp: PathBuf, user: u32) -> PathBuf {
         .map(|path| path.join("vvorkflow"))
         .into_iter()
         .chain([temp.join(&name)])
-        .find(|folder| folder.join("engine.sock").as_os_str().len() <= MAX_SOCKET_PATH)
+        .find(|folder| socket_fits(folder))
         .unwrap_or(last)
+}
+
+/// Whether the socket of a folder has a short path, measured as the engine
+/// uses it: with the canonical path of the parent, which can be longer than a
+/// short link to it.
+#[cfg(unix)]
+fn socket_fits(folder: &Path) -> bool {
+    let canonical = match (folder.parent(), folder.file_name()) {
+        (Some(parent), Some(name)) => parent
+            .canonicalize()
+            .map_or_else(|_| folder.to_path_buf(), |parent| parent.join(name)),
+        _ => folder.to_path_buf(),
+    };
+    canonical.join("engine.sock").as_os_str().len() <= MAX_SOCKET_PATH
 }
 
 /// The named pipe of Windows: a random name, a security descriptor that lets
@@ -334,11 +351,18 @@ mod pipe {
         ClientOptions, NamedPipeClient, NamedPipeServer, ServerOptions,
     };
     use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::Security::Authorization::{
         ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1,
     };
-    use windows_sys::Win32::Security::{PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES};
+    use windows_sys::Win32::Security::{
+        GetLengthSid, GetTokenInformation, PSECURITY_DESCRIPTOR, SECURITY_ATTRIBUTES, TOKEN_QUERY,
+        TOKEN_USER, TokenUser,
+    };
     use windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId;
+    use windows_sys::Win32::System::Threading::{
+        GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
 
     /// A name that no other user can guess: the hash of the time and the
     /// process id, with the random keys of `RandomState`.
@@ -421,6 +445,67 @@ mod pipe {
         }
         Ok(process)
     }
+
+    /// Whether a process runs as the user of this process.
+    ///
+    /// Fails when the process or its token cannot be read, for example
+    /// because another user runs it, so that a failed check refuses the pipe.
+    pub(super) fn runs_as_this_user(process: u32) -> io::Result<bool> {
+        // SAFETY: OpenProcess takes any id, and returns null when it fails.
+        let other = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process) };
+        if other.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        let other = Owned(other);
+        // SAFETY: GetCurrentProcess returns a handle that needs no closing.
+        let this = unsafe { GetCurrentProcess() };
+        Ok(user_of(other.0)? == user_of(this)?)
+    }
+
+    /// A handle that closes when it drops.
+    struct Owned(HANDLE);
+
+    impl Drop for Owned {
+        fn drop(&mut self) {
+            // SAFETY: the handle is open, and only this value closes it.
+            unsafe { CloseHandle(self.0) };
+        }
+    }
+
+    /// The bytes of the security identifier of the user of a process.
+    fn user_of(process: HANDLE) -> io::Result<Vec<u8>> {
+        let mut token: HANDLE = std::ptr::null_mut();
+        // SAFETY: the process handle is open, and the call writes the token.
+        if unsafe { OpenProcessToken(process, TOKEN_QUERY, &mut token) } == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let token = Owned(token);
+        let mut size = 0_u32;
+        // SAFETY: a first call with no buffer only writes the size it needs.
+        unsafe { GetTokenInformation(token.0, TokenUser, std::ptr::null_mut(), 0, &mut size) };
+        // A buffer of u64 keeps the pointers of TOKEN_USER aligned.
+        let mut buffer = vec![0_u64; (size as usize).div_ceil(8)];
+        // SAFETY: the buffer has `size` bytes at least.
+        let read = unsafe {
+            GetTokenInformation(
+                token.0,
+                TokenUser,
+                buffer.as_mut_ptr().cast(),
+                size,
+                &mut size,
+            )
+        };
+        if read == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: the call wrote a TOKEN_USER at the start of the buffer, and
+        // its SID points into the same buffer.
+        let sid = unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid };
+        // SAFETY: the SID is valid while the buffer lives.
+        let length = unsafe { GetLengthSid(sid) } as usize;
+        // SAFETY: the SID has `length` bytes.
+        Ok(unsafe { std::slice::from_raw_parts(sid.cast::<u8>(), length) }.to_vec())
+    }
 }
 
 #[cfg(all(test, unix))]
@@ -449,6 +534,20 @@ mod tests {
         assert_eq!(
             unix_folder(None, long, 1000),
             PathBuf::from("/tmp/vvorkflow-1000")
+        );
+    }
+
+    #[test]
+    fn a_short_link_to_a_long_folder_does_not_fit() {
+        let base = tempfile::tempdir().unwrap();
+        let long = base.path().join("a".repeat(100));
+        std::fs::create_dir(&long).unwrap();
+        let link = base.path().join("l");
+        std::os::unix::fs::symlink(&long, &link).unwrap();
+        let tmp = PathBuf::from("/var/tmp");
+        assert_eq!(
+            unix_folder(Some(link), tmp, 1000),
+            PathBuf::from("/var/tmp/vvorkflow-1000")
         );
     }
 }

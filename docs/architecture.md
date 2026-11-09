@@ -92,7 +92,7 @@ The engine process stops on a root that is not correct; the app shows its messag
 1. The binary `vvorkflow-server` is the engine process.\
    At start it checks the [projects root](#projects-root).\
    When the root is not correct, it writes the message to stderr, and stops with exit code 1.
-2. On Linux and macOS, its folder is the first of these where the path of the socket has at most 100 bytes:\
+2. On Linux and macOS, its folder is the first of these where the canonical path of the socket has at most 100 bytes:\
    `$XDG_RUNTIME_DIR/vvorkflow`, `vvorkflow-<uid>` in the temporary folder, and `/tmp/vvorkflow-<uid>`.\
    On Windows, it is `%LOCALAPPDATA%\vvorkflow`.
 3. On Linux and macOS, the engine makes the folder with mode 0700.\
@@ -105,7 +105,7 @@ The engine process stops on a root that is not correct; the app shows its messag
 5. On Windows, the folder is in the profile of the user, which other users cannot open.\
    The engine makes a named pipe with a random name, and writes the name and its process id to `engine.pipe` in the folder.\
    The pipe lets only its owner and the system open it, and it refuses remote clients.\
-   A client reads `engine.pipe`, and refuses a pipe whose server is not that process.
+   A client reads `engine.pipe`, and refuses a pipe whose server is not that process, or does not run as this user.
 6. Only one engine listens on an endpoint.\
    The engine locks `engine.lock`, then removes a socket that an old engine left, and then listens.
 7. The engine serves at most 32 clients, and closes the connection of a client after them at once.\
