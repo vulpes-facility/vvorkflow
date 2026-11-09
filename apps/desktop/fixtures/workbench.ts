@@ -3,37 +3,17 @@
 import { ArrowDownUp, GitBranch, Laptop } from 'lucide-react'
 import { fn } from 'storybook/test'
 import type {
-  RecentProject,
   StatusItem,
+  WelcomeProject,
   WindowContext,
 } from '../src/pages/workbench'
 import type { WindowControls } from '../src/shared/api'
 
-export const recentProjects: RecentProject[] = [
-  {
-    id: 'vvorkflow',
-    name: 'vvorkflow',
-    path: '~/code/vvorkflow',
-    worktrees: 4,
-  },
-  {
-    id: 'atlas-api',
-    name: 'atlas-api',
-    path: '~/code/atlas/api',
-    worktrees: 2,
-  },
-  {
-    id: 'harbor-web',
-    name: 'harbor-web',
-    path: '~/code/harbor/web',
-    worktrees: 3,
-  },
-  {
-    id: 'field-notes',
-    name: 'field-notes',
-    path: '~/Documents/field-notes',
-    worktrees: 1,
-  },
+export const projects: WelcomeProject[] = [
+  { id: '/home/me/vvorkflow/atlas-api', name: 'atlas-api', git: true },
+  { id: '/home/me/vvorkflow/field-notes', name: 'field-notes', git: false },
+  { id: '/home/me/vvorkflow/harbor-web', name: 'harbor-web', git: true },
+  { id: '/home/me/vvorkflow/vvorkflow', name: 'vvorkflow', git: true },
 ]
 
 export const windowContext: WindowContext = {

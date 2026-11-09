@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useState } from 'react'
-import type { ExplorerRepository, ExplorerSource } from '@/pages/workbench'
+import { uniqueRepositories, type ExplorerSource } from '@/pages/workbench'
 import {
   isTauri,
   listDirectory,
@@ -19,10 +19,11 @@ const engineSource: ExplorerSource = {
 
 /**
  * The folders that the engine opened: those of the command line, then each
- * folder that the user picks.
+ * folder that the user picks or opens from the projects.
  *
  * @returns The repositories, without a repeat when two folders share one, the
- * source of the Explorer, and the action that asks the user for a folder.
+ * source of the Explorer, the action that asks the user for a folder, and the
+ * action that opens a path.
  */
 export function useEngineExplorer() {
   const tauri = isTauri()
@@ -33,6 +34,10 @@ export function useEngineExplorer() {
     staleTime: Infinity,
   })
   const [picked, setPicked] = useState<string[]>([])
+  const openPath = (path: string) =>
+    setPicked((current) =>
+      current.includes(path) ? current : [...current, path],
+    )
   const paths = [...(startup.data ?? []), ...picked]
   const opened = useQueries({
     queries: paths.map((path) => ({
@@ -41,26 +46,17 @@ export function useEngineExplorer() {
       staleTime: Infinity,
     })),
   })
-  const seen = new Set<string>()
-  const repositories: ExplorerRepository[] = []
-  for (const { data } of opened) {
-    const main = data?.worktrees[0]?.path
-    if (!data || !main || seen.has(main)) continue
-    seen.add(main)
-    repositories.push(data)
-  }
+  const repositories = uniqueRepositories(opened.map(({ data }) => data))
 
   async function openFromDialog() {
     const path = await open({ directory: true })
-    if (typeof path === 'string')
-      setPicked((current) =>
-        current.includes(path) ? current : [...current, path],
-      )
+    if (typeof path === 'string') openPath(path)
   }
 
   return {
     repositories,
     explorer: tauri ? engineSource : undefined,
     onOpenFolder: tauri ? () => void openFromDialog() : undefined,
+    openPath,
   }
 }

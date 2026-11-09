@@ -14,7 +14,7 @@ web UI (React) ──Tauri IPC──► app core (Rust) ──local socket──
 
 | Part | What it does | Status |
 | --- | --- | --- |
-| Web UI | Shows the folders, the files, and the terminals, and sends requests. It does not know if the engine is local or remote. | Done for the shell and the Explorer |
+| Web UI | Shows the folders, the files, and the terminals, and sends requests. It does not know if the engine is local or remote. | Done for the shell, the Explorer, and the projects on the Welcome tab |
 | App core | The Rust part of the Tauri app. It connects to one engine, and sends the requests, the responses, and the events between the web UI and the engine. It keeps the token out of the web UI. | Next (M3) |
 | Engine | One Rust process. It owns the projects root, the files, git, and the terminal sessions. On the desktop, the app starts it as a daemon. On a remote machine, it runs headless. | Done in the app process; next as a process (M3) |
 | Protocol | The Rust types of `crates/vvorkflow-protocol`, their JSON Schema, and the TypeScript client that the schema makes. | Done for `hello`, the projects, the folders, and git |
@@ -67,6 +67,7 @@ The receiver checks each message against the schema, at run time.
    A remote client can open only the projects in the root.
 
 Status: done in the app process (M3), with the method `project.list`.\
+The Welcome tab shows the projects, or the message of a root that is not correct.\
 The engine process, which stops on a root that is not correct, is next (M3).
 
 [`conventions/engine.md`](conventions/engine.md) gives the rules that keep each request in these folders.

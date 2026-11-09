@@ -1,9 +1,14 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  focusManager,
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles/index.css'
 import { applyColorScheme, systemColorScheme } from '@/shared/lib'
 import { App } from './App'
+import { windowFocusListener } from './window-focus'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('index.html has no #root element')
@@ -17,6 +22,7 @@ applyColorScheme(document.documentElement, systemColorScheme())
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false } },
 })
+focusManager.setEventListener(windowFocusListener(window))
 
 createRoot(root).render(
   <StrictMode>

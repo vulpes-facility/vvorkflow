@@ -4,7 +4,7 @@ import { MacTrafficLights } from '../../fixtures/mac-traffic-lights'
 import { expandedPaths, repositories } from '../../fixtures/repositories'
 import { terminals } from '../../fixtures/terminals'
 import {
-  recentProjects,
+  projects,
   status,
   windowContext,
   windowControls,
@@ -25,13 +25,13 @@ const meta = {
   ],
   args: {
     platform: 'macos',
-    recentProjects,
+    projects,
     context: windowContext,
     status,
     onNewProject: fn(),
     onOpenFolder: fn(),
     onAddWorktree: fn(),
-    onOpenRecent: fn(),
+    onOpenProject: fn(),
     onOpenSettings: fn(),
     commandPaletteShortcut: 'mod+shift+p',
   },
@@ -54,9 +54,31 @@ export const WindowsDark: Story = {
 /** Linux has no native decorations: the title bar holds round GNOME buttons. */
 export const LinuxDark: Story = { args: { platform: 'linux', windowControls } }
 
-/** The first start: no project, no recent projects, and no status. */
+/** The first start: an empty projects root, and no status. */
 export const FirstRun: Story = {
-  args: { recentProjects: [], context: undefined, status: undefined },
+  args: { projects: [], context: undefined, status: undefined },
+}
+
+/** An engine that did not start, because its projects root is not correct. */
+export const RootError: Story = {
+  args: {
+    projects: [],
+    engineError: 'VVORKFLOW_ROOT is not an absolute path: projects.',
+    context: undefined,
+    status: undefined,
+  },
+}
+
+/**
+ * The same error with a long path at 320 CSS pixels wide (WCAG 2.2 SC
+ * 1.4.10): the message wraps inside a long name, with no horizontal scroll.
+ */
+export const RootErrorReflow320: Story = {
+  args: {
+    ...RootError.args,
+    engineError:
+      'The projects root /home/someone/a-folder-name-that-has-no-place-to-break-in-it/vvorkflow is not a folder.',
+  },
 }
 
 /**
@@ -65,13 +87,13 @@ export const FirstRun: Story = {
  */
 export const AppStart: Story = {
   args: {
-    recentProjects: [],
+    projects: [],
     context: undefined,
     status: undefined,
     onNewProject: undefined,
     onOpenFolder: undefined,
     onAddWorktree: undefined,
-    onOpenRecent: undefined,
+    onOpenProject: undefined,
     onOpenSettings: undefined,
     commandPaletteShortcut: undefined,
   },

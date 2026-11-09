@@ -124,6 +124,27 @@ export function pathStatus(
 // NUL, which no path holds. So a folder and a nested repository at the same
 // path have different ids.
 
+/**
+ * Keeps one repository for each main worktree, so that two folders of one
+ * repository, such as a project and its sibling worktree, show as one group.
+ *
+ * @returns The repositories in the order that they opened; the first one of a
+ *   main worktree stays.
+ */
+export function uniqueRepositories(
+  opened: (ExplorerRepository | undefined)[],
+): ExplorerRepository[] {
+  const seen = new Set<string>()
+  const repositories: ExplorerRepository[] = []
+  for (const data of opened) {
+    const main = data?.worktrees[0]?.path
+    if (!data || !main || seen.has(main)) continue
+    seen.add(main)
+    repositories.push(data)
+  }
+  return repositories
+}
+
 /** The id of the row of a repository. */
 export function repositoryNodeId(repository: ExplorerRepository): string {
   return `repository\0${repository.worktrees[0]?.path ?? repository.name}`

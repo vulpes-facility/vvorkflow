@@ -7,12 +7,14 @@ import {
   useSystemColorScheme,
 } from '@/shared/lib'
 import { useEngineExplorer } from './engine-explorer'
+import { useEngineProjects } from './engine-projects'
 
 export function App() {
   const platform = useMemo(() => detectPlatform(navigator.userAgent), [])
   const windowControls = useMemo(() => currentWindowControls(), [])
   const colorScheme = useSystemColorScheme()
-  const { repositories, explorer, onOpenFolder } = useEngineExplorer()
+  const { repositories, explorer, onOpenFolder, openPath } = useEngineExplorer()
+  const { projects, engineError } = useEngineProjects()
 
   useEffect(
     () => applyColorScheme(document.documentElement, colorScheme),
@@ -23,7 +25,9 @@ export function App() {
     <WorkbenchPage
       platform={platform}
       windowControls={windowControls}
-      recentProjects={[]}
+      projects={projects}
+      engineError={engineError}
+      onOpenProject={(project) => openPath(project.id)}
       repositories={repositories}
       explorer={explorer}
       onOpenFolder={onOpenFolder}

@@ -1,21 +1,23 @@
 import {
+  Folder,
   FolderGit2,
   FolderOpen,
   GitBranchPlus,
   Plus,
+  TriangleAlert,
   type LucideIcon,
 } from 'lucide-react'
+import { useLayoutEffect, useRef } from 'react'
 import type { Platform } from '@/shared/lib'
 import { LogoMark, Shortcut } from '@/shared/ui'
 
-/** A project that the user opened before. */
-export interface RecentProject {
+/** A folder in the projects root of the engine. */
+export interface WelcomeProject {
+  /** The path of the folder in the engine. */
   id: string
   name: string
-  /** The folder of the project, as the user sees it, for example `~/code/vvorkflow`. */
-  path: string
-  /** The number of worktrees of the repository. */
-  worktrees: number
+  /** True for a git repository, which has its own icon. */
+  git: boolean
 }
 
 interface StartAction {
@@ -27,26 +29,32 @@ interface StartAction {
 
 interface WelcomeProps {
   platform: Platform
-  recentProjects: RecentProject[]
+  projects: WelcomeProject[]
+  /** The message of an engine that did not start. It shows in place of the projects. */
+  engineError?: string
   onNewProject?: () => void
   onOpenFolder?: () => void
   onAddWorktree?: () => void
-  onOpenRecent?: (project: RecentProject) => void
+  onOpenProject?: (project: WelcomeProject) => void
   /** The shortcut of the command palette, such as `mod+shift+p`, for the hint at the bottom. */
   commandPaletteShortcut?: string
 }
 
 /**
- * The landing tab of the editor area: the start actions and the recent projects.
- * It shows only the actions that have a handler.
+ * The landing tab of the editor area: the start actions and the projects of
+ * the projects root. It shows only the actions that have a handler, and no
+ * Projects section when the root has no project. When an update removes the
+ * focused project, the focus moves to the project in its place, or to the tab
+ * when no project is left (WCAG 2.2 SC 2.4.3).
  */
 export function Welcome({
   platform,
-  recentProjects,
+  projects,
+  engineError,
   onNewProject,
   onOpenFolder,
   onAddWorktree,
-  onOpenRecent,
+  onOpenProject,
   commandPaletteShortcut,
 }: WelcomeProps) {
   const actions: StartAction[] = [
@@ -69,9 +77,27 @@ export function Welcome({
     },
   ].filter((action): action is StartAction => Boolean(action))
 
+  const region = useRef<HTMLDivElement>(null)
+  // The id of the focused project, and the ids that the last update showed.
+  const focusedProject = useRef<string | null>(null)
+  const shown = useRef<string[]>([])
+  useLayoutEffect(() => {
+    const before = shown.current
+    shown.current = engineError ? [] : projects.map((project) => project.id)
+    const id = focusedProject.current
+    // Only a focus that the update took away moves.
+    if (id === null || document.activeElement !== document.body) return
+    focusedProject.current = null
+    const rows =
+      region.current?.querySelectorAll<HTMLElement>('[data-project]') ?? []
+    const row = rows[Math.min(before.indexOf(id), rows.length - 1)]
+    ;(row ?? region.current)?.focus()
+  }, [projects, engineError])
+
   return (
     // The scroll area takes the focus, so that the keyboard can scroll it.
     <div
+      ref={region}
       role="region"
       aria-label="Welcome"
       tabIndex={0}
@@ -122,9 +148,9 @@ export function Welcome({
             </section>
           )}
 
-          {recentProjects.length > 0 && (
+          {(projects.length > 0 || engineError) && (
             <section
-              aria-labelledby="welcome-recent"
+              aria-labelledby="welcome-projects"
               className={
                 actions.length > 0
                   ? 'flex flex-col gap-2'
@@ -132,18 +158,49 @@ export function Welcome({
               }
             >
               <h2
-                id="welcome-recent"
+                id="welcome-projects"
                 className="px-2 text-xs font-medium text-muted-foreground"
               >
-                Recent
+                Projects
               </h2>
-              <ul className="flex flex-col">
-                {recentProjects.map((project) => (
-                  <li key={project.id}>
-                    <RecentProjectRow project={project} onOpen={onOpenRecent} />
-                  </li>
-                ))}
-              </ul>
+              {engineError ? (
+                // The message can come after the tab shows, so it is an alert.
+                <p
+                  role="alert"
+                  className="flex items-start gap-2.5 px-2 py-1 text-ui text-foreground"
+                >
+                  <TriangleAlert
+                    className="mt-0.5 size-icon shrink-0 text-destructive"
+                    strokeWidth={1.75}
+                    aria-hidden
+                  />
+                  <span className="min-w-0 wrap-anywhere">{engineError}</span>
+                </p>
+              ) : (
+                <ul className="flex flex-col">
+                  {projects.map((project) => (
+                    <li key={project.id}>
+                      <ProjectRow
+                        project={project}
+                        onOpen={onOpenProject}
+                        onFocus={() => (focusedProject.current = project.id)}
+                        onBlur={(event) => {
+                          // A focus that moves to another element, or a click
+                          // on the page, leaves the projects. A row that goes
+                          // away, or a window that loses the focus, does not.
+                          const row = event.currentTarget
+                          if (event.relatedTarget) focusedProject.current = null
+                          else
+                            requestAnimationFrame(() => {
+                              if (row.isConnected && document.hasFocus())
+                                focusedProject.current = null
+                            })
+                        }}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
             </section>
           )}
         </div>
@@ -159,33 +216,29 @@ export function Welcome({
   )
 }
 
-function RecentProjectRow({
+function ProjectRow({
   project,
   onOpen,
+  onFocus,
+  onBlur,
 }: {
-  project: RecentProject
-  onOpen?: (project: RecentProject) => void
+  project: WelcomeProject
+  onOpen?: (project: WelcomeProject) => void
+  onFocus: () => void
+  onBlur: (event: React.FocusEvent<HTMLButtonElement>) => void
 }) {
+  const Icon = project.git ? FolderGit2 : Folder
   const content = (
     <>
-      <FolderGit2
+      <Icon
         className="size-icon shrink-0 text-subtle-foreground"
         strokeWidth={1.75}
         aria-hidden
       />
-      {/* On a narrow editor area, the path goes under the name. */}
-      <span className="flex min-w-0 flex-1 flex-col @md:flex-row @md:items-baseline @md:gap-2">
-        <span className="shrink-0 text-ui text-foreground">{project.name}</span>
-        <span
-          className="truncate text-xs text-muted-foreground"
-          title={project.path}
-        >
-          {project.path}
-        </span>
+      <span className="min-w-0 flex-1 truncate text-ui text-foreground">
+        {project.name}
       </span>
-      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-        {project.worktrees} {project.worktrees === 1 ? 'worktree' : 'worktrees'}
-      </span>
+      {project.git && <span className="sr-only">, git repository</span>}
     </>
   )
   const className =
@@ -194,7 +247,10 @@ function RecentProjectRow({
   return (
     <button
       type="button"
+      data-project
       onClick={() => onOpen(project)}
+      onFocus={onFocus}
+      onBlur={onBlur}
       className={`${className} outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-ring`}
     >
       {content}
