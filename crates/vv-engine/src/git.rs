@@ -7,15 +7,17 @@ use std::process::Command;
 use vv_protocol::{ChangedPath, EngineError, ErrorCode, GitStatus};
 
 fn git(directory: &Path, arguments: &[&str]) -> Result<Vec<u8>, EngineError> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(directory)
-        .args(arguments)
-        .output()
-        .map_err(|error| EngineError {
-            code: ErrorCode::FailedPrecondition,
-            message: format!("The engine cannot run git: {error}"),
-        })?;
+    run(
+        Command::new("git").arg("-C").arg(directory).args(arguments),
+        arguments,
+    )
+}
+
+fn run(command: &mut Command, arguments: &[&str]) -> Result<Vec<u8>, EngineError> {
+    let output = command.output().map_err(|error| EngineError {
+        code: ErrorCode::FailedPrecondition,
+        message: format!("The engine cannot run git: {error}"),
+    })?;
     if output.status.success() {
         Ok(output.stdout)
     } else {
@@ -30,12 +32,25 @@ fn git(directory: &Path, arguments: &[&str]) -> Result<Vec<u8>, EngineError> {
     }
 }
 
+/// The path in one line of git output, without the newline at its end. A
+/// path can end with a space, so nothing else is cut.
+fn line_path(output: &[u8]) -> PathBuf {
+    let text = String::from_utf8_lossy(output);
+    PathBuf::from(text.strip_suffix('\n').unwrap_or(&text))
+}
+
 /// The root of the worktree that holds `folder`, or None when the folder is
 /// not in a git worktree or git is missing.
 pub fn toplevel(folder: &Path) -> Option<PathBuf> {
     let output = git(folder, &["rev-parse", "--show-toplevel"]).ok()?;
-    let path = PathBuf::from(String::from_utf8_lossy(&output).trim_end());
-    path.canonicalize().ok()
+    line_path(&output).canonicalize().ok()
+}
+
+/// The git directory of a worktree: `.git` of the main worktree, or the
+/// folder of a linked worktree in it.
+pub fn git_dir(worktree: &Path) -> Result<PathBuf, EngineError> {
+    let output = git(worktree, &["rev-parse", "--absolute-git-dir"])?;
+    Ok(line_path(&output))
 }
 
 /// The worktrees of the repository of `top`, the main worktree first, each
@@ -66,17 +81,27 @@ pub fn worktrees(top: &Path) -> Result<Vec<(PathBuf, Option<String>)>, EngineErr
     Ok(list)
 }
 
-/// The changed, untracked, conflicted, and ignored paths of a worktree.
-pub fn status(worktree: &Path) -> Result<Vec<ChangedPath>, EngineError> {
-    let output = git(
-        worktree,
-        &[
-            "status",
-            "--porcelain=v2",
-            "-z",
-            "--untracked-files=normal",
-            "--ignored=matching",
-        ],
+/// The changed, untracked, conflicted, and ignored paths of a worktree. Git
+/// runs with the git directory and the worktree of the opened folder, so it
+/// does not look for a repository on its own.
+pub fn status(git_dir: &Path, worktree: &Path) -> Result<Vec<ChangedPath>, EngineError> {
+    let arguments = [
+        "status",
+        "--porcelain=v2",
+        "-z",
+        "--untracked-files=normal",
+        "--ignored=matching",
+    ];
+    let output = run(
+        Command::new("git")
+            .arg("--git-dir")
+            .arg(git_dir)
+            .arg("--work-tree")
+            .arg(worktree)
+            .arg("-C")
+            .arg(worktree)
+            .args(arguments),
+        &arguments,
     )?;
     let mut list = Vec::new();
     let mut fields = output.split(|byte| *byte == 0);

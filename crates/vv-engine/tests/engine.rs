@@ -198,7 +198,6 @@ fn a_request_cannot_leave_the_open_folders() {
     let main = repository(base.path());
     let outside = base.path().join("secret");
     write(&outside.join("key"), "k\n");
-    std::os::unix::fs::symlink(&outside, main.join("link")).unwrap();
     let engine = Engine::default();
 
     let closed = engine
@@ -219,6 +218,28 @@ fn a_request_cannot_leave_the_open_folders() {
         })
         .unwrap_err();
     assert_eq!(up.code, ErrorCode::InvalidArgument);
+    let status = engine
+        .read_status(ReadStatus {
+            worktree: text(&outside),
+        })
+        .unwrap_err();
+    assert_eq!(status.code, ErrorCode::PermissionDenied);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symbolic_link_cannot_lead_a_request_out_of_the_open_folder() {
+    use std::os::unix::fs::symlink;
+    let base = tempfile::tempdir().unwrap();
+    let main = repository(base.path());
+    let outside = base.path().join("secret");
+    write(&outside.join("key"), "k\n");
+    symlink(&outside, main.join("link")).unwrap();
+    let engine = Engine::default();
+    engine
+        .open_folder(OpenFolder { path: text(&main) })
+        .unwrap();
+
     let linked = engine
         .list_directory(ListDirectory {
             worktree: text(&main),
@@ -226,12 +247,49 @@ fn a_request_cannot_leave_the_open_folders() {
         })
         .unwrap_err();
     assert_eq!(linked.code, ErrorCode::PermissionDenied);
-    let status = engine
-        .read_status(ReadStatus {
-            worktree: text(&outside),
+
+    // The open folder moves away, and a link to another folder takes its
+    // path: a read stays in the folder that the user opened, and git does
+    // not run on the other one.
+    let path = text(&main);
+    std::fs::rename(&main, base.path().join("moved")).unwrap();
+    symlink(&outside, &main).unwrap();
+    let listed = engine
+        .list_directory(ListDirectory {
+            worktree: path.clone(),
+            path: String::new(),
         })
+        .unwrap();
+    assert!(listed.iter().all(|entry| entry.name != "key"));
+    let status = engine
+        .read_status(ReadStatus { worktree: path })
         .unwrap_err();
     assert_eq!(status.code, ErrorCode::PermissionDenied);
+}
+
+#[test]
+fn git_does_not_look_above_an_open_repository() {
+    let base = tempfile::tempdir().unwrap();
+    let parent = repository(base.path());
+    write(&parent.join("parent-change.rs"), "p\n");
+    let nested = parent.join("vendor");
+    std::fs::create_dir(&nested).unwrap();
+    assert!(git(&nested, &["init", "-q"]));
+    let engine = Engine::default();
+    engine
+        .open_folder(OpenFolder {
+            path: text(&nested),
+        })
+        .unwrap();
+
+    // Without its git folder, the nested folder would belong to the parent.
+    std::fs::remove_dir_all(nested.join(".git")).unwrap();
+    let status = engine
+        .read_status(ReadStatus {
+            worktree: text(&nested),
+        })
+        .unwrap_err();
+    assert_eq!(status.code, ErrorCode::FailedPrecondition);
 }
 
 #[test]

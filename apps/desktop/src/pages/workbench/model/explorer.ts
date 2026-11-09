@@ -84,7 +84,8 @@ const importance: GitStatus[] = [
  *
  * @param path The path relative to the worktree; empty for the worktree.
  * @returns For a file, its own status. For a folder, the most important
- * status of the paths in it, without the ignored ones. A path in a folder that
+ * status of the folder itself, such as a changed submodule, and of the paths
+ * in it, without the ignored ones. A path in a folder that
  * git reports as a whole, or that folder itself, has the status of the folder.
  * A path with no change has none.
  */
@@ -108,7 +109,8 @@ export function pathStatus(
     changes
       .filter(
         (change) =>
-          change.path.startsWith(prefix) && change.status !== 'ignored',
+          (change.path === path || change.path.startsWith(prefix)) &&
+          change.status !== 'ignored',
       )
       .map((change) => change.status),
   )

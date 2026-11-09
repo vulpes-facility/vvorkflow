@@ -41,6 +41,14 @@ describe('pathStatus', () => {
     expect(pathStatus(changes, 'scratch/a.md', false)).toBe('untracked')
   })
 
+  it('gives a folder the status that git reports at its own path, as for a submodule', () => {
+    const submodule: ChangedItem[] = [
+      { path: 'vendor/library', status: 'modified' },
+    ]
+    expect(pathStatus(submodule, 'vendor/library', true)).toBe('modified')
+    expect(pathStatus(submodule, 'vendor', true)).toBe('modified')
+  })
+
   it('has no status before the status is read', () => {
     expect(pathStatus(undefined, 'src', true)).toBeUndefined()
   })

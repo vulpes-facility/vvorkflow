@@ -3,7 +3,7 @@
 vvorkflow is a light desktop IDE for directing TUI coding agents across git worktrees, on a Rust engine and Tauri 2.\
 Its owner uses it alone, for now.\
 A main agent in a terminal directs worker agents, such as Codex and Claude Code, that run as their real TUIs.\
-The desktop app has its design tokens, its window shell, the Welcome tab, and the Explorer tree and the terminal tabs on sample data, and no engine yet.
+The desktop app has its design tokens, its window shell, the Welcome tab, the terminal tabs on sample data, and an Explorer that reads real folders and their git status from the local Rust engine.
 
 ## Index
 

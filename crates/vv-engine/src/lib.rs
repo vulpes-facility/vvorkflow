@@ -5,19 +5,34 @@
 
 mod git;
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use cap_std::ambient_authority;
+use cap_std::fs::Dir;
 use vv_protocol::{
     ChangedPath, DirectoryEntry, EngineError, EntryKind, ErrorCode, ListDirectory, OpenFolder,
     ReadStatus, Repository, Worktree,
 };
 
+/// A folder that a request can reach.
+struct Root {
+    path: PathBuf,
+    /// The folder, opened when the user opened it. The engine reads through
+    /// this handle, so a path that changes later, for example to a symbolic
+    /// link, cannot lead a read out of the folder.
+    dir: Dir,
+    /// The git directory of the worktree, as git named it when the folder
+    /// opened, or None for a plain folder. Git runs with it, so git never
+    /// looks for a repository above the folder.
+    git_dir: Option<PathBuf>,
+}
+
 /// The engine of one machine. It keeps the roots that requests can reach.
 #[derive(Default)]
 pub struct Engine {
-    roots: Mutex<BTreeSet<PathBuf>>,
+    roots: Mutex<BTreeMap<PathBuf, Arc<Root>>>,
 }
 
 impl Engine {
@@ -40,11 +55,20 @@ impl Engine {
                 format!("{} is not a folder.", request.path),
             ));
         }
-        let repository = match git::toplevel(&folder) {
+        let (repository, roots) = match git::toplevel(&folder) {
             Some(top) => {
                 let worktrees = git::worktrees(&top)?;
-                Repository {
-                    name: name_of(&worktrees.first().map_or(top.clone(), |main| main.0.clone())),
+                let name = name_of(worktrees.first().map_or(&top, |main| &main.0));
+                let mut roots = Vec::new();
+                for (path, _) in &worktrees {
+                    roots.push(Root {
+                        dir: open_dir(path)?,
+                        git_dir: Some(git::git_dir(path)?),
+                        path: path.clone(),
+                    });
+                }
+                let repository = Repository {
+                    name,
                     git: true,
                     worktrees: worktrees
                         .into_iter()
@@ -54,21 +78,30 @@ impl Engine {
                             branch,
                         })
                         .collect(),
-                }
+                };
+                (repository, roots)
             }
-            None => Repository {
-                name: name_of(&folder),
-                git: false,
-                worktrees: vec![Worktree {
-                    path: display(&folder),
-                    branch: None,
-                    current: true,
-                }],
-            },
+            None => {
+                let root = Root {
+                    dir: open_dir(&folder)?,
+                    git_dir: None,
+                    path: folder.clone(),
+                };
+                let repository = Repository {
+                    name: name_of(&folder),
+                    git: false,
+                    worktrees: vec![Worktree {
+                        path: display(&folder),
+                        branch: None,
+                        current: true,
+                    }],
+                };
+                (repository, vec![root])
+            }
         };
-        let mut roots = self.roots.lock().expect("the roots lock is never poisoned");
-        for worktree in &repository.worktrees {
-            roots.insert(PathBuf::from(&worktree.path));
+        let mut known = self.roots.lock().expect("the roots lock is never poisoned");
+        for root in roots {
+            known.insert(root.path.clone(), Arc::new(root));
         }
         Ok(repository)
     }
@@ -84,20 +117,35 @@ impl Engine {
         &self,
         request: ListDirectory,
     ) -> Result<Vec<DirectoryEntry>, EngineError> {
-        let worktree = self.root(&request.worktree)?;
-        let folder = inside(&worktree, &request.path)?;
-        let entries = std::fs::read_dir(&folder).map_err(|error| io_error(error, &request.path))?;
+        let root = self.root(&request.worktree)?;
+        let relative = plain_relative(&request.path)?;
+        let folder = if relative.as_os_str().is_empty() {
+            root.dir.try_clone()
+        } else {
+            root.dir.open_dir(relative)
+        }
+        .map_err(|error| io_error(error, &request.path))?;
+        let entries = folder
+            .entries()
+            .map_err(|error| io_error(error, &request.path))?;
         let mut list: Vec<DirectoryEntry> = entries
             .filter_map(Result::ok)
             .filter(|entry| entry.file_name() != ".git")
-            .map(|entry| DirectoryEntry {
-                name: entry.file_name().to_string_lossy().into_owned(),
-                // A link to a folder opens as a folder.
-                kind: if entry.path().is_dir() {
-                    EntryKind::Folder
-                } else {
-                    EntryKind::File
-                },
+            .map(|entry| {
+                let name = entry.file_name();
+                // A link to a folder in the root opens as a folder; the handle
+                // does not follow a link out of the root.
+                let folder = folder
+                    .metadata(&name)
+                    .is_ok_and(|metadata| metadata.is_dir());
+                DirectoryEntry {
+                    name: name.to_string_lossy().into_owned(),
+                    kind: if folder {
+                        EntryKind::Folder
+                    } else {
+                        EntryKind::File
+                    },
+                }
             })
             .collect();
         list.sort_by(|a, b| {
@@ -113,18 +161,27 @@ impl Engine {
     /// a large ignored folder.
     ///
     /// Returns no paths for a plain folder. Refuses a worktree that is not
-    /// open (`permissionDenied`), and fails when git fails
-    /// (`failedPrecondition`).
+    /// open, or whose path is no longer the folder that was opened
+    /// (`permissionDenied`), and fails when git fails, for example when the
+    /// git directory is gone (`failedPrecondition`).
     pub fn read_status(&self, request: ReadStatus) -> Result<Vec<ChangedPath>, EngineError> {
-        let worktree = self.root(&request.worktree)?;
-        if git::toplevel(&worktree).is_none() {
+        let root = self.root(&request.worktree)?;
+        let Some(git_dir) = &root.git_dir else {
             return Ok(Vec::new());
+        };
+        // Git takes a path, not the handle: check that the path is still the
+        // opened folder just before git runs.
+        if !same_folder(&root) {
+            return Err(error(
+                ErrorCode::PermissionDenied,
+                format!("{} is no longer the open folder.", root.path.display()),
+            ));
         }
-        git::status(&worktree)
+        git::status(git_dir, &root.path)
     }
 
     /// The opened root with this path.
-    fn root(&self, path: &str) -> Result<PathBuf, EngineError> {
+    fn root(&self, path: &str) -> Result<Arc<Root>, EngineError> {
         let path = absolute(path)?;
         let roots = self.roots.lock().expect("the roots lock is never poisoned");
         roots.get(&path).cloned().ok_or_else(|| {
@@ -134,6 +191,25 @@ impl Engine {
             )
         })
     }
+}
+
+fn open_dir(path: &Path) -> Result<Dir, EngineError> {
+    Dir::open_ambient_dir(path, ambient_authority())
+        .map_err(|error| io_error(error, &path.display().to_string()))
+}
+
+/// Whether the path of a root still leads to the folder of its handle.
+fn same_folder(root: &Root) -> bool {
+    let Ok(handle) = root.dir.try_clone() else {
+        return false;
+    };
+    let (Ok(opened), Ok(now)) = (
+        same_file::Handle::from_file(handle.into_std_file()),
+        same_file::Handle::from_path(&root.path),
+    ) else {
+        return false;
+    };
+    opened == now
 }
 
 fn absolute(path: &str) -> Result<PathBuf, EngineError> {
@@ -148,28 +224,18 @@ fn absolute(path: &str) -> Result<PathBuf, EngineError> {
     }
 }
 
-/// Joins a relative path to a root, and checks that the result stays in it.
-fn inside(root: &Path, relative: &str) -> Result<PathBuf, EngineError> {
-    let relative = Path::new(relative);
-    if relative
+/// A relative path of plain names only: no `..`, no `.`, and no root.
+fn plain_relative(relative: &str) -> Result<&Path, EngineError> {
+    let path = Path::new(relative);
+    if path
         .components()
-        .any(|part| !matches!(part, Component::Normal(_)))
+        .all(|part| matches!(part, Component::Normal(_)))
     {
-        return Err(error(
-            ErrorCode::InvalidArgument,
-            format!("{} is not a plain relative path.", relative.display()),
-        ));
-    }
-    let path = root
-        .join(relative)
-        .canonicalize()
-        .map_err(|error| io_error(error, &relative.display().to_string()))?;
-    if path.starts_with(root) {
         Ok(path)
     } else {
         Err(error(
-            ErrorCode::PermissionDenied,
-            format!("{} leaves the open folder.", relative.display()),
+            ErrorCode::InvalidArgument,
+            format!("{relative} is not a plain relative path."),
         ))
     }
 }
@@ -192,9 +258,10 @@ fn io_error(error: std::io::Error, path: &str) -> EngineError {
         std::io::ErrorKind::NotFound => {
             self::error(ErrorCode::NotFound, format!("{path} does not exist."))
         }
+        // The handle refuses a path that leads out of its folder with this kind.
         std::io::ErrorKind::PermissionDenied => self::error(
             ErrorCode::PermissionDenied,
-            format!("The system does not let the engine read {path}."),
+            format!("The engine cannot read {path} from the open folder."),
         ),
         _ => self::error(ErrorCode::FailedPrecondition, format!("{path}: {error}")),
     }
