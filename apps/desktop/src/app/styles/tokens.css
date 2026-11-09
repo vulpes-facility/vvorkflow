@@ -95,6 +95,8 @@
   --vv-sidebar-w: 300px;
   --vv-sidebar-min-w: 240px;
   --vv-sidebar-max-w: 560px;
+  /* The wide choice of the menu of the side bar header; the narrow choice is the minimum. */
+  --vv-sidebar-wide-w: 420px;
   --vv-editor-min-w: 320px;
   /* At this window width and under, the side bar becomes a drawer. */
   --vv-narrow-max-w: 640px;

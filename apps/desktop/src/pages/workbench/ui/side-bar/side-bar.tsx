@@ -1,5 +1,11 @@
 import type { Platform } from '@/shared/lib'
-import { LogoMark } from '@/shared/ui'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  LogoMark,
+} from '@/shared/ui'
 
 interface SideBarProps {
   platform: Platform
@@ -16,6 +22,12 @@ interface SideBarProps {
    * tree, so that the view has one tab stop.
    */
   contentFocusable?: boolean
+  /**
+   * Sets the width of the side bar from the menu of its header row, the way
+   * to resize it without a drag (WCAG 2.2 SC 2.5.7). Without it, as in the
+   * drawer, the header has no menu.
+   */
+  onWidth?: (width: SideBarWidth) => void
   /** The id of the panel, which the tabs of the activity bar point at. */
   id: string
   title: string
@@ -38,6 +50,7 @@ export function SideBar({
   open,
   withTopStrip = true,
   contentFocusable = true,
+  onWidth,
   id,
   title,
   actions,
@@ -65,12 +78,7 @@ export function SideBar({
         aria-label={title}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="flex h-tab shrink-0 items-center gap-1 pr-2 pl-4">
-          <h2 className="flex-1 truncate text-2xs font-semibold tracking-label text-muted-foreground uppercase">
-            {title}
-          </h2>
-          {actions}
-        </div>
+        <SideBarHeader title={title} actions={actions} onWidth={onWidth} />
         {/* The scroll area takes the focus, so that the keyboard can scroll it. */}
         <div
           tabIndex={contentFocusable ? 0 : undefined}
@@ -82,5 +90,47 @@ export function SideBar({
         </div>
       </section>
     </div>
+  )
+}
+
+/** The widths that the menu of the side bar header offers. */
+export type SideBarWidth = 'narrow' | 'default' | 'wide'
+
+const widths: [SideBarWidth, string][] = [
+  ['narrow', 'Narrow'],
+  ['default', 'Default width'],
+  ['wide', 'Wide'],
+]
+
+function SideBarHeader({
+  title,
+  actions,
+  onWidth,
+}: {
+  title: string
+  actions?: React.ReactNode
+  onWidth?: (width: SideBarWidth) => void
+}) {
+  const header = (
+    <>
+      <h2 className="flex-1 truncate text-2xs font-semibold tracking-label text-muted-foreground uppercase">
+        {title}
+      </h2>
+      {actions}
+    </>
+  )
+  const className = 'flex h-tab shrink-0 items-center gap-1 pr-2 pl-4'
+  if (!onWidth) return <div className={className}>{header}</div>
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger className={className}>{header}</ContextMenuTrigger>
+      <ContextMenuContent>
+        {widths.map(([width, label]) => (
+          <ContextMenuItem key={width} onClick={() => onWidth(width)}>
+            {label}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

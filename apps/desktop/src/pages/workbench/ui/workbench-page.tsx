@@ -41,6 +41,7 @@ import { useEditorShortcuts } from '../model/use-editor-shortcuts'
 import { useFocusRescue } from '../model/use-focus-rescue'
 import { useNarrowWindow } from '../model/use-narrow-window'
 import { useRegionShortcuts } from '../model/use-region-shortcuts'
+import { useTabMenuKeys } from '../model/use-tab-menu-keys'
 import { useViewShortcuts } from '../model/use-view-shortcuts'
 import { views } from '../model/views'
 
@@ -133,6 +134,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const editor = useRef<DockviewApi | undefined>(undefined)
   const getEditor = useCallback(() => editor.current, [])
   useEditorShortcuts(platform, getEditor)
+  useTabMenuKeys()
   useRegionShortcuts(root, getEditor)
   // Each session opens as a tab once; the last one is the active tab.
   const terminals = props.terminals
@@ -206,6 +208,15 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       id={sideBarId}
       title={activeView.label}
       contentFocusable={contentFocusable}
+      onWidth={(width) =>
+        sideBarPanel.current?.resize(
+          {
+            narrow: readPixelToken('--vv-sidebar-min-w', 240),
+            default: readPixelToken('--vv-sidebar-w', 300),
+            wide: readPixelToken('--vv-sidebar-wide-w', 420),
+          }[width],
+        )
+      }
     >
       {sideBarContent}
     </SideBar>
