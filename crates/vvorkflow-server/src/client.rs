@@ -14,8 +14,8 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::Message;
 use vvorkflow_protocol::{
-    ClientMessage, EngineError, ErrorCode, Hello, PROTOCOL_VERSION, Request, ServerMessage,
-    Shutdown,
+    ClientMessage, EngineError, ErrorCode, Hello, MAX_OPEN_REQUESTS, PROTOCOL_VERSION, Request,
+    ServerMessage, Shutdown,
 };
 
 use crate::Endpoint;
@@ -42,6 +42,9 @@ pub struct EngineClient {
     endpoint: Endpoint,
     program: Box<dyn Fn() -> Command + Send + Sync>,
     connection: tokio::sync::Mutex<Option<Connection>>,
+    /// The places of the open requests: the engine closes a connection with
+    /// more than `MAX_OPEN_REQUESTS`, so a request waits here for a place.
+    open: tokio::sync::Semaphore,
 }
 
 /// One open connection: the queue of its writer, and the requests that wait
@@ -74,6 +77,7 @@ impl EngineClient {
             endpoint,
             program: Box::new(program),
             connection: tokio::sync::Mutex::new(None),
+            open: tokio::sync::Semaphore::new(MAX_OPEN_REQUESTS),
         }
     }
 
@@ -84,6 +88,11 @@ impl EngineClient {
     /// before it answers. A request that the engine did not answer is not
     /// sent again.
     pub async fn request(&self, request: Request) -> Result<Value, EngineError> {
+        let _place = self
+            .open
+            .acquire()
+            .await
+            .map_err(|_| refused("The client is closed.".to_owned()))?;
         let stops = matches!(request, Request::Shutdown(_));
         let (answer, wait) = oneshot::channel();
         let (outbox, pending, id) = {
