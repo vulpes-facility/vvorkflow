@@ -3,11 +3,11 @@ import { jsonSchemaToZod } from 'json-schema-to-zod'
 import { format, resolveConfig } from 'prettier'
 import { expect, it } from 'vitest'
 
-// The generated client MUST match the schema of `vv-protocol`, which a Rust
+// The generated client MUST match the schema of `vvorkflow-protocol`, which a Rust
 // test keeps current. `pnpm generate:protocol` writes the client again.
 it('the generated protocol client is current', async () => {
   const schemaPath = new URL(
-    '../../../crates/vv-protocol/schema/protocol.schema.json',
+    '../../../crates/vvorkflow-protocol/schema/protocol.schema.json',
     import.meta.url,
   )
   const clientPath = new URL(

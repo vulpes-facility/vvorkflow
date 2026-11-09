@@ -3,8 +3,8 @@
 use std::path::Path;
 use std::process::Command;
 
-use vv_engine::Engine;
-use vv_protocol::{
+use vvorkflow_engine::Engine;
+use vvorkflow_protocol::{
     ChangedPath, DirectoryEntry, EntryKind, ErrorCode, GitStatus, ListDirectory, OpenFolder,
     ReadStatus,
 };

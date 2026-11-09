@@ -23,8 +23,8 @@ The desktop app has its design tokens, its window shell, the Welcome tab, the te
 - `apps/desktop/stories/` - The Storybook stories of the screens and the tokens, which the screen capture uses.
 - `apps/desktop/fixtures/` - The sample data of the stories, which the code in `src/` never imports.
 - `apps/desktop/src/shared/api/engine.ts` - The client of the engine: each request through the Tauri IPC, with its answer parsed by the generated protocol.
-- `crates/vv-protocol/` - The protocol of the engine, as serde types, and its JSON Schema in `schema/`, the source of the TypeScript client.
-- `crates/vv-engine/` - The engine: the folders, the worktrees, and the git status, inside the roots that the user opened.
+- `crates/vvorkflow-protocol/` - The protocol of the engine, as serde types, and its JSON Schema in `schema/`, the source of the TypeScript client.
+- `crates/vvorkflow-engine/` - The engine: the folders, the worktrees, and the git status, inside the roots that the user opened.
 - `package.json` - The root scripts that run each task with Turborepo, and the pinned versions of pnpm and Node.js.
 - `pnpm-workspace.yaml` - The workspace packages, and the packages that may run install scripts.
 - `turbo.json` - The root tasks `build`, `dev`, `lint`, `check-types`, `test`, and `format`, and the root files that change every task.
