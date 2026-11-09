@@ -268,15 +268,19 @@ test('a view shortcut moves the focus from the tree into the new view', async ({
   ).toBeFocused()
 })
 
+/** A change of the repositories that an update from the engine could make. */
+type RepositoriesChange =
+  { remove: string[] } | { clear: true } | { restore: true }
+
 /**
- * Removes entries from the repositories of the Explorer story, as an update
- * from the engine would. It goes through the args store and the channel of
- * Storybook, so the tree gets new data and keeps its state.
+ * Changes the repositories of the Explorer story. It goes through the args
+ * store and the channel of Storybook, so the page gets new data and keeps its
+ * state. A removal and a restore start from the repositories of the story.
  */
-async function removeEntries(page: Page, ids: string[]) {
+async function changeRepositories(page: Page, change: RepositoriesChange) {
   // Storybook knows the args of the story only after it renders.
-  await page.getByRole('tree', { name: 'Explorer' }).waitFor()
-  await page.evaluate((removed) => {
+  await page.getByRole('tabpanel', { name: 'Explorer' }).waitFor()
+  await page.evaluate((change) => {
     interface Entry {
       id: string
       children?: Entry[]
@@ -285,36 +289,40 @@ async function removeEntries(page: Page, ids: string[]) {
       worktrees: { children: Entry[] }[]
     }
     const storyId = 'screens-workbench--explorer'
-    const preview = (
-      window as unknown as {
-        __STORYBOOK_PREVIEW__: {
-          storyStoreValue: {
-            args: { get: (id: string) => { repositories: Group[] } }
-          }
-          channel: { emit: (event: string, data: unknown) => void }
+    const page = window as unknown as {
+      __STORYBOOK_PREVIEW__: {
+        storyStoreValue: {
+          args: { get: (id: string) => { repositories: Group[] } }
         }
+        channel: { emit: (event: string, data: unknown) => void }
       }
-    ).__STORYBOOK_PREVIEW__
+      storyRepositories?: Group[]
+    }
+    const preview = page.__STORYBOOK_PREVIEW__
+    const original = (page.storyRepositories ??=
+      preview.storyStoreValue.args.get(storyId).repositories)
+    const removed = 'remove' in change ? change.remove : []
     const keep = (entries: Entry[]): Entry[] =>
       entries
         .filter((entry) => !removed.includes(entry.id))
         .map((entry) =>
           entry.children ? { ...entry, children: keep(entry.children) } : entry,
         )
-    const { repositories } = preview.storyStoreValue.args.get(storyId)
+    const repositories =
+      'clear' in change
+        ? []
+        : original.map((group) => ({
+            ...group,
+            worktrees: group.worktrees.map((worktree) => ({
+              ...worktree,
+              children: keep(worktree.children),
+            })),
+          }))
     preview.channel.emit('updateStoryArgs', {
       storyId,
-      updatedArgs: {
-        repositories: repositories.map((group) => ({
-          ...group,
-          worktrees: group.worktrees.map((worktree) => ({
-            ...worktree,
-            children: keep(worktree.children),
-          })),
-        })),
-      },
+      updatedArgs: { repositories },
     })
-  }, ids)
+  }, change)
 }
 
 test('when an update removes the focused row, the focus moves to the next row', async ({
@@ -325,7 +333,7 @@ test('when an update removes the focused row, the focus moves to the next row', 
   await scratch.click()
   await expect(scratch).toBeFocused()
 
-  await removeEntries(page, ['tt/scratch.md'])
+  await changeRepositories(page, { remove: ['tt/scratch.md'] })
   await expect(scratch).toBeHidden()
   const readme = page.getByRole('treeitem', { name: 'README.md' }).first()
   await expect(readme).toBeFocused()
@@ -341,7 +349,7 @@ test('an update does not take the focus when the user works elsewhere', async ({
   const welcome = page.getByRole('tab', { name: 'Welcome' })
   await welcome.focus()
 
-  await removeEntries(page, ['tt/scratch.md'])
+  await changeRepositories(page, { remove: ['tt/scratch.md'] })
   await expect(
     page.getByRole('treeitem', { name: /^scratch\.md/ }),
   ).toBeHidden()
@@ -350,11 +358,49 @@ test('an update does not take the focus when the user works elsewhere', async ({
 
 test('an empty folder has no expanded state', async ({ page }) => {
   await page.goto(explorerStory)
-  await removeEntries(page, ['tt/dist/index.js'])
+  await changeRepositories(page, { remove: ['tt/dist/index.js'] })
   const dist = page.getByRole('treeitem', { name: /^dist/ })
   await expect(dist).not.toHaveAttribute('aria-expanded')
   await dist.focus()
   await page.keyboard.press('ArrowRight')
   await expect(dist).toBeFocused()
   await expect(dist).not.toHaveAttribute('aria-expanded')
+})
+
+test('when the tree goes away or comes back, the focus stays in the side bar', async ({
+  page,
+}) => {
+  await page.goto(explorerStory)
+  await page.getByRole('treeitem', { name: /^scratch\.md/ }).click()
+
+  // The last repository closes: the empty view takes the focus.
+  await changeRepositories(page, { clear: true })
+  const content = page.getByRole('region', { name: 'Explorer content' })
+  await expect(content).toBeFocused()
+
+  // A repository opens while the focus is on the button of the empty view.
+  const openFolder = page
+    .getByRole('tabpanel', { name: 'Explorer' })
+    .getByRole('button', { name: 'Open folder…' })
+  await openFolder.focus()
+  await changeRepositories(page, { restore: true })
+  await expect(openFolder).toBeHidden()
+  await expect(page.locator('[role="treeitem"][tabindex="0"]')).toBeFocused()
+})
+
+test('when the tree goes away while the user works elsewhere, the focus stays there', async ({
+  page,
+}) => {
+  await page.goto(explorerStory)
+  await page.getByRole('treeitem', { name: /^scratch\.md/ }).click()
+  const welcome = page.getByRole('tab', { name: 'Welcome' })
+  await welcome.focus()
+
+  await changeRepositories(page, { clear: true })
+  await expect(page.getByRole('tree')).toBeHidden()
+  await expect(welcome).toBeFocused()
+
+  await changeRepositories(page, { restore: true })
+  await expect(page.getByRole('tree')).toBeVisible()
+  await expect(welcome).toBeFocused()
 })

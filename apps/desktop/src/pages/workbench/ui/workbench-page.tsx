@@ -123,7 +123,6 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [drawer, setSideBarOpen])
-  useFocusRescue(root, sideBarOpen, drawer, view)
 
   const editor = useRef<DockviewApi | undefined>(undefined)
   const getEditor = useCallback(() => editor.current, [])
@@ -142,6 +141,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const hasTree = treeNodes.length > 0
   // A tree takes the focus itself, so its scroll area is not a second tab stop.
   const contentFocusable = !(view === 'explorer' && hasTree)
+  useFocusRescue(root, { sideBarOpen, drawer, view, contentFocusable })
   const sideBarContent = (
     <>
       {view === 'explorer' &&
