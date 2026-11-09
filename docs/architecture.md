@@ -55,7 +55,7 @@ The receiver checks each message against the schema, at run time.
    A request before `hello` gets `failedPrecondition`, and the connection stays open.\
    The engine accepts `hello` again on the same connection.
 4. The protocol version changes at each change that an older client cannot read.
-5. `shutdown` stops the engine process: the engine answers `{}`, closes the connection, and stops.\
+5. `shutdown` stops the engine process: the engine stops to listen, answers `{}`, closes the connection, and stops.\
    It is valid before `hello`, and its shape never changes, so that each app can stop an engine of an older version.
 6. A message that is not a request with an `id` closes the connection.\
    A request with an `id` and a method or params that the engine does not know gets `invalidArgument`.

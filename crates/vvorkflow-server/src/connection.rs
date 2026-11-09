@@ -7,7 +7,7 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{Notify, Semaphore, mpsc};
+use tokio::sync::{Semaphore, mpsc};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::protocol::frame::CloseFrame;
@@ -17,7 +17,7 @@ use vvorkflow_protocol::{
     ClientMessage, Done, EngineError, ErrorCode, Request, Response, ServerMessage,
 };
 
-use crate::{Client, MAX_MESSAGE};
+use crate::{Client, MAX_MESSAGE, Stop};
 
 /// The requests of one connection that run at the same time. A client that
 /// sends more waits, so that it cannot fill the memory of the engine.
@@ -37,7 +37,7 @@ pub(crate) async fn serve<S>(
     engine: Arc<Engine>,
     workers: Arc<Semaphore>,
     hello: Duration,
-    stop: Arc<Notify>,
+    stop: Arc<Stop>,
     _client: Client,
 ) where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -124,6 +124,7 @@ pub(crate) async fn serve<S>(
                 }
             },
             Request::Shutdown(_) => {
+                stop.begin().await;
                 answer(&send, id, Ok(Response::Done(Done {}))).await;
                 close(&send, CloseCode::Away, "The engine stops.").await;
                 stopping = true;
@@ -166,7 +167,7 @@ pub(crate) async fn serve<S>(
     drop(send);
     let _ = writer.await;
     if stopping {
-        stop.notify_one();
+        stop.finish();
     }
 }
 

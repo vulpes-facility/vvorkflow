@@ -57,20 +57,23 @@ pub async fn serve(endpoint: &Endpoint, engine: Arc<Engine>, limits: Limits) -> 
     // The lock stays held until this function returns, after the listener
     // removes the socket.
     let _lock = endpoint.lock()?;
-    let mut listener = endpoint.bind().map_err(|error| {
+    let listener = endpoint.bind().map_err(|error| {
         format!(
             "The engine cannot listen in {}: {error}.",
             endpoint.folder().display()
         )
     })?;
-    let stop = Arc::new(Notify::new());
+    // The listener goes away when a client sends `shutdown`, so that no new
+    // client reaches an engine that stops.
+    let mut listener = Some(listener);
+    let stop = Arc::new(Stop::default());
     let workers = Arc::new(Semaphore::new(WORKERS));
     let (clients, mut count) = watch::channel(0_usize);
     let clients = Arc::new(clients);
     loop {
         let alone = *count.borrow_and_update() == 0;
         tokio::select! {
-            accepted = listener.accept() => match accepted {
+            accepted = accept(&mut listener) => match accepted {
                 Ok(stream) if *clients.borrow() < limits.clients => {
                     let client = Client::join(&clients);
                     tokio::spawn(connection::serve(
@@ -90,9 +93,43 @@ pub async fn serve(endpoint: &Endpoint, engine: Arc<Engine>, limits: Limits) -> 
                 Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
             },
             _ = count.changed() => {}
-            () = stop.notified() => return Ok(()),
+            () = stop.closing.notified() => {
+                listener = None;
+                stop.closed.notify_one();
+            }
+            () = stop.done.notified() => return Ok(()),
             () = tokio::time::sleep(limits.idle), if alone => return Ok(()),
         }
+    }
+}
+
+/// The stop of the engine after `shutdown`: first it stops to listen, then
+/// it answers, and after the answer is written, it stops.
+#[derive(Default)]
+pub(crate) struct Stop {
+    closing: Notify,
+    closed: Notify,
+    done: Notify,
+}
+
+impl Stop {
+    /// Returns when the engine no longer listens, so that no new client
+    /// reaches an engine that stops.
+    pub(crate) async fn begin(&self) {
+        self.closing.notify_one();
+        self.closed.notified().await;
+    }
+
+    pub(crate) fn finish(&self) {
+        self.done.notify_one();
+    }
+}
+
+/// The next connection, or none while the engine does not listen.
+async fn accept(listener: &mut Option<Listener>) -> std::io::Result<ServerStream> {
+    match listener {
+        Some(listener) => listener.accept().await,
+        None => std::future::pending().await,
     }
 }
 

@@ -163,6 +163,25 @@ async fn a_message_without_an_id_closes_the_connection() {
 }
 
 #[tokio::test]
+async fn after_the_answer_to_shutdown_no_client_reaches_the_engine() {
+    let place = place();
+    let server = start(&place, limits());
+    let mut socket = connect(&place.endpoint).await;
+
+    send(
+        &mut socket,
+        json!({"id": 1, "method": "shutdown", "params": {}}),
+    )
+    .await;
+    assert_eq!(
+        receive(&mut socket).await.unwrap(),
+        json!({"id": 1, "result": {}})
+    );
+    assert!(place.endpoint.connect().await.is_err());
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
 async fn shutdown_works_before_hello() {
     let place = place();
     let server = start(&place, limits());
