@@ -58,8 +58,10 @@ for (const id of screens) {
     }
 
     // WCAG 2.2 Level A and AA rules, as axe-core implements them.
+    // An open tooltip is in a portal outside the root of the story.
     const results = await new AxeBuilder({ page })
       .include('#storybook-root')
+      .include('[data-slot="tooltip-content"]')
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze()
     expect(

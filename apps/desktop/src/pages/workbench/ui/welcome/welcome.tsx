@@ -26,6 +26,9 @@ export interface WelcomeProject {
   git: boolean
 }
 
+/** The id of the error icon of the Projects section, among the project ids. */
+const ERROR_MARK = '\0error'
+
 interface StartAction {
   label: string
   icon: LucideIcon
@@ -51,7 +54,8 @@ interface WelcomeProps {
  * the projects root. It shows only the actions that have a handler, and no
  * Projects section when the root has no project. When an update removes the
  * focused project, the focus moves to the project in its place, or to the tab
- * when no project is left (WCAG 2.2 SC 2.4.3).
+ * when no project is left; when it removes the focused error icon, the focus
+ * moves to the first project, or to the tab (WCAG 2.2 SC 2.4.3).
  */
 export function Welcome({
   platform,
@@ -84,7 +88,8 @@ export function Welcome({
   ].filter((action): action is StartAction => Boolean(action))
 
   const region = useRef<HTMLDivElement>(null)
-  // The id of the focused project, and the ids that the last update showed.
+  // The id of the focused project or error icon, and the ids that the last
+  // update showed.
   const focusedProject = useRef<string | null>(null)
   const shown = useRef<string[]>([])
   useLayoutEffect(() => {
@@ -96,9 +101,23 @@ export function Welcome({
     focusedProject.current = null
     const rows =
       region.current?.querySelectorAll<HTMLElement>('[data-project]') ?? []
-    const row = rows[Math.min(before.indexOf(id), rows.length - 1)]
+    const index = id === ERROR_MARK ? 0 : before.indexOf(id)
+    const row = rows[Math.min(index, rows.length - 1)]
     ;(row ?? region.current)?.focus()
   }, [projects, engineError])
+
+  // A focus that moves to another element, or a click on the page, leaves the
+  // Projects section. A control that goes away, or a window that loses the
+  // focus, does not.
+  function leave(event: React.FocusEvent<HTMLElement>) {
+    const control = event.currentTarget
+    if (event.relatedTarget) focusedProject.current = null
+    else
+      requestAnimationFrame(() => {
+        if (control.isConnected && document.hasFocus())
+          focusedProject.current = null
+      })
+  }
 
   return (
     // The scroll area takes the focus, so that the keyboard can scroll it.
@@ -170,7 +189,13 @@ export function Welcome({
                 >
                   Projects
                 </h2>
-                {engineError && <EngineErrorMark message={engineError} />}
+                {engineError && (
+                  <EngineErrorMark
+                    message={engineError}
+                    onFocus={() => (focusedProject.current = ERROR_MARK)}
+                    onBlur={leave}
+                  />
+                )}
               </div>
               {engineError ? null : (
                 <ul className="flex flex-col">
@@ -180,18 +205,7 @@ export function Welcome({
                         project={project}
                         onOpen={onOpenProject}
                         onFocus={() => (focusedProject.current = project.id)}
-                        onBlur={(event) => {
-                          // A focus that moves to another element, or a click
-                          // on the page, leaves the projects. A row that goes
-                          // away, or a window that loses the focus, does not.
-                          const row = event.currentTarget
-                          if (event.relatedTarget) focusedProject.current = null
-                          else
-                            requestAnimationFrame(() => {
-                              if (row.isConnected && document.hasFocus())
-                                focusedProject.current = null
-                            })
-                        }}
+                        onBlur={leave}
                       />
                     </li>
                   ))}
@@ -221,7 +235,7 @@ function ProjectRow({
   project: WelcomeProject
   onOpen?: (project: WelcomeProject) => void
   onFocus: () => void
-  onBlur: (event: React.FocusEvent<HTMLButtonElement>) => void
+  onBlur: (event: React.FocusEvent<HTMLElement>) => void
 }) {
   const Icon = project.git ? FolderGit2 : Folder
   const content = (
@@ -260,7 +274,15 @@ function ProjectRow({
  * screen. The message is also an alert for assistive technology, because it
  * can come after the tab shows (WCAG 2.2 SC 4.1.3).
  */
-function EngineErrorMark({ message }: { message: string }) {
+function EngineErrorMark({
+  message,
+  onFocus,
+  onBlur,
+}: {
+  message: string
+  onFocus: () => void
+  onBlur: (event: React.FocusEvent<HTMLElement>) => void
+}) {
   return (
     <>
       <Tooltip>
@@ -269,6 +291,8 @@ function EngineErrorMark({ message }: { message: string }) {
             <button
               type="button"
               aria-label="Engine error"
+              onFocus={onFocus}
+              onBlur={onBlur}
               className="flex size-6 items-center justify-center rounded-md text-destructive outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-ring"
             />
           }
