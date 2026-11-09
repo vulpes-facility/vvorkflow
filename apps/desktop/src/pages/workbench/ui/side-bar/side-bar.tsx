@@ -5,6 +5,11 @@ interface SideBarProps {
   platform: Platform
   /** A closed side bar takes no width and renders nothing, so keyboard and assistive technology skip it. */
   open: boolean
+  /**
+   * Whether the side bar has its own top strip. A drawer under the header row
+   * has none, because the header row stays visible above it.
+   */
+  withTopStrip?: boolean
   /** The id of the panel, which the tabs of the activity bar point at. */
   id: string
   title: string
@@ -25,6 +30,7 @@ interface SideBarProps {
 export function SideBar({
   platform,
   open,
+  withTopStrip = true,
   id,
   title,
   actions,
@@ -32,14 +38,16 @@ export function SideBar({
 }: SideBarProps) {
   return (
     <div hidden={!open} className="flex h-full min-w-0 flex-col bg-sidebar">
-      <div
-        data-tauri-drag-region
-        className="flex h-titlebar shrink-0 items-center border-b border-hairline pl-[calc(var(--vv-traffic-lights-w)-var(--vv-activitybar-w))]"
-      >
-        {platform === 'macos' && (
-          <LogoMark className="pointer-events-none size-5 text-foreground" />
-        )}
-      </div>
+      {withTopStrip && (
+        <div
+          data-tauri-drag-region
+          className="flex h-titlebar shrink-0 items-center border-b border-hairline pl-[calc(var(--vv-traffic-lights-w)-var(--vv-activitybar-w))]"
+        >
+          {platform === 'macos' && (
+            <LogoMark className="pointer-events-none size-5 text-foreground" />
+          )}
+        </div>
+      )}
       <section
         id={id}
         role="tabpanel"

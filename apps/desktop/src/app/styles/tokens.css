@@ -83,6 +83,10 @@
   --vv-sidebar-w: 300px;
   --vv-sidebar-min-w: 240px;
   --vv-sidebar-max-w: 560px;
+  --vv-editor-min-w: 320px;
+  --vv-hairline-w: 1px;
+  --vv-radius-none: 0px;
+  --vv-space-none: 0px;
   --vv-icon-sm: 14px;
   --vv-icon: 16px;
   --vv-icon-lg: 20px;

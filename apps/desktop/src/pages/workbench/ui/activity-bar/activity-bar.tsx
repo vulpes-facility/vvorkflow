@@ -61,8 +61,7 @@ export function ActivityBar({
               : undefined
     if (next === undefined) return
     event.preventDefault()
-    if (next === index) return
-    tabs.current[next]?.focus()
+    if (next !== index) tabs.current[next]?.focus()
     onNavigate(activities[next].id)
   }
 

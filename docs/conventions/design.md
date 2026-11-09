@@ -39,7 +39,10 @@ The app MUST conform to WCAG 2.2 Level AA.
 7. A control that is inside a tab or a row, such as the close icon of a tab, is a pointer target only.\
    Give its action a keyboard shortcut or a menu item, so that interactive controls do not nest.
 8. The window MUST reflow at 320 CSS pixels wide, as at 400 % zoom, with no horizontal scroll.\
-   At 640 px and less the side bar closes by itself, and the user opens it again with the activity bar or `mod+B`.\
+   At 640 px and less the side bar closes by itself.\
+   There the activity bar and `mod+B` open it as a drawer under the header row and over the editor area.\
+   The editor area and the status bar are inert until Escape or the activity bar closes the drawer, and the header row with the window buttons stays usable.\
+   In a wider window the side bar cannot make the editor area narrower than `--vv-editor-min-w`.\
    The Welcome tab lays out by the width of the editor area, and the status bar items wrap to more rows.\
    The editor content and the terminal are two-dimensional content, which the criterion leaves out.
 9. Respect `prefers-reduced-motion`.\

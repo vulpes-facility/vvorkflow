@@ -41,21 +41,21 @@
   --dv-context-menu-background-color: var(--popover);
   --dv-context-menu-color: var(--popover-foreground);
   --dv-floating-box-shadow: var(--shadow-overlay);
-  --dv-floating-border: 1px solid var(--border);
+  --dv-floating-border: var(--vv-hairline-w) solid var(--border);
 
-  --dv-border-radius: 0px;
-  --dv-tab-border-radius: 0px;
+  --dv-border-radius: var(--vv-radius-none);
+  --dv-tab-border-radius: var(--vv-radius-none);
   --dv-tab-margin: 0;
-  --dv-spacing-padding: 0px;
+  --dv-spacing-padding: var(--vv-space-none);
 }
 
 /* A hairline under the tab row, which the active tab covers. */
 .dockview-theme-vv .dv-tabs-and-actions-container {
-  box-shadow: inset 0 -1px 0 var(--hairline);
+  box-shadow: inset 0 calc(-1 * var(--vv-hairline-w)) 0 var(--hairline);
 }
 
 .dockview-theme-vv .dv-tab {
-  border-right: 1px solid var(--hairline);
+  border-right: var(--vv-hairline-w) solid var(--hairline);
   padding: 0;
 }
 
@@ -65,7 +65,7 @@
 
 /* Only the active tab of the active group shows the accent line. */
 .dockview-theme-vv .dv-active-group .dv-tab.dv-active-tab {
-  box-shadow: inset 0 1px 0 var(--indicator);
+  box-shadow: inset 0 var(--vv-hairline-w) 0 var(--indicator);
 }
 
 .dockview-theme-vv .dv-tab:focus-visible::after,

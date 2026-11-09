@@ -81,21 +81,41 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const setSideBarOpen = useLayout((state) => state.setSideBarOpen)
   const toggleSideBar = useLayout((state) => state.toggleSideBar)
   useViewShortcuts(platform, showView, toggleSideBar)
-  useNarrowWindow(setSideBarOpen)
+  const narrow = useNarrowWindow(setSideBarOpen)
   useActionShortcuts(platform, {
     onNewProject: props.onNewProject,
     onOpenFolder: props.onOpenFolder,
     onOpenSettings,
   })
 
+  // In a wide window the side bar is a panel next to the editor area. In a
+  // narrow window it is a drawer over the editor area, which is then inert.
+  const docked = sideBarOpen && !narrow
+  const drawer = sideBarOpen && narrow
+
   // The panel follows the layout state; a drag to the collapsed size updates the state.
   const sideBarPanel = usePanelRef()
   useEffect(() => {
     const panel = sideBarPanel.current
     if (!panel) return
-    if (sideBarOpen && panel.isCollapsed()) panel.expand()
-    if (!sideBarOpen && !panel.isCollapsed()) panel.collapse()
-  }, [sideBarOpen, sideBarPanel])
+    if (docked && panel.isCollapsed()) panel.expand()
+    if (!docked && !panel.isCollapsed()) panel.collapse()
+  }, [docked, sideBarPanel])
+
+  // Escape closes the drawer and gives the focus back to the activity bar.
+  const root = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!drawer) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      setSideBarOpen(false)
+      root.current
+        ?.querySelector<HTMLElement>('nav [role="tab"][tabindex="0"]')
+        ?.focus()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [drawer, setSideBarOpen])
 
   const editor = useRef<DockviewApi | undefined>(undefined)
   const getEditor = useCallback(() => editor.current, [])
@@ -107,11 +127,67 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
 
   const activeView =
     views.find((candidate) => candidate.id === view) ?? views[0]
+  const sideBarContent = (
+    <>
+      {view === 'explorer' &&
+        (explorer ?? (
+          <EmptyState
+            icon={FolderOpen}
+            title="No project open"
+            description="Open a folder to see its worktrees and files."
+          >
+            {onOpenFolder && (
+              <Button size="sm" onClick={onOpenFolder}>
+                Open folder…
+              </Button>
+            )}
+          </EmptyState>
+        ))}
+      {view === 'search' && (
+        <EmptyState
+          icon={Search}
+          title="Nothing to search"
+          description="Open a project to search its files."
+        />
+      )}
+      {view === 'graphs' && (
+        <EmptyState
+          icon={Workflow}
+          title="No agent graphs"
+          description="Open a project to see its agent graphs."
+        />
+      )}
+    </>
+  )
+  const sideBar = (
+    <SideBar
+      platform={platform}
+      open={sideBarOpen}
+      id={sideBarId}
+      title={activeView.label}
+    >
+      {sideBarContent}
+    </SideBar>
+  )
+
+  const sideBarDrawer = drawer && (
+    <SideBar
+      platform={platform}
+      open
+      withTopStrip={false}
+      id={sideBarId}
+      title={activeView.label}
+    >
+      {sideBarContent}
+    </SideBar>
+  )
+
   return (
     <PageProps.Provider value={props}>
       <TooltipProvider delay={600}>
         <div
-          className="flex h-full bg-chrome text-foreground"
+          ref={root}
+          className="relative flex h-full bg-chrome text-foreground"
           data-platform={platform}
         >
           <ActivityBar
@@ -134,70 +210,59 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
               )
             }
           />
-          <ResizablePanelGroup
-            orientation="horizontal"
-            className="min-w-0 flex-1"
-          >
-            <ResizablePanel
-              panelRef={sideBarPanel}
-              collapsible
-              collapsedSize={0}
-              onResize={(size) => setSideBarOpen(size.inPixels > 0)}
-              defaultSize={readPixelToken('--vv-sidebar-w', 300)}
-              minSize={readPixelToken('--vv-sidebar-min-w', 240)}
-              maxSize={readPixelToken('--vv-sidebar-max-w', 560)}
+          {drawer && (
+            // The drawer starts under the header row, so that the window buttons stay usable.
+            <div className="absolute top-titlebar bottom-0 left-(--vv-activitybar-w) z-30 w-[min(var(--vv-sidebar-w),calc(100%-var(--vv-activitybar-w)))] border-r border-hairline shadow-overlay">
+              {sideBarDrawer}
+            </div>
+          )}
+          <div className="flex min-w-0 flex-1">
+            <ResizablePanelGroup
+              orientation="horizontal"
+              className="min-w-0 flex-1"
             >
-              <SideBar
-                platform={platform}
-                open={sideBarOpen}
-                id={sideBarId}
-                title={activeView.label}
+              <ResizablePanel
+                panelRef={sideBarPanel}
+                collapsible
+                collapsedSize={0}
+                onResize={(size) => {
+                  // In a narrow window the panel stays collapsed under the drawer.
+                  if (!narrow) setSideBarOpen(size.inPixels > 0)
+                }}
+                defaultSize={readPixelToken('--vv-sidebar-w', 300)}
+                minSize={readPixelToken('--vv-sidebar-min-w', 240)}
+                maxSize={readPixelToken('--vv-sidebar-max-w', 560)}
               >
-                {view === 'explorer' &&
-                  (explorer ?? (
-                    <EmptyState
-                      icon={FolderOpen}
-                      title="No project open"
-                      description="Open a folder to see its worktrees and files."
-                    >
-                      {onOpenFolder && (
-                        <Button size="sm" onClick={onOpenFolder}>
-                          Open folder…
-                        </Button>
-                      )}
-                    </EmptyState>
-                  ))}
-                {view === 'search' && (
-                  <EmptyState
-                    icon={Search}
-                    title="Nothing to search"
-                    description="Open a project to search its files."
-                  />
-                )}
-                {view === 'graphs' && (
-                  <EmptyState
-                    icon={Workflow}
-                    title="No agent graphs"
-                    description="Open a project to see its agent graphs."
-                  />
-                )}
-              </SideBar>
-            </ResizablePanel>
-            {/* The line starts at the border of the header row, so that the header row looks like one row. */}
-            <ResizableHandle className="w-px bg-transparent before:absolute before:inset-x-0 before:top-[calc(var(--vv-titlebar-h)-1px)] before:bottom-0 before:bg-hairline before:transition-colors before:delay-(--vv-delay-sash) before:duration-(--vv-duration-fast) after:w-2 data-[separator=active]:before:bg-indicator data-[separator=hover]:before:bg-indicator" />
-            <ResizablePanel className="flex min-w-0 flex-col">
-              <TitleBar
-                platform={platform}
-                context={context}
-                windowControls={windowControls}
-                besideWindowButtons={platform === 'macos' && !sideBarOpen}
-              />
-              <div className="min-h-0 flex-1">
-                <EditorArea components={components} onReady={onEditorReady} />
-              </div>
-              <StatusBar start={status?.start} end={status?.end} />
-            </ResizablePanel>
-          </ResizablePanelGroup>
+                {!narrow && sideBar}
+              </ResizablePanel>
+              {/* The line starts at the border of the header row, so that the header row looks like one row. */}
+              <ResizableHandle className="w-px bg-transparent before:absolute before:inset-x-0 before:top-[calc(var(--vv-titlebar-h)-var(--vv-hairline-w))] before:bottom-0 before:bg-hairline before:transition-colors before:delay-(--vv-delay-sash) before:duration-(--vv-duration-fast) after:w-2 data-[separator=active]:before:bg-indicator data-[separator=hover]:before:bg-indicator" />
+              <ResizablePanel
+                className="flex min-w-0 flex-col"
+                // The side bar cannot squeeze the editor area below a usable width.
+                minSize={
+                  narrow ? undefined : readPixelToken('--vv-editor-min-w', 320)
+                }
+              >
+                <TitleBar
+                  platform={platform}
+                  context={context}
+                  windowControls={windowControls}
+                  besideWindowButtons={platform === 'macos' && !docked}
+                />
+                {/* Under the drawer, the editor area and the status bar are inert. */}
+                <div inert={drawer} className="flex min-h-0 flex-1 flex-col">
+                  <div className="min-h-0 flex-1">
+                    <EditorArea
+                      components={components}
+                      onReady={onEditorReady}
+                    />
+                  </div>
+                  <StatusBar start={status?.start} end={status?.end} />
+                </div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </div>
         </div>
       </TooltipProvider>
     </PageProps.Provider>
