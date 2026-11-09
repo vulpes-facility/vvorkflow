@@ -33,7 +33,9 @@ The app MUST conform to WCAG 2.2 Level AA.
    Mark a target that is not a control, such as the close icon of a tab, with `data-pointer-target`.
 3. Each control MUST work with the keyboard, and MUST show the focus with the opaque `--ring` color.\
    Do not put an opacity modifier on a focus color, such as `ring-ring/50`.\
-   When a change hides the focused element or makes it inert, move the focus to a visible control, as `useFocusRescue` does for the side bar.
+   When a change removes the focused element, hides it, or makes it inert, move the focus to a visible control, as `useFocusRescue` does for the side bar and its views.\
+   A composite control, such as a tree, has one tab stop, and the arrow keys move in it.\
+   A view that holds one turns off the focus of its scroll area (`contentFocusable`).
 4. Each control without visible text MUST have an accessible name.\
    When a control has visible text, its accessible name MUST contain that text.
 5. Do not show a meaning with color alone.\
@@ -73,6 +75,21 @@ The shell follows value 5 of the [core values](../core-values.md).
    `src-tauri/tauri.macos.conf.json` repeats the whole window object of `tauri.conf.json`, because Tauri merges the platform file as a JSON Merge Patch, which replaces an array and does not merge it.
 3. The title bar and the top strip of the activity bar and the side bar drag the window (`data-tauri-drag-region`).
 4. When the side bar is closed on macOS, the window buttons reach into the title bar, so the title bar content starts after them.
+
+## Explorer
+
+The Explorer follows value 3 of the [core values](../core-values.md).
+
+1. The tree shows each repository, then its worktrees, then the folders and the files of each worktree.\
+   A worktree shows its branch and its path, and the current worktree has a heavier font.
+2. The tree follows the [tree pattern of WAI-ARIA](https://www.w3.org/WAI/ARIA/apg/patterns/treeview/).\
+   Its items are one flat list with `aria-level`, `aria-setsize`, and `aria-posinset`, so that the name of an item is only the text of its own row.
+3. A git status has a color, a letter, and a name for screen readers.\
+   A folder and a worktree show the most important status in them, in this order: conflict, deleted, modified, added, and untracked.\
+   A folder shows ignored only when all of its files are ignored.
+4. Each level moves in by `--vv-tree-indent`, through the `tree-inset` utility.\
+   An empty folder has no expanded state.\
+   When an update takes away the focused row, the focus and the selection move to its next sibling, its previous sibling, or its nearest visible ancestor, in this order.
 
 ## Stories and screens
 

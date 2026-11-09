@@ -6,7 +6,7 @@ The workers run as their real TUIs, in terminal tabs, in the worktrees of a repo
 
 ## Status
 
-The desktop app has its design tokens, its window shell, and the Welcome tab, and no features yet.\
+The desktop app has its design tokens, its window shell, the Welcome tab, and the Explorer tree on sample data, and no engine yet.\
 The design follows the [core values](docs/core-values.md) and [`docs/conventions/design.md`](docs/conventions/design.md).
 
 ## Requirements
@@ -57,7 +57,7 @@ Each task MUST pass with no errors and no warnings before a pull request.
 │   └── desktop/            The desktop app
 │       ├── src/            The web UI, in Feature-Sliced Design layers
 │       │   ├── app/        The entry point, the design tokens, and the global styles
-│       │   ├── pages/      The workbench: the window shell and the Welcome tab
+│       │   ├── pages/      The workbench: the window shell, the Welcome tab, and the Explorer
 │       │   └── shared/     The UI kit (shadcn), the Tauri window API, and the shared code
 │       ├── src-tauri/      The Tauri 2 shell, in Rust
 │       ├── stories/        The Storybook stories of the screens and the tokens

@@ -3,7 +3,7 @@
 vvorkflow is a light desktop IDE for directing TUI coding agents across git worktrees, on a Rust engine and Tauri 2.\
 Its owner uses it alone, for now.\
 A main agent in a terminal directs worker agents, such as Codex and Claude Code, that run as their real TUIs.\
-The desktop app has its design tokens, its window shell, and the Welcome tab, and no features yet.
+The desktop app has its design tokens, its window shell, the Welcome tab, and the Explorer tree on sample data, and no engine yet.
 
 ## Index
 
@@ -16,7 +16,7 @@ The desktop app has its design tokens, its window shell, and the Welcome tab, an
 - `docs/conventions/tooling.md` - The tool rules that differ from the `vulpes-conventions` plugin: oxlint, the shadcn folder, the Node.js and Rust versions, and the Turborepo settings.
 - `apps/desktop/` - The desktop app: the React web UI in `src/`, and the Tauri 2 shell in `src-tauri/`.
 - `apps/desktop/src/app/styles/tokens.css` - The design tokens, the only source of design values, for the light and the dark theme.
-- `apps/desktop/src/pages/workbench/` - The window shell: the activity bar, the side bar, the title bar, the editor area, the status bar, and the Welcome tab.
+- `apps/desktop/src/pages/workbench/` - The window shell: the activity bar, the side bar, the title bar, the editor area, the status bar, the Welcome tab, and the Explorer tree.
 - `apps/desktop/stories/` - The Storybook stories of the screens and the tokens, which the screen capture uses.
 - `apps/desktop/fixtures/` - The sample data of the stories, which the code in `src/` never imports.
 - `package.json` - The root scripts that run each task with Turborepo, and the pinned versions of pnpm and Node.js.

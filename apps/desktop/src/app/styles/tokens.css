@@ -89,6 +89,9 @@
   --vv-hairline-w: 1px;
   --vv-radius-none: 0px;
   --vv-space-none: 0px;
+  /* The Explorer tree: the inset of the first level, and the step of each level after it. */
+  --vv-tree-pad: 8px;
+  --vv-tree-indent: 12px;
   --vv-icon-sm: 14px;
   --vv-icon: 16px;
   --vv-icon-lg: 20px;

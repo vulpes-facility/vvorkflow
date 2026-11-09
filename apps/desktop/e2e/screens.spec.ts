@@ -6,6 +6,8 @@ const screens = [
   'screens-workbench--app-start',
   'screens-workbench--zoomed-200',
   'screens-workbench--reflow-320',
+  'screens-workbench--explorer',
+  'screens-workbench--explorer-light',
   'screens-workbench--macos-dark',
   'screens-workbench--macos-light',
   'screens-workbench--windows-dark',
@@ -91,6 +93,11 @@ for (const id of screens) {
         ),
     )
     expect(overflowing).toEqual([])
+
+    // The Explorer screens show one row in its hover state.
+    if (id.startsWith('screens-workbench--explorer')) {
+      await page.getByRole('treeitem', { name: /^scratch\.md/ }).hover()
+    }
 
     // A foundation sheet is taller than the viewport, so take the full page.
     await page.screenshot({

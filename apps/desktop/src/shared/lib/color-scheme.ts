@@ -11,7 +11,8 @@ function subscribe(onChange: () => void) {
   return () => media.removeEventListener('change', onChange)
 }
 
-function getSnapshot(): ColorScheme {
+/** Reads the color scheme of the operating system now. */
+export function systemColorScheme(): ColorScheme {
   return window.matchMedia(query).matches ? 'dark' : 'light'
 }
 
@@ -21,7 +22,7 @@ function getSnapshot(): ColorScheme {
  * @returns The current scheme. The component renders again when the system scheme changes.
  */
 export function useSystemColorScheme(): ColorScheme {
-  return useSyncExternalStore(subscribe, getSnapshot, () => 'dark')
+  return useSyncExternalStore(subscribe, systemColorScheme, () => 'dark')
 }
 
 /**

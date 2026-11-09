@@ -9,6 +9,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
 } from 'react'
 import type { WindowControls } from '@/shared/api'
@@ -24,12 +25,14 @@ import {
 } from '@/shared/ui'
 import { ActivityAction, ActivityBar } from './activity-bar/activity-bar'
 import { EditorArea } from './editor-area/editor-area'
+import { ExplorerTree } from './explorer/explorer-tree'
 import type { EditorTabParams } from './editor-area/editor-tab'
 import { SideBar } from './side-bar/side-bar'
 import { StatusBar, type StatusItem } from './status-bar/status-bar'
 import { TitleBar, type WindowContext } from './title-bar/title-bar'
 import { Welcome, type RecentProject } from './welcome/welcome'
 import { useLayout } from '../model/layout'
+import { toTreeNodes, type RepositoryGroup } from '../model/explorer'
 import { useActionShortcuts } from '../model/use-action-shortcuts'
 import { useEditorShortcuts } from '../model/use-editor-shortcuts'
 import { useFocusRescue } from '../model/use-focus-rescue'
@@ -47,8 +50,11 @@ interface WorkbenchPageProps {
   context?: WindowContext
   recentProjects: RecentProject[]
   status?: { start?: StatusItem[]; end?: StatusItem[] }
-  /** The content of the Explorer view. Without it, the view shows its empty state. */
-  explorer?: React.ReactNode
+  /** The repositories and worktrees of the Explorer. Without them, the view shows its empty state. */
+  repositories?: RepositoryGroup[]
+  /** The worktree and folder ids that the Explorer shows open at the start. */
+  expandedPaths?: string[]
+  onOpenFile?: (id: string) => void
   onNewProject?: () => void
   onOpenFolder?: () => void
   onAddWorktree?: () => void
@@ -71,7 +77,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     windowControls,
     context,
     status,
-    explorer,
+    repositories,
     onOpenFolder,
     onOpenSettings,
   } = props
@@ -117,7 +123,6 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [drawer, setSideBarOpen])
-  useFocusRescue(root, sideBarOpen, drawer)
 
   const editor = useRef<DockviewApi | undefined>(undefined)
   const getEditor = useCallback(() => editor.current, [])
@@ -129,10 +134,25 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
 
   const activeView =
     views.find((candidate) => candidate.id === view) ?? views[0]
+  const treeNodes = useMemo(
+    () => toTreeNodes(repositories ?? []),
+    [repositories],
+  )
+  const hasTree = treeNodes.length > 0
+  // A tree takes the focus itself, so its scroll area is not a second tab stop.
+  const contentFocusable = !(view === 'explorer' && hasTree)
+  useFocusRescue(root, { sideBarOpen, drawer, view, contentFocusable })
   const sideBarContent = (
     <>
       {view === 'explorer' &&
-        (explorer ?? (
+        (hasTree ? (
+          <ExplorerTree
+            label="Explorer"
+            nodes={treeNodes}
+            defaultExpanded={props.expandedPaths}
+            onOpenFile={props.onOpenFile}
+          />
+        ) : (
           <EmptyState
             icon={FolderOpen}
             title="No project open"
@@ -167,6 +187,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       open={sideBarOpen}
       id={sideBarId}
       title={activeView.label}
+      contentFocusable={contentFocusable}
     >
       {sideBarContent}
     </SideBar>
@@ -179,6 +200,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       withTopStrip={false}
       id={sideBarId}
       title={activeView.label}
+      contentFocusable={contentFocusable}
     >
       {sideBarContent}
     </SideBar>
