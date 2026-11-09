@@ -29,6 +29,7 @@ export const methods = {
     params: types.read_status,
     result: types.changed_path.array(),
   },
+  shutdown: { params: types.shutdown, result: types.done },
 } as const
 
 type Method = keyof typeof methods

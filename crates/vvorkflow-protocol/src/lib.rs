@@ -31,6 +31,30 @@ pub enum Request {
     /// Answers each [`ChangedPath`] of the worktree.
     #[serde(rename = "git.status")]
     ReadStatus(ReadStatus),
+    /// Stops the engine process. Answers [`Done`], then the process stops.
+    /// It is valid before `hello`, and its shape never changes, so that each
+    /// app can stop an engine of an older version.
+    #[serde(rename = "shutdown")]
+    Shutdown(Shutdown),
+}
+
+/// A request on a connection to the engine process, with the id that its
+/// answer repeats. The client picks the ids; each one is unique while its
+/// request is open.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ClientMessage {
+    pub id: u64,
+    #[serde(flatten)]
+    pub request: Request,
+}
+
+/// The answer to one [`ClientMessage`]: its value, or its error. A client
+/// that only passes the value on reads it as `ServerMessage<serde_json::Value>`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ServerMessage<R = Response> {
+    Result { id: u64, result: R },
+    Error { id: u64, error: EngineError },
 }
 
 /// The value of a request, in the type that its method gives.
@@ -42,6 +66,7 @@ pub enum Response {
     Repository(Repository),
     Entries(Vec<DirectoryEntry>),
     Status(Vec<ChangedPath>),
+    Done(Done),
 }
 
 /// Starts a connection with the protocol version of the client.
@@ -59,6 +84,16 @@ pub struct Welcome {
     /// The absolute path of the projects root.
     pub root: String,
 }
+
+/// Stops the engine process.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Shutdown {}
+
+/// The answer of a request that has no value.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Done {}
 
 /// Lists the projects: the folders directly in the projects root.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -190,10 +225,12 @@ pub enum ErrorCode {
     FailedPrecondition,
 }
 
-/// The JSON Schema of each type that crosses the protocol, in one document,
+/// The JSON Schema of each type that the web UI sends or reads, in one document,
 /// with each type written in place, so that a generator needs no references.
 /// The keyword `x-protocol-version` holds [`PROTOCOL_VERSION`], so that a
-/// client can check its own version against it.
+/// client can check its own version against it. The envelope of a connection,
+/// [`ClientMessage`] and [`ServerMessage`], is not in it: only the app core
+/// reads it.
 pub fn schema() -> schemars::Schema {
     #[derive(JsonSchema)]
     #[allow(dead_code)]
@@ -202,6 +239,8 @@ pub fn schema() -> schemars::Schema {
         hello: Hello,
         welcome: Welcome,
         list_projects: ListProjects,
+        shutdown: Shutdown,
+        done: Done,
         project: Project,
         open_folder: OpenFolder,
         repository: Repository,
@@ -222,6 +261,56 @@ pub fn schema() -> schemars::Schema {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    use super::*;
+    use serde_json::json;
+
+    /// The envelope keeps `method` and `params` next to `id`, as
+    /// `docs/architecture.md` shows.
+    #[test]
+    fn the_envelope_has_the_shape_of_the_architecture() {
+        let message = ClientMessage {
+            id: 7,
+            request: Request::OpenFolder(OpenFolder {
+                path: "/code/app".to_owned(),
+            }),
+        };
+        let text = json!({"id": 7, "method": "folder.open", "params": {"path": "/code/app"}});
+        assert_eq!(serde_json::to_value(&message).unwrap(), text);
+        let read: ClientMessage = serde_json::from_value(text).unwrap();
+        assert!(matches!(read.request, Request::OpenFolder(open) if open.path == "/code/app"));
+
+        let done: ServerMessage = ServerMessage::Result {
+            id: 7,
+            result: Response::Done(Done {}),
+        };
+        assert_eq!(
+            serde_json::to_value(&done).unwrap(),
+            json!({"id": 7, "result": {}})
+        );
+        let refused: ServerMessage = ServerMessage::Error {
+            id: 8,
+            error: EngineError {
+                code: ErrorCode::NotFound,
+                message: "gone".to_owned(),
+            },
+        };
+        let text = json!({"id": 8, "error": {"code": "notFound", "message": "gone"}});
+        assert_eq!(serde_json::to_value(&refused).unwrap(), text);
+
+        // A client that passes the value on reads it as JSON.
+        let read: ServerMessage<serde_json::Value> = serde_json::from_value(text).unwrap();
+        assert!(matches!(read, ServerMessage::Error { id: 8, .. }));
+        let read: ServerMessage<serde_json::Value> =
+            serde_json::from_value(json!({"id": 9, "result": []})).unwrap();
+        assert_eq!(
+            read,
+            ServerMessage::Result {
+                id: 9,
+                result: json!([])
+            }
+        );
+    }
 
     /// The committed schema MUST match the types; the TypeScript client is
     /// generated from it. `VVORKFLOW_UPDATE_SCHEMA=1 cargo test` writes it again.

@@ -47,3 +47,21 @@ jobs:
       - run: pnpm lint
       - run: pnpm check-types
       - run: pnpm test
+
+  # The engine crates have no WebKit dependency, so their tests also run on
+  # macOS and Windows: the Unix socket and the named pipe, the paths, and git.
+  engine:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install the Rust toolchain of rust-toolchain.toml
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      - run: cargo test --locked -p vvorkflow-protocol -p vvorkflow-engine -p vvorkflow-server

@@ -24,6 +24,7 @@ The desktop app has its design tokens, its window shell, the Welcome tab, the te
 - `apps/desktop/fixtures/` - The sample data of the stories, which the code in `src/` never imports.
 - `apps/desktop/src/shared/api/engine.ts` - The client of the engine: each request through the Tauri IPC, with its answer parsed by the generated protocol.
 - `crates/vvorkflow-protocol/` - The protocol of the engine, as serde types, and its JSON Schema in `schema/`, the source of the TypeScript client.
+- `crates/vvorkflow-server/` - The engine process `vvorkflow-server`: its local endpoint, its lock, and its WebSocket connections with the envelope of each request.
 - `crates/vvorkflow-engine/` - The engine: the projects root, the folders, the worktrees, and the git status, inside the roots that the user opened.
 - `.env.example` - The environment variables of the engine, such as the projects root `VVORKFLOW_ROOT`.
 - `package.json` - The root scripts that run each task with Turborepo, and the pinned versions of pnpm and Node.js.

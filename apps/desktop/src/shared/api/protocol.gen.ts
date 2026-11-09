@@ -19,6 +19,9 @@ export const protocol = z.object({
   directory_entry: z
     .object({ kind: z.enum(['file', 'folder']), name: z.string() })
     .describe('An entry of a folder.'),
+  done: z
+    .record(z.string(), z.any())
+    .describe('The answer of a request that has no value.'),
   engine_error: z
     .object({
       code: z
@@ -181,6 +184,16 @@ export const protocol = z.object({
               .describe('Reads the git status of a worktree.'),
           })
           .describe('Answers each [`ChangedPath`] of the worktree.'),
+        z
+          .object({
+            method: z.literal('shutdown'),
+            params: z
+              .record(z.string(), z.any())
+              .describe('Stops the engine process.'),
+          })
+          .describe(
+            'Stops the engine process. Answers [`Done`], then the process stops.\nIt is valid before `hello`, and its shape never changes, so that each\napp can stop an engine of an older version.',
+          ),
       ]
       const { errors, failed } = schemas.reduce<{
         errors: z.core.$ZodIssue[]
@@ -218,6 +231,7 @@ export const protocol = z.object({
       }
     })
     .describe('A request to the engine: its method, and its params.'),
+  shutdown: z.record(z.string(), z.any()).describe('Stops the engine process.'),
   welcome: z
     .object({
       protocol: z.number().int().gte(0),
