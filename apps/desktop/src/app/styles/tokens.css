@@ -67,6 +67,7 @@
   --vv-font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
   --vv-font-mono: 'Geist Mono Variable', ui-monospace, monospace;
   --vv-terminal-font-size: 13px;
+  --vv-terminal-line-height: 1.2;
   --vv-text-2xs: 11px;
   --vv-text-xs: 12px;
   --vv-text-ui: 13px;

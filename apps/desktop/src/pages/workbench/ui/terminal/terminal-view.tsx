@@ -3,7 +3,12 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { Terminal, type ITheme } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { useEffect, useId, useRef } from 'react'
-import { readColorToken, readPixelToken, type Platform } from '@/shared/lib'
+import {
+  readColorToken,
+  readPixelToken,
+  readToken,
+  type Platform,
+} from '@/shared/lib'
 import type { TerminalSession } from '../../model/terminal'
 import { terminalKeyTarget } from '../../model/terminal-keys'
 
@@ -52,12 +57,14 @@ export function TerminalView({ session, platform }: TerminalViewProps) {
   useEffect(() => {
     const element = host.current
     if (!element) return
-    const fontFamily = getComputedStyle(element).fontFamily
+    // Read the font from the token: a hidden panel is detached, and a
+    // detached element has no computed font.
+    const fontFamily = readToken('--vv-font-mono', 'monospace')
     const fontSize = readPixelToken('--vv-terminal-font-size', 13)
     const terminal = new Terminal({
       fontFamily,
       fontSize,
-      lineHeight: 1.2,
+      lineHeight: Number(readToken('--vv-terminal-line-height', '1.2')),
       // Raise the contrast of each color that a program picks (WCAG 2.2 SC 1.4.3).
       minimumContrastRatio: 4.5,
       // A blinking cursor is motion that does not stop (WCAG 2.2 SC 2.2.2).
@@ -94,25 +101,43 @@ export function TerminalView({ session, platform }: TerminalViewProps) {
     const size = terminal.onResize(({ cols, rows }) =>
       session.resize?.(cols, rows),
     )
+
+    // Take the output from the start, and keep it until the terminal opens.
+    let opened = false
+    const pending: string[] = []
+    const unsubscribe = session.subscribe((data) => {
+      if (opened) terminal.write(data)
+      else pending.push(data)
+    })
+
+    // Open only with the real font and a visible host: the font sets the
+    // width of the cells, and a hidden host has no size to fit.
+    let fontReady = false
+    let disposed = false
+    function openWhenReady() {
+      if (disposed || opened || !fontReady || !element) return
+      if (!element.isConnected || !element.clientWidth || !element.clientHeight)
+        return
+      opened = true
+      terminal.open(element)
+      terminal.textarea?.setAttribute('aria-describedby', hint)
+      fit.fit()
+      for (const data of pending.splice(0)) terminal.write(data)
+    }
     // A hidden tab has no size; a fit would squeeze the grid to 2 columns.
     const resize = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect
-      if (terminal.element && width > 0 && height > 0) fit.fit()
+      if (!width || !height) return
+      if (opened) fit.fit()
+      else openWhenReady()
     })
-
-    let disposed = false
-    let unsubscribe = () => {}
-    // Measure the cells only with the real font, or the grid has the wrong width.
+    resize.observe(element)
     void document.fonts
       .load(`${fontSize}px ${fontFamily}`)
       .catch(() => [])
       .then(() => {
-        if (disposed) return
-        terminal.open(element)
-        terminal.textarea?.setAttribute('aria-describedby', hint)
-        fit.fit()
-        resize.observe(element)
-        unsubscribe = session.subscribe((data) => terminal.write(data))
+        fontReady = true
+        openWhenReady()
       })
 
     return () => {

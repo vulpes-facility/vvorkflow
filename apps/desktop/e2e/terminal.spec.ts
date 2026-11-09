@@ -94,6 +94,17 @@ test('a terminal keeps its output while another tab is open', async ({
 
   await page.getByRole('tab', { name: /^codex · feat\/explorer/ }).click()
   await expect(shell).toBeHidden()
+  // This session started in a hidden tab: it opens now, with its output and
+  // a grid that fills the tab.
+  const agent = page
+    .locator('[data-terminal]')
+    .filter({ hasText: '~/code/vvorkflow.explorer' })
+  await expect(agent).toBeVisible()
+  const [screenWidth, hostWidth] = await agent.evaluate((element) => [
+    element.querySelector('.xterm-screen')?.getBoundingClientRect().width ?? 0,
+    element.getBoundingClientRect().width,
+  ])
+  expect(screenWidth).toBeGreaterThan(hostWidth * 0.9)
   await page.getByRole('tab', { name: /^zsh · feat\/terminal-tabs/ }).click()
   // The same terminal comes back, with its output; it was not made again.
   await expect(page.locator('[data-terminal][data-probe]')).toBeVisible()

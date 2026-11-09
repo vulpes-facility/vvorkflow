@@ -15,6 +15,19 @@ export function readPixelToken(
   return match ? Number(match[1]) : fallback
 }
 
+/**
+ * Reads a design token of tokens.css as text, such as a font stack.
+ *
+ * @returns The value, or `fallback` when the token is missing.
+ */
+export function readToken(name: `--vv-${string}`, fallback: string): string {
+  if (typeof document === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim()
+  return value || fallback
+}
+
 let canvas: CanvasRenderingContext2D | null | undefined
 
 /**

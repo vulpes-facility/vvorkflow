@@ -34,6 +34,10 @@ describe('terminalKeyTarget', () => {
     expect(
       terminalKeyTarget(key('F', { ...shifted, altKey: true }), false),
     ).toBe('terminal')
+    // A program needs Ctrl+Shift with a symbol, such as the undo of readline.
+    for (const symbol of ['_', '^', '+', ' ', '?']) {
+      expect(terminalKeyTarget(key(symbol, shifted), false)).toBe('terminal')
+    }
   })
 
   it('gives the Command keys to the workbench on macOS, and the Ctrl keys to the program', () => {
@@ -50,6 +54,12 @@ describe('terminalKeyTarget', () => {
       expect(terminalKeyTarget(key('F6'), mac)).toBe('workbench')
       expect(terminalKeyTarget(key('F6', { shiftKey: true }), mac)).toBe(
         'workbench',
+      )
+      expect(terminalKeyTarget(key('F6', { ctrlKey: true }), mac)).toBe(
+        'terminal',
+      )
+      expect(terminalKeyTarget(key('F6', { altKey: true }), mac)).toBe(
+        'terminal',
       )
     }
   })
