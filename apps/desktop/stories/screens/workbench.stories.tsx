@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { fn } from 'storybook/test'
 import { MacTrafficLights } from '../../fixtures/mac-traffic-lights'
 import { expandedPaths, repositories } from '../../fixtures/repositories'
+import { terminals } from '../../fixtures/terminals'
 import {
   recentProjects,
   status,
@@ -98,5 +99,19 @@ export const Explorer: Story = { args: { repositories, expandedPaths } }
 /** The same Explorer in the light theme. */
 export const ExplorerLight: Story = {
   args: { repositories, expandedPaths },
+  globals: { colorScheme: 'light' },
+}
+
+/**
+ * Two terminal tabs over the Explorer: the active tab runs a shell with the
+ * ANSI colors and wide characters, as an agent's TUI would draw them.
+ */
+export const Terminal: Story = {
+  args: { repositories, expandedPaths, terminals },
+}
+
+/** The same terminal tabs in the light theme. */
+export const TerminalLight: Story = {
+  args: { repositories, expandedPaths, terminals },
   globals: { colorScheme: 'light' },
 }

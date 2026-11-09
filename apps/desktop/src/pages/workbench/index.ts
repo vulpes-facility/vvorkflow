@@ -11,3 +11,4 @@ export type {
   RepositoryGroup,
   Worktree,
 } from './model/explorer'
+export type { TerminalSession } from './model/terminal'

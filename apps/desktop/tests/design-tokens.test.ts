@@ -227,8 +227,53 @@ const nonTextPairs: [string, string[]][] = [
   ['window-close-hover-foreground', ['window-close-hover']],
 ]
 
+const ansiColors = [
+  'black',
+  'red',
+  'green',
+  'yellow',
+  'blue',
+  'magenta',
+  'cyan',
+  'white',
+].flatMap((name) => [`ansi-${name}`, `ansi-bright-${name}`])
+
+/**
+ * The ANSI colors that may be faint on the terminal background of a theme:
+ * a program uses black and white also as backgrounds. The terminal raises
+ * their contrast at run time (`minimumContrastRatio`), and `pnpm screens`
+ * checks the result.
+ */
+const faintAnsi: Record<keyof typeof themes, string[]> = {
+  light: ['ansi-white', 'ansi-bright-white'],
+  dark: ['ansi-black'],
+}
+
 describe('WCAG 2.2 contrast', () => {
   for (const [themeName, theme] of Object.entries(themes)) {
+    const terminalText = [
+      'terminal-foreground',
+      ...ansiColors.filter(
+        (color) => !faintAnsi[themeName as keyof typeof themes].includes(color),
+      ),
+    ]
+    for (const foreground of terminalText) {
+      it(`${themeName}: ${foreground} on terminal >= 4.5`, () => {
+        expect(contrast(theme, foreground, 'terminal')).toBeGreaterThanOrEqual(
+          4.5,
+        )
+      })
+    }
+    it(`${themeName}: terminal-selection-foreground on terminal-selection >= 4.5`, () => {
+      expect(
+        contrast(theme, 'terminal-selection-foreground', 'terminal-selection'),
+      ).toBeGreaterThanOrEqual(4.5)
+    })
+    it(`${themeName}: terminal-cursor on terminal >= 3`, () => {
+      expect(
+        contrast(theme, 'terminal-cursor', 'terminal'),
+      ).toBeGreaterThanOrEqual(3)
+    })
     for (const [foreground, backgrounds] of textPairs) {
       for (const background of backgrounds) {
         it(`${themeName}: ${foreground} on ${background} >= 4.5`, () => {

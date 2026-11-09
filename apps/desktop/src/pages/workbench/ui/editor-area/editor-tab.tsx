@@ -1,5 +1,5 @@
 import type { IDockviewPanelHeaderProps } from 'dockview-react'
-import { X } from 'lucide-react'
+import { SquareTerminal, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { cn } from '@/shared/lib'
 import { LogoMark } from '@/shared/ui'
@@ -7,7 +7,9 @@ import { LogoMark } from '@/shared/ui'
 /** The parameters of an editor panel that its tab reads. */
 export interface EditorTabParams {
   /** The kind of the panel, which selects the icon of the tab. */
-  kind?: 'welcome'
+  kind?: 'welcome' | 'terminal'
+  /** The terminal session of a terminal panel. */
+  sessionId?: string
 }
 
 /** A tab of the editor area: the icon, the title, and a close icon for the pointer. */
@@ -31,6 +33,13 @@ export function EditorTab({
     >
       {params.kind === 'welcome' && (
         <LogoMark className="size-icon-sm shrink-0 text-foreground" />
+      )}
+      {params.kind === 'terminal' && (
+        <SquareTerminal
+          aria-hidden
+          strokeWidth={1.75}
+          className="size-icon-sm shrink-0 text-subtle-foreground"
+        />
       )}
       <span className="truncate">{title}</span>
       {/*

@@ -35,14 +35,16 @@ The app MUST conform to WCAG 2.2 Level AA.
    Do not put an opacity modifier on a focus color, such as `ring-ring/50`.\
    When a change removes the focused element, hides it, or makes it inert, move the focus to a visible control, as `useFocusRescue` does for the side bar and its views.\
    A composite control, such as a tree, has one tab stop, and the arrow keys move in it.\
-   A view that holds one turns off the focus of its scroll area (`contentFocusable`).
+   A view that holds one turns off the focus of its scroll area (`contentFocusable`).\
+   F6 and Shift+F6 move the focus between the regions of the window, in this order: the activity bar, the side bar, the tabs of the editor area, the content of the editor area, and the status bar (`useRegionShortcuts`).
 4. Each control without visible text MUST have an accessible name.\
    When a control has visible text, its accessible name MUST contain that text.
 5. Do not show a meaning with color alone.\
    For example, a git status has a color and a shape.
 6. Each action that uses a drag MUST also have a way that does not use a drag, for example a context menu item or a command.
 7. A control that is inside a tab or a row, such as the close icon of a tab, is a pointer target only.\
-   Give its action a keyboard shortcut or a menu item, so that interactive controls do not nest.
+   Give its action a keyboard shortcut or a menu item, so that interactive controls do not nest.\
+   In a terminal on Windows and Linux, the program takes the Ctrl shortcuts, so press F6 first (see [Terminal](#terminal)).
 8. The window MUST reflow at 320 CSS pixels wide, as at 400 % zoom, with no horizontal scroll.\
    At `--vv-narrow-max-w` (640 px) and less the side bar closes by itself.\
    There the activity bar and `mod+B` open it as a drawer under the header row and over the editor area.\
@@ -93,6 +95,36 @@ The Explorer follows value 3 of the [core values](../core-values.md).
 4. Each level moves in by `--vv-tree-indent`, through the `tree-inset` utility.\
    An empty folder has no expanded state.\
    When an update takes away the focused row, the focus and the selection move to its next sibling, its previous sibling, or its nearest visible ancestor, in this order.
+
+## Terminal
+
+A terminal is a tab of the editor area (value 5 of the [core values](../core-values.md)).\
+An agent runs its real TUI in it (value 3).
+
+1. The terminal is xterm.js with its DOM renderer.\
+   It reads its theme from the color tokens with `readColorToken`, which converts the OKLCH values to sRGB, and it follows the color scheme.\
+   It opens after its font loads, so that the cells have the right width.
+2. Each ANSI color MUST have a contrast of 4.5:1 or more against `--terminal`, except black in the dark theme, and white and bright white in the light theme.\
+   A program also uses those as backgrounds.\
+   The terminal raises the contrast of each color to 4.5:1 at run time (`minimumContrastRatio`), so the colors that a program picks also meet SC 1.4.3.\
+   A selection has its own opaque background and foreground.
+3. The program takes the keys of the terminal, also Tab and Escape.\
+   `terminalKeyTarget` decides the exceptions:
+   - On macOS, the Command shortcuts go to the workbench.
+   - On Windows and Linux, the Ctrl+Shift letters go to the workbench, as in other terminal emulators, and Ctrl+Shift+C copies the selection.
+     The other Ctrl shortcuts, such as Ctrl+W, go to the program.
+   - F6 and Shift+F6 always go to the workbench, so that the keyboard can leave the terminal (SC 2.1.2).
+4. While a terminal has the focus, the status bar shows that F6 leaves it.\
+   The input of the terminal tells the same in its accessible description.
+5. The cursor does not blink (SC 2.2.2).
+6. The input of the terminal is invisible and takes the keys and the IME.\
+   The screen capture leaves it out of the target size check, because the pointer target is the whole terminal.
+
+Known gaps:
+
+- The terminal does not expose its output to assistive technology yet.\
+  The screen reader mode of xterm.js comes with a setting.
+- Paste with Ctrl+Shift+V relies on the paste of the webview.
 
 ## Stories and screens
 

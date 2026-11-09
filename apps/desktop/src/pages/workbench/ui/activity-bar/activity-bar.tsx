@@ -68,6 +68,7 @@ export function ActivityBar({
   return (
     <nav
       aria-label="Activity"
+      data-region="activity-bar"
       className="flex h-full w-activitybar shrink-0 flex-col bg-chrome"
     >
       {/*

@@ -3,7 +3,7 @@ import type {
   DockviewReadyEvent,
   IDockviewPanelProps,
 } from 'dockview-react'
-import { FolderOpen, Search, Settings, Workflow } from 'lucide-react'
+import { FolderOpen, Keyboard, Search, Settings, Workflow } from 'lucide-react'
 import {
   createContext,
   useCallback,
@@ -11,6 +11,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
 } from 'react'
 import type { WindowControls } from '@/shared/api'
 import { readPixelToken, type Platform } from '@/shared/lib'
@@ -28,15 +29,18 @@ import { EditorArea } from './editor-area/editor-area'
 import { ExplorerTree } from './explorer/explorer-tree'
 import type { EditorTabParams } from './editor-area/editor-tab'
 import { SideBar } from './side-bar/side-bar'
+import { TerminalView } from './terminal/terminal-view'
 import { StatusBar, type StatusItem } from './status-bar/status-bar'
 import { TitleBar, type WindowContext } from './title-bar/title-bar'
 import { Welcome, type RecentProject } from './welcome/welcome'
 import { useLayout } from '../model/layout'
 import { toTreeNodes, type RepositoryGroup } from '../model/explorer'
+import type { TerminalSession } from '../model/terminal'
 import { useActionShortcuts } from '../model/use-action-shortcuts'
 import { useEditorShortcuts } from '../model/use-editor-shortcuts'
 import { useFocusRescue } from '../model/use-focus-rescue'
 import { useNarrowWindow } from '../model/use-narrow-window'
+import { useRegionShortcuts } from '../model/use-region-shortcuts'
 import { useViewShortcuts } from '../model/use-view-shortcuts'
 import { views } from '../model/views'
 
@@ -54,6 +58,8 @@ interface WorkbenchPageProps {
   repositories?: RepositoryGroup[]
   /** The worktree and folder ids that the Explorer shows open at the start. */
   expandedPaths?: string[]
+  /** The terminal sessions, such as agents. Each one opens as a tab of the editor area. */
+  terminals?: TerminalSession[]
   onOpenFile?: (id: string) => void
   onNewProject?: () => void
   onOpenFolder?: () => void
@@ -127,10 +133,20 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const editor = useRef<DockviewApi | undefined>(undefined)
   const getEditor = useCallback(() => editor.current, [])
   useEditorShortcuts(platform, getEditor)
+  useRegionShortcuts(root, getEditor)
+  // Each session opens as a tab once; the last one is the active tab.
+  const terminals = props.terminals
+  const latestTerminals = useRef(terminals)
   const onEditorReady = useCallback((event: DockviewReadyEvent) => {
     editor.current = event.api
     openWelcome(event)
+    openTerminals(event.api, latestTerminals.current ?? [])
   }, [])
+  useEffect(() => {
+    latestTerminals.current = terminals
+    const api = editor.current
+    if (api) openTerminals(api, terminals ?? [])
+  }, [terminals])
 
   const activeView =
     views.find((candidate) => candidate.id === view) ?? views[0]
@@ -142,6 +158,8 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   // A tree takes the focus itself, so its scroll area is not a second tab stop.
   const contentFocusable = !(view === 'explorer' && hasTree)
   useFocusRescue(root, { sideBarOpen, drawer, view, contentFocusable })
+  // While a terminal has the focus, the status bar tells the way out of it.
+  const [terminalFocused, setTerminalFocused] = useState(false)
   const sideBarContent = (
     <>
       {view === 'explorer' &&
@@ -213,6 +231,13 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
           ref={root}
           className="relative flex h-full bg-chrome text-foreground"
           data-platform={platform}
+          onFocus={(event) =>
+            setTerminalFocused(event.target.closest('[data-terminal]') !== null)
+          }
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget))
+              setTerminalFocused(false)
+          }}
         >
           <ActivityBar
             platform={platform}
@@ -291,7 +316,14 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
                       onReady={onEditorReady}
                     />
                   </div>
-                  <StatusBar start={status?.start} end={status?.end} />
+                  <StatusBar
+                    start={status?.start}
+                    end={
+                      terminalFocused
+                        ? [terminalKeysHint, ...(status?.end ?? [])]
+                        : status?.end
+                    }
+                  />
                 </div>
               </ResizablePanel>
             </ResizablePanelGroup>
@@ -318,12 +350,47 @@ function WelcomePanel() {
   )
 }
 
+/** The way out of a terminal, which takes the Tab key (WCAG 2.2 SC 2.1.2). */
+const terminalKeysHint: StatusItem = {
+  id: 'terminal-keys',
+  label: 'F6 leaves the terminal',
+  icon: Keyboard,
+  description:
+    'The terminal takes the Tab key. F6 and Shift+F6 move the focus to the other parts of the window.',
+}
+
+function TerminalPanel({ params }: IDockviewPanelProps<EditorTabParams>) {
+  const props = useContext(PageProps)
+  if (!props) throw new Error('TerminalPanel renders only inside WorkbenchPage')
+  const session = props.terminals?.find(
+    (candidate) => candidate.id === params.sessionId,
+  )
+  return session ? (
+    <TerminalView session={session} platform={props.platform} />
+  ) : null
+}
+
 /** The content of each panel kind of the editor area. */
 const components: Record<
   string,
   React.FunctionComponent<IDockviewPanelProps>
 > = {
   welcome: WelcomePanel,
+  terminal: TerminalPanel,
+}
+
+function openTerminals(api: DockviewApi, sessions: TerminalSession[]) {
+  for (const session of sessions) {
+    const id = `terminal:${session.id}`
+    if (api.getPanel(id)) continue
+    const params: EditorTabParams = { kind: 'terminal', sessionId: session.id }
+    api.addPanel({
+      id,
+      component: 'terminal',
+      title: session.title,
+      params,
+    })
+  }
 }
 
 function openWelcome(event: DockviewReadyEvent) {
