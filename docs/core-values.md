@@ -8,6 +8,12 @@ The owner confirmed these values on 2026-11-09.\
 They are in priority order.\
 When two values conflict, the value with the lower number has priority.
 
+## Quality bar
+
+vvorkflow MUST be a masterpiece of fantastic quality.\
+It MUST be a clean IDE for developers.\
+This bar applies to each value and each decision in this file.
+
 ## Values
 
 1. **The desktop IDE is the product.**\
@@ -19,8 +25,9 @@ When two values conflict, the value with the lower number has priority.
    The orchestrator is the main agent that the user opens in a terminal.\
    It uses the `vv` CLI to make the worktrees and the terminals of the workers, to send briefs, and to receive reports.\
    A graph has one node kind, `agent`.\
-   Its edges make a DAG and have no conditions.\
-   The input of a node is only the output of the node before it.
+   Its edges make a DAG: a node can have more than one successor and more than one predecessor, and an edge has no condition.\
+   The input of a node is only the outputs of its direct predecessors, in the order of their edges in the graph.\
+   A node with no predecessor gets the goal that the orchestrator gives for the whole graph.
 3. **The design follows the real workflow.**\
    A worktree is a first-class object: one worktree is one project, and the projects of one repository are in one group.\
    Git status shows as decorations in the Explorer, not in a separate panel.\
