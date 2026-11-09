@@ -26,11 +26,12 @@ fn run() -> Result<(), String> {
     let root = projects_root_from_env().map_err(|error| error.message)?;
     let engine = Engine::new(&root).map_err(|error| error.message)?;
     let endpoint = Endpoint::of_user()?;
+    let limits = Limits::default();
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
-        .max_blocking_threads(8)
+        .max_blocking_threads(limits.workers)
         .enable_all()
         .build()
         .map_err(|error| format!("The engine cannot start its runtime: {error}."))?
-        .block_on(serve(&endpoint, Arc::new(engine), Limits::default()))
+        .block_on(serve(&endpoint, Arc::new(engine), limits))
 }

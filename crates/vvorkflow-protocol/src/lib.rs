@@ -38,6 +38,11 @@ pub enum Request {
     Shutdown(Shutdown),
 }
 
+/// The requests that a client keeps open on one connection at most: sent,
+/// and not answered yet. The engine closes the connection of a client that
+/// sends more, so that a client cannot fill the memory of the engine.
+pub const MAX_OPEN_REQUESTS: usize = 16;
+
 /// A request on a connection to the engine process, with the id that its
 /// answer repeats. The client picks the ids; each one is unique while its
 /// request is open.

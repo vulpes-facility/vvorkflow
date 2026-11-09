@@ -10,7 +10,7 @@ use tokio::task::JoinHandle;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use vvorkflow_engine::Engine;
-use vvorkflow_protocol::PROTOCOL_VERSION;
+use vvorkflow_protocol::{MAX_OPEN_REQUESTS, PROTOCOL_VERSION};
 use vvorkflow_server::{ClientStream, Endpoint, Limits, serve};
 
 type Socket = WebSocketStream<ClientStream>;
@@ -486,4 +486,79 @@ async fn a_close_after_a_request_still_gets_a_close() {
     .await
     .unwrap();
     assert!(closed);
+}
+
+/// Limits with no worker, as when each worker runs a slow request: no request
+/// gets an answer.
+fn busy() -> Limits {
+    Limits {
+        workers: 0,
+        clients: 1,
+        ..limits()
+    }
+}
+
+/// Says hello on a new connection, until the engine has a place for it.
+async fn hello_when_free(endpoint: &Endpoint) -> Value {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(stream) = endpoint.connect().await
+                && let Ok((mut socket, _)) =
+                    tokio_tungstenite::client_async("ws://localhost/", stream).await
+            {
+                let message =
+                    json!({"id": 1, "method": "hello", "params": {"protocol": PROTOCOL_VERSION}});
+                if socket
+                    .send(Message::text(message.to_string()))
+                    .await
+                    .is_ok()
+                    && let Some(welcome) = receive(&mut socket).await
+                {
+                    return welcome;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn a_client_that_leaves_with_queued_requests_frees_its_place() {
+    let place = place();
+    let _server = start(&place, busy());
+    let mut socket = connect(&place.endpoint).await;
+    hello(&mut socket, PROTOCOL_VERSION).await;
+    for id in 2..11 {
+        send(
+            &mut socket,
+            json!({"id": id, "method": "project.list", "params": {}}),
+        )
+        .await;
+    }
+    drop(socket);
+
+    let welcome = hello_when_free(&place.endpoint).await;
+    assert_eq!(welcome["result"]["protocol"], PROTOCOL_VERSION);
+}
+
+#[tokio::test]
+async fn a_client_with_too_many_open_requests_is_closed() {
+    let place = place();
+    let _server = start(&place, busy());
+    let mut socket = connect(&place.endpoint).await;
+    hello(&mut socket, PROTOCOL_VERSION).await;
+    for id in 0..=MAX_OPEN_REQUESTS as u64 {
+        let request = json!({"id": id + 2, "method": "project.list", "params": {}});
+        if socket
+            .send(Message::text(request.to_string()))
+            .await
+            .is_err()
+        {
+            break;
+        }
+    }
+    let closed = tokio::time::timeout(Duration::from_secs(5), receive(&mut socket)).await;
+    assert_eq!(closed, Ok(None));
 }

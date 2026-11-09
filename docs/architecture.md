@@ -60,6 +60,8 @@ The receiver checks each message against the schema, at run time.
 6. A message that is not a request with an `id` closes the connection.\
    A request with an `id` and a method or params that the engine does not know gets `invalidArgument`.
 7. Over Tauri IPC, the web UI sends only `method` and `params`, and the app core adds the `id`.
+8. A client keeps at most 16 requests open on a connection: sent, and not answered yet.\
+   The engine closes the connection of a client that sends more.
 
 Status: the methods, the version check, and `shutdown` are done.\
 The envelope with the `id` is done in the engine process (M3); the app core uses it next (M3).\
@@ -113,7 +115,7 @@ The engine process stops on a root that is not correct; the app shows its messag
 7. The engine serves at most 32 clients, and closes the connection of a client after them at once.\
    A client has 10 seconds for the WebSocket handshake and `hello`.\
    The engine reads a message of at most 1 MiB.\
-   It runs each request on a blocking thread: at most 8 requests of all clients at a time, and at most 8 queued requests of each connection.\
+   It runs each request on a blocking thread, at most 8 requests of all clients at a time, and reads the next message also while a request waits.\
    A client that does not take a frame for 30 seconds loses its connection.\
    When a connection ends, its queued requests end too, and a request on a blocking thread keeps its place until it finishes.
 8. The engine stops when a client sends `shutdown`, or when no client is connected for a time ([Memory limits](#memory-limits)).
@@ -151,7 +153,7 @@ A setting changes each one.
 | Part | Rule | Default |
 | --- | --- | --- |
 | Engine process | The engine process stops when no client is connected for a time. From M4, it also waits for the end of each session. | 5 minutes |
-| Requests | At most 32 clients; at most 8 requests of all clients run at a time, and at most 8 queue on each connection; a message has at most 1 MiB. | - |
+| Requests | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message has at most 1 MiB. | - |
 | Session screen | The engine keeps the screen and the scrollback of each session. | 5,000 lines |
 | Engine output | The engine sends output only for attached sessions. Each client has an output queue with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | Proposal in M4 |
 | App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |
