@@ -8,6 +8,8 @@ const screens = [
   'screens-workbench--reflow-320',
   'screens-workbench--explorer',
   'screens-workbench--explorer-light',
+  'screens-workbench--terminal',
+  'screens-workbench--terminal-light',
   'screens-workbench--macos-dark',
   'screens-workbench--macos-light',
   'screens-workbench--windows-dark',
@@ -34,6 +36,14 @@ for (const id of screens) {
     )
     await page.locator('#storybook-root > *').first().waitFor()
     await page.evaluate(() => document.fonts.ready)
+    // A terminal opens after its font loads, so wait for its rows.
+    if (id.startsWith('screens-workbench--terminal')) {
+      await page
+        .locator('.xterm-rows')
+        .locator('visible=true')
+        .first()
+        .waitFor()
+    }
 
     // WCAG 2.2 Level A and AA rules, as axe-core implements them.
     const results = await new AxeBuilder({ page })
@@ -49,7 +59,9 @@ for (const id of screens) {
 
     // WCAG 2.2 SC 2.5.8: each pointer target is 24 by 24 CSS pixels or more.
     // A separator is left out: it is a 1 px line that passes by the spacing
-    // exception of the criterion, and the arrow keys also move it.
+    // exception of the criterion, and the arrow keys also move it. The input
+    // of a terminal is left out too: it is invisible and takes the keys and
+    // the IME, and the pointer target is the whole terminal screen.
     const smallTargets = await page.evaluate(() => {
       const selector = [
         'button',
@@ -66,7 +78,11 @@ for (const id of screens) {
           `#storybook-root :is(${selector})`,
         ),
       ]
-        .filter((element) => element.getClientRects().length > 0)
+        .filter(
+          (element) =>
+            element.getClientRects().length > 0 &&
+            !element.matches('.xterm-helper-textarea'),
+        )
         .map((element) => {
           const { width, height } = element.getBoundingClientRect()
           const name = element.getAttribute('aria-label') ?? element.title ?? ''

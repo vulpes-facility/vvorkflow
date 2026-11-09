@@ -100,6 +100,8 @@
   --color-git-untracked: var(--git-untracked);
   --color-git-conflict: var(--git-conflict);
   --color-git-ignored: var(--git-ignored);
+  --color-terminal: var(--terminal);
+  --color-terminal-foreground: var(--terminal-foreground);
   --color-window-close-hover: var(--window-close-hover);
   --color-window-close-hover-foreground: var(--window-close-hover-foreground);
 

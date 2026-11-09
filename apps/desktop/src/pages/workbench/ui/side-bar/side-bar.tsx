@@ -44,7 +44,11 @@ export function SideBar({
   children,
 }: SideBarProps) {
   return (
-    <div hidden={!open} className="flex h-full min-w-0 flex-col bg-sidebar">
+    <div
+      hidden={!open}
+      data-region="side-bar"
+      className="flex h-full min-w-0 flex-col bg-sidebar"
+    >
       {withTopStrip && (
         <div
           data-tauri-drag-region
