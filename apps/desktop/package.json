@@ -12,7 +12,7 @@
     "format": "prettier --write . && cargo fmt --manifest-path src-tauri/Cargo.toml --all",
     "lint": "prettier --check . && oxlint --deny-warnings && steiger src && cargo fmt --manifest-path src-tauri/Cargo.toml --all --check && cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets --locked -- -D warnings",
     "check-types": "tsc -b",
-    "generate:protocol": "json-schema-to-zod -i ../../crates/vv-protocol/schema/protocol.schema.json -o src/shared/api/protocol.gen.ts -n protocol && prettier --write src/shared/api/protocol.gen.ts",
+    "generate:protocol": "json-schema-to-zod -i ../../crates/vvorkflow-protocol/schema/protocol.schema.json -o src/shared/api/protocol.gen.ts -n protocol && prettier --write src/shared/api/protocol.gen.ts",
     "test": "vitest run --passWithNoTests && cargo test --manifest-path src-tauri/Cargo.toml --workspace --locked",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",

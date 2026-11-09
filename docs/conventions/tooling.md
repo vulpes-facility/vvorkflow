@@ -29,8 +29,8 @@ This file gives only the rules that are different from that plugin, or that it d
 11. Fix an advisory of `pnpm audit` in a transitive package with an entry in `overrides` of `pnpm-workspace.yaml`.\
     Name the advisory in a comment, and remove the entry when the direct dependency takes the patched version.\
     When no patched version exists, as for `deepmerge` in the shadcn CLI, accept a low advisory in a tool that the app does not bundle.
-12. The serde types of `crates/vv-protocol` are the source of truth of the engine protocol.\
-    `VV_UPDATE_SCHEMA=1 cargo test -p vv-protocol` writes its JSON Schema, and `pnpm --filter @vvorkflow/desktop generate:protocol` writes the zod client from it.\
+12. The serde types of `crates/vvorkflow-protocol` are the source of truth of the engine protocol.\
+    `VVORKFLOW_UPDATE_SCHEMA=1 cargo test -p vvorkflow-protocol` writes its JSON Schema, and `pnpm --filter @vvorkflow/desktop generate:protocol` writes the zod client from it.\
     A Rust test and a Vitest test fail when the schema or the client is out of date.\
     The client parses each answer of the engine at run time, because a value from another process can be wrong.
 13. The `lint` and `test` scripts of `apps/desktop` check the whole Cargo workspace, and `apps/desktop/turbo.json` adds `crates/**` to their inputs.

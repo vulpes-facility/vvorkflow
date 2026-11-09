@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { protocol } from './protocol.gen.ts'
 
 // The types come from `protocol.gen.ts`, which `pnpm generate:protocol` makes
-// from the JSON Schema of the Rust crate `vv-protocol`.
+// from the JSON Schema of the Rust crate `vvorkflow-protocol`.
 const types = protocol.shape
 
 export type Repository = z.infer<typeof types.repository>

@@ -3918,25 +3918,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vv-engine"
-version = "0.1.0"
-dependencies = [
- "cap-std",
- "same-file",
- "tempfile",
- "vv-protocol",
-]
-
-[[package]]
-name = "vv-protocol"
-version = "0.1.0"
-dependencies = [
- "schemars 1.2.3",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "vvorkflow-desktop"
 version = "0.1.0"
 dependencies = [
@@ -3947,8 +3928,27 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-log",
- "vv-engine",
- "vv-protocol",
+ "vvorkflow-engine",
+ "vvorkflow-protocol",
+]
+
+[[package]]
+name = "vvorkflow-engine"
+version = "0.1.0"
+dependencies = [
+ "cap-std",
+ "same-file",
+ "tempfile",
+ "vvorkflow-protocol",
+]
+
+[[package]]
+name = "vvorkflow-protocol"
+version = "0.1.0"
+dependencies = [
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

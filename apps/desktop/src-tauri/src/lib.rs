@@ -2,8 +2,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::State;
-use vv_engine::Engine;
-use vv_protocol::{
+use vvorkflow_engine::Engine;
+use vvorkflow_protocol::{
     ChangedPath, DirectoryEntry, EngineError, ErrorCode, ListDirectory, OpenFolder, ReadStatus,
     Repository,
 };

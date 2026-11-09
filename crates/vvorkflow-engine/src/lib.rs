@@ -1,6 +1,6 @@
 //! The vvorkflow engine: it reads the repositories, the worktrees, the folders,
 //! and the git status that a client asks for, inside the roots that the user
-//! opened (core value 6). Each method takes a request of `vv-protocol` and
+//! opened (core value 6). Each method takes a request of `vvorkflow-protocol` and
 //! returns its value or an [`EngineError`].
 
 mod git;
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use cap_std::ambient_authority;
 use cap_std::fs::Dir;
-use vv_protocol::{
+use vvorkflow_protocol::{
     ChangedPath, DirectoryEntry, EngineError, EntryKind, ErrorCode, ListDirectory, OpenFolder,
     ReadStatus, Repository, Worktree,
 };

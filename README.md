@@ -64,8 +64,8 @@ Each task MUST pass with no errors and no warnings before a pull request.
 │       ├── e2e/            The Playwright screen capture
 │       └── tests/          The Vitest tests, such as the token and contrast checks
 ├── crates/
-│   ├── vv-protocol/        The protocol of the engine, and its JSON Schema
-│   └── vv-engine/          The engine: folders, worktrees, and git status
+│   ├── vvorkflow-protocol/ The protocol of the engine, and its JSON Schema
+│   └── vvorkflow-engine/   The engine: folders, worktrees, and git status
 ├── packages/               The shared packages (none yet)
 ├── docs/                   The core values, the architecture, and the conventions
 ├── Cargo.toml              The Cargo workspace

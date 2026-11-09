@@ -147,19 +147,19 @@ mod tests {
     use std::path::Path;
 
     /// The committed schema MUST match the types; the TypeScript client is
-    /// generated from it. `VV_UPDATE_SCHEMA=1 cargo test` writes it again.
+    /// generated from it. `VVORKFLOW_UPDATE_SCHEMA=1 cargo test` writes it again.
     #[test]
     fn the_committed_schema_is_current() {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("schema/protocol.schema.json");
         let current = serde_json::to_string_pretty(&super::schema()).unwrap() + "\n";
-        if std::env::var_os("VV_UPDATE_SCHEMA").is_some() {
+        if std::env::var_os("VVORKFLOW_UPDATE_SCHEMA").is_some() {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, &current).unwrap();
         }
         let committed = std::fs::read_to_string(&path).unwrap_or_default();
         assert!(
             committed == current,
-            "{} is out of date: run `VV_UPDATE_SCHEMA=1 cargo test -p vv-protocol`",
+            "{} is out of date: run `VVORKFLOW_UPDATE_SCHEMA=1 cargo test -p vvorkflow-protocol`",
             path.display()
         );
     }

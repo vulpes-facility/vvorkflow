@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use vv_protocol::{ChangedPath, EngineError, ErrorCode, GitStatus};
+use vvorkflow_protocol::{ChangedPath, EngineError, ErrorCode, GitStatus};
 
 fn git(directory: &Path, arguments: &[&str]) -> Result<Vec<u8>, EngineError> {
     run(
