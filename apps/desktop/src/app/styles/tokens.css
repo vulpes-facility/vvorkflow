@@ -63,7 +63,16 @@
   --vv-text-lg: 16px;
   --vv-text-xl: 20px;
   --vv-text-2xl: 28px;
+  --vv-leading-2xs: 16px;
+  --vv-leading-xs: 16px;
   --vv-leading-ui: 18px;
+  --vv-leading-sm: 20px;
+  --vv-leading-lg: 24px;
+  --vv-leading-xl: 28px;
+  --vv-leading-2xl: 34px;
+  /* Uppercase labels open up; the large display title closes in. */
+  --vv-tracking-label: 0.08em;
+  --vv-tracking-display: -0.02em;
 
   /* Sizes: a compact desktop density on a 4 px grid. */
   --vv-titlebar-h: 36px;
@@ -91,6 +100,13 @@
   --vv-radius-md: 4px;
   --vv-radius-lg: 6px;
   --vv-radius-xl: 8px;
+
+  /*
+   * The shadow of overlays: menus, popovers, and tooltips. Its color is the
+   * semantic --overlay-shadow, so that it follows the theme.
+   */
+  --vv-shadow-overlay:
+    0 12px 32px -8px var(--overlay-shadow), 0 2px 6px -2px var(--overlay-shadow);
 
   /* Motion: only menus, popovers, the palette, and the sash move. */
   --vv-duration-fast: 120ms;

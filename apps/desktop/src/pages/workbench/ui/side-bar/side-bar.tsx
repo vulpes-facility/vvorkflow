@@ -3,6 +3,8 @@ import { LogoMark } from '@/shared/ui'
 
 interface SideBarProps {
   platform: Platform
+  /** A closed side bar takes no width and renders nothing, so keyboard and assistive technology skip it. */
+  open: boolean
   /** The id of the panel, which the tabs of the activity bar point at. */
   id: string
   title: string
@@ -22,13 +24,14 @@ interface SideBarProps {
  */
 export function SideBar({
   platform,
+  open,
   id,
   title,
   actions,
   children,
 }: SideBarProps) {
   return (
-    <div className="flex h-full min-w-0 flex-col bg-sidebar">
+    <div hidden={!open} className="flex h-full min-w-0 flex-col bg-sidebar">
       <div
         data-tauri-drag-region
         className="flex h-titlebar shrink-0 items-center border-b border-hairline pl-[calc(var(--vv-traffic-lights-w)-var(--vv-activitybar-w))]"
@@ -44,7 +47,7 @@ export function SideBar({
         className="flex min-h-0 flex-1 flex-col"
       >
         <div className="flex h-tab shrink-0 items-center gap-1 pr-2 pl-4">
-          <h2 className="flex-1 truncate text-2xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+          <h2 className="flex-1 truncate text-2xs font-semibold tracking-label text-muted-foreground uppercase">
             {title}
           </h2>
           {actions}

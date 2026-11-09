@@ -16,19 +16,19 @@
   --font-heading: var(--vv-font-sans);
 
   --text-2xs: var(--vv-text-2xs);
-  --text-2xs--line-height: 16px;
+  --text-2xs--line-height: var(--vv-leading-2xs);
   --text-xs: var(--vv-text-xs);
-  --text-xs--line-height: 16px;
+  --text-xs--line-height: var(--vv-leading-xs);
   --text-ui: var(--vv-text-ui);
   --text-ui--line-height: var(--vv-leading-ui);
   --text-sm: var(--vv-text-sm);
-  --text-sm--line-height: 20px;
+  --text-sm--line-height: var(--vv-leading-sm);
   --text-lg: var(--vv-text-lg);
-  --text-lg--line-height: 24px;
+  --text-lg--line-height: var(--vv-leading-lg);
   --text-xl: var(--vv-text-xl);
-  --text-xl--line-height: 28px;
+  --text-xl--line-height: var(--vv-leading-xl);
   --text-2xl: var(--vv-text-2xl);
-  --text-2xl--line-height: 34px;
+  --text-2xl--line-height: var(--vv-leading-2xl);
 
   --spacing-titlebar: var(--vv-titlebar-h);
   --spacing-tab: var(--vv-tab-h);
@@ -40,6 +40,9 @@
   --spacing-icon-sm: var(--vv-icon-sm);
   --spacing-icon: var(--vv-icon);
   --spacing-icon-lg: var(--vv-icon-lg);
+
+  --tracking-label: var(--vv-tracking-label);
+  --tracking-display: var(--vv-tracking-display);
 
   --radius-sm: var(--vv-radius-sm);
   --radius-md: var(--vv-radius-md);
@@ -97,16 +100,18 @@
   --color-window-close-hover: var(--window-close-hover);
   --color-window-close-hover-foreground: var(--window-close-hover-foreground);
 
-  --shadow-overlay:
-    0 12px 32px -8px var(--overlay-shadow), 0 2px 6px -2px var(--overlay-shadow);
+  --shadow-overlay: var(--vv-shadow-overlay);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
   }
   html,
-  body,
+  body {
+    @apply h-full;
+  }
+  /* Only the app root clips, so that a taller Storybook document can grow. */
   #root {
     @apply h-full overflow-hidden;
   }

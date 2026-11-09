@@ -134,6 +134,11 @@ describe('the source outside tokens.css', () => {
     expect(linesMatching(rawColor)).toEqual([])
   })
 
+  it('draws focus indicators with the opaque ring color', () => {
+    // An opacity modifier would lower the 3:1 contrast of WCAG 2.2 SC 1.4.11.
+    expect(linesMatching(/\b(?:ring|outline|border)-ring\/\d+/)).toEqual([])
+  })
+
   it('uses no color of the Tailwind palette', () => {
     const paletteUtility =
       /\b(?:bg|text|border|ring|outline|fill|stroke|shadow|divide|placeholder|caret|accent|decoration|from|via|to)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|gray|zinc|neutral|stone|black|white)\b/

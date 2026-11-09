@@ -5,6 +5,7 @@ import { expect, test } from '@playwright/test'
 const screens = [
   'screens-workbench--app-start',
   'screens-workbench--zoomed-200',
+  'screens-workbench--reflow-320',
   'screens-workbench--macos-dark',
   'screens-workbench--macos-light',
   'screens-workbench--windows-dark',
@@ -17,13 +18,18 @@ const screens = [
 /** The viewport of a screen that needs a size other than the default 1440 by 900. */
 const viewports: Record<string, { width: number; height: number }> = {
   'screens-workbench--zoomed-200': { width: 720, height: 450 },
+  'screens-workbench--reflow-320': { width: 320, height: 256 },
 }
 
 for (const id of screens) {
   test(id, async ({ page }, testInfo) => {
     const viewport = viewports[id]
     if (viewport) await page.setViewportSize(viewport)
-    await page.goto(`/iframe.html?id=${id}&viewMode=story`)
+    // `a11y.manual` stops the automatic run of the Storybook a11y addon, which
+    // would collide with the axe-core run below ("Axe is already running").
+    await page.goto(
+      `/iframe.html?id=${id}&viewMode=story&globals=a11y.manual:!true`,
+    )
     await page.locator('#storybook-root > *').first().waitFor()
     await page.evaluate(() => document.fonts.ready)
 
@@ -71,6 +77,20 @@ for (const id of screens) {
         .filter(({ width, height }) => width < 24 || height < 24)
     })
     expect(smallTargets).toEqual([])
+
+    // WCAG 2.2 SC 1.4.10: no horizontal scroll, in the page or in a scroll area.
+    const overflowing = await page.evaluate(() =>
+      [
+        document.documentElement,
+        ...document.querySelectorAll<HTMLElement>('[role="region"]'),
+      ]
+        .filter((element) => element.scrollWidth > element.clientWidth + 1)
+        .map(
+          (element) =>
+            element.getAttribute('aria-label') ?? element.tagName.toLowerCase(),
+        ),
+    )
+    expect(overflowing).toEqual([])
 
     // A foundation sheet is taller than the viewport, so take the full page.
     await page.screenshot({

@@ -82,7 +82,7 @@ export function Welcome({
         <header className="flex items-center gap-4">
           <LogoMark className="size-11 text-foreground" />
           <div className="flex flex-col gap-0.5">
-            <h1 className="text-2xl font-semibold tracking-[-0.02em] text-foreground">
+            <h1 className="text-2xl font-semibold tracking-display text-foreground">
               vvorkflow
             </h1>
             <p className="text-ui text-muted-foreground">

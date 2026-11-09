@@ -7,6 +7,7 @@ export {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
+  usePanelRef,
 } from './resizable'
 export {
   Tooltip,

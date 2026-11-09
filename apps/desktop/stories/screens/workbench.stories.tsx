@@ -81,3 +81,9 @@ export const AppStart: Story = {
  * widest side bar.
  */
 export const Zoomed200: Story = {}
+
+/**
+ * The window at 320 CSS pixels wide (WCAG 2.2 SC 1.4.10), as at 400 % zoom.
+ * The side bar closes by itself, and the Welcome tab reflows to one column.
+ */
+export const Reflow320: Story = {}

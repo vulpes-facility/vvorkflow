@@ -4,7 +4,13 @@ import type {
   IDockviewPanelProps,
 } from 'dockview-react'
 import { FolderOpen, Search, Settings, Workflow } from 'lucide-react'
-import { createContext, useCallback, useContext, useRef } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+} from 'react'
 import type { WindowControls } from '@/shared/api'
 import { readPixelToken, type Platform } from '@/shared/lib'
 import {
@@ -14,6 +20,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
   TooltipProvider,
+  usePanelRef,
 } from '@/shared/ui'
 import { ActivityAction, ActivityBar } from './activity-bar/activity-bar'
 import { EditorArea } from './editor-area/editor-area'
@@ -23,8 +30,9 @@ import { StatusBar, type StatusItem } from './status-bar/status-bar'
 import { TitleBar, type WindowContext } from './title-bar/title-bar'
 import { Welcome, type RecentProject } from './welcome/welcome'
 import { useLayout } from '../model/layout'
+import { useActionShortcuts } from '../model/use-action-shortcuts'
 import { useEditorShortcuts } from '../model/use-editor-shortcuts'
-import { useStartShortcuts } from '../model/use-start-shortcuts'
+import { useNarrowWindow } from '../model/use-narrow-window'
 import { useViewShortcuts } from '../model/use-view-shortcuts'
 import { views } from '../model/views'
 
@@ -67,12 +75,27 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     onOpenSettings,
   } = props
   const view = useLayout((state) => state.view)
+  const sideBarOpen = useLayout((state) => state.sideBarOpen)
   const showView = useLayout((state) => state.showView)
-  useViewShortcuts(platform, showView)
-  useStartShortcuts(platform, {
+  const selectView = useLayout((state) => state.selectView)
+  const setSideBarOpen = useLayout((state) => state.setSideBarOpen)
+  const toggleSideBar = useLayout((state) => state.toggleSideBar)
+  useViewShortcuts(platform, showView, toggleSideBar)
+  useNarrowWindow(setSideBarOpen)
+  useActionShortcuts(platform, {
     onNewProject: props.onNewProject,
     onOpenFolder: props.onOpenFolder,
+    onOpenSettings,
   })
+
+  // The panel follows the layout state; a drag to the collapsed size updates the state.
+  const sideBarPanel = usePanelRef()
+  useEffect(() => {
+    const panel = sideBarPanel.current
+    if (!panel) return
+    if (sideBarOpen && panel.isCollapsed()) panel.expand()
+    if (!sideBarOpen && !panel.isCollapsed()) panel.collapse()
+  }, [sideBarOpen, sideBarPanel])
 
   const editor = useRef<DockviewApi | undefined>(undefined)
   const getEditor = useCallback(() => editor.current, [])
@@ -95,7 +118,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             platform={platform}
             activities={[...views]}
             activeId={view}
-            onSelect={(id) => showView(id as typeof view)}
+            onSelect={(id) => selectView(id as typeof view)}
             panelId={sideBarId}
             footer={
               onOpenSettings && (
@@ -114,12 +137,17 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             className="min-w-0 flex-1"
           >
             <ResizablePanel
+              panelRef={sideBarPanel}
+              collapsible
+              collapsedSize={0}
+              onResize={(size) => setSideBarOpen(size.inPixels > 0)}
               defaultSize={readPixelToken('--vv-sidebar-w', 300)}
               minSize={readPixelToken('--vv-sidebar-min-w', 240)}
               maxSize={readPixelToken('--vv-sidebar-max-w', 560)}
             >
               <SideBar
                 platform={platform}
+                open={sideBarOpen}
                 id={sideBarId}
                 title={activeView.label}
               >
@@ -160,6 +188,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
                 platform={platform}
                 context={context}
                 windowControls={windowControls}
+                besideWindowButtons={platform === 'macos' && !sideBarOpen}
               />
               <div className="min-h-0 flex-1">
                 <EditorArea components={components} onReady={onEditorReady} />

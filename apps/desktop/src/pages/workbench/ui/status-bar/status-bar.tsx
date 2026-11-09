@@ -25,10 +25,15 @@ export function StatusBar({ start = [], end = [] }: StatusBarProps) {
     <footer
       aria-label="Status"
       // The top hairline is drawn over the items, so that they keep the full 24 px height.
-      className="relative flex h-statusbar shrink-0 items-stretch justify-between bg-chrome px-1 text-xs text-chrome-foreground before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-px before:bg-hairline"
+      className="relative flex min-h-statusbar shrink-0 flex-wrap items-stretch justify-between bg-chrome px-1 text-xs text-chrome-foreground before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:z-10 before:h-px before:bg-hairline"
     >
-      <div className="flex min-w-0 items-stretch">{start.map(renderItem)}</div>
-      <div className="flex min-w-0 items-stretch">{end.map(renderItem)}</div>
+      {/* In a narrow window the items wrap to more rows, so that no label is cut (WCAG 2.2 SC 1.4.10). */}
+      <div className="flex min-w-0 flex-wrap items-stretch">
+        {start.map(renderItem)}
+      </div>
+      <div className="flex min-w-0 flex-wrap items-stretch">
+        {end.map(renderItem)}
+      </div>
     </footer>
   )
 }
@@ -38,14 +43,15 @@ function renderItem(item: StatusItem) {
   const content = (
     <>
       {Icon && <Icon className="size-icon-sm" strokeWidth={1.75} aria-hidden />}
-      <span className="truncate">{item.label}</span>
+      <span className="truncate whitespace-nowrap">{item.label}</span>
       {/* The description is in the tooltip for the pointer, and here for assistive technology. */}
       {item.description && (
         <span className="sr-only">: {item.description}</span>
       )}
     </>
   )
-  const className = 'flex min-w-6 items-center gap-1.5 px-2'
+  const className =
+    'flex h-statusbar max-w-full min-w-6 shrink-0 items-center gap-1.5 px-2'
   if (item.onClick) {
     return (
       <button
