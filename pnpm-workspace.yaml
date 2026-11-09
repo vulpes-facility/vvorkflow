@@ -4,3 +4,9 @@ packages:
 allowBuilds:
   esbuild: true
   lefthook: true
+# Patched versions of transitive dev tools, for the advisories of `pnpm audit`:
+# glob (GHSA-3g3m-2fjr-6pw4) in the docgen plugin of Storybook, and minimatch
+# (GHSA-g3hv-75wg-m249) in glob and in ts-morph of the shadcn CLI.
+overrides:
+  glob@>=9 <14.0.2: ^14.0.2
+  minimatch@>=7 <11.0.1: ^11.0.1
