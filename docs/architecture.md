@@ -81,9 +81,9 @@ The events come with the terminal sessions (M4).
 5. The desktop app can also open other folders on its own computer, as in VS Code.\
    A remote client can open only the projects in the root.
 
-Status: done in the app process (M3), with the method `project.list`.\
+Status: done (M3), with the method `project.list`.\
 The Welcome tab shows the projects, or the message of a root that is not correct.\
-The engine process, which stops on a root that is not correct, is next (M3).
+The engine process stops on a root that is not correct; the app shows its message when the app starts the process, which is next (M3).
 
 [`conventions/engine.md`](conventions/engine.md) gives the rules that keep each request in these folders.
 
@@ -95,23 +95,30 @@ The engine process, which stops on a root that is not correct, is next (M3).
 2. On Linux and macOS, its folder is the first of these where the path of the socket has at most 100 bytes:\
    `$XDG_RUNTIME_DIR/vvorkflow`, `vvorkflow-<uid>` in the temporary folder, and `/tmp/vvorkflow-<uid>`.\
    On Windows, it is `%LOCALAPPDATA%\vvorkflow`.
-3. The engine makes the folder with mode 0700.\
-   It refuses a folder that is a symbolic link, that another user owns, or that other users can open.
-4. The folder holds `engine.lock`, `engine.log`, and, except on Windows, the socket `engine.sock`.\
-   On Windows, the endpoint is a named pipe with the path of the folder in its name, and it refuses remote clients.\
-   Other users can open the pipe only to read, and the engine sends a message only as the answer to a request.
-5. Only one engine listens on an endpoint.\
+3. On Linux and macOS, the engine makes the folder with mode 0700.\
+   It refuses a folder that is a symbolic link, that another user owns, or that other users can open.\
+   It also refuses a folder above it that a user other than this user and root owns, or that other users can write without the sticky bit.\
+   So no other user can replace the folder, and its path leads to the same folder at each use.
+4. The folder holds `engine.lock`, `engine.log`, and the socket `engine.sock`.\
+   A client does the same checks of the folder before it connects, and refuses an engine that runs as another user (the peer credentials of the socket).
+5. On Windows, the folder is in the profile of the user, which other users cannot open.\
+   The engine makes a named pipe with a random name, and writes the name and its process id to `engine.pipe` in the folder.\
+   The pipe lets only its owner and the system open it, and it refuses remote clients.\
+   A client reads `engine.pipe`, and refuses a pipe whose server is not that process.
+6. Only one engine listens on an endpoint.\
    The engine locks `engine.lock`, then removes a socket that an old engine left, and then listens.
-6. The engine runs each request on a blocking thread, and at most 8 requests of a connection at a time.\
-   It reads a message of at most 1 MiB.
-7. The engine stops when a client sends `shutdown`, or when no client is connected for a time ([Memory limits](#memory-limits)).
-8. The desktop app finds `vvorkflow-server` next to its own executable.\
+7. The engine serves at most 32 clients, and closes the connection of a client after them at once.\
+   A client has 10 seconds for the WebSocket handshake and `hello`.\
+   The engine reads a message of at most 1 MiB.\
+   It runs each request on a blocking thread: at most 8 requests of all clients at a time, and at most 8 queued requests of each connection.
+8. The engine stops when a client sends `shutdown`, or when no client is connected for a time ([Memory limits](#memory-limits)).
+9. The desktop app finds `vvorkflow-server` next to its own executable.\
    It connects, and when no engine answers, it starts one, detached, with stderr in `engine.log`.\
    When the engine stops before it listens, the app shows the last line of `engine.log`.\
    When `hello` fails because of the version, the app sends `shutdown`, and starts its own engine.
 
-Status: rules 1 to 7 are done (M3).\
-Rule 8 is next (M3).
+Status: rules 1 to 8 are done (M3).\
+Rule 9 is next (M3).
 
 ## Terminal sessions
 
@@ -139,7 +146,7 @@ A setting changes each one.
 | Part | Rule | Default |
 | --- | --- | --- |
 | Engine process | The engine process stops when no client is connected for a time. From M4, it also waits for the end of each session. | 5 minutes |
-| Requests | At most 8 requests of a connection run at a time, and a message has at most 1 MiB. | - |
+| Requests | At most 32 clients; at most 8 requests of all clients run at a time, and at most 8 queue on each connection; a message has at most 1 MiB. | - |
 | Session screen | The engine keeps the screen and the scrollback of each session. | 5,000 lines |
 | Engine output | The engine sends output only for attached sessions. Each client has an output queue with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | Proposal in M4 |
 | App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |
