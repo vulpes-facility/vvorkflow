@@ -370,3 +370,94 @@ async fn clients_that_leave_at_once_do_not_spoil_the_pipe() {
     let welcome = hello(&mut socket, PROTOCOL_VERSION).await;
     assert_eq!(welcome["result"]["protocol"], PROTOCOL_VERSION);
 }
+
+// Each operation of the endpoint checks the folders again, so that a link
+// that changes after a check cannot lead the next operation elsewhere.
+#[cfg(unix)]
+#[tokio::test]
+async fn an_operation_after_a_changed_link_checks_the_folders_again() {
+    use std::os::unix::fs::PermissionsExt;
+    let place = place();
+    let base = place.endpoint.folder().parent().unwrap().to_path_buf();
+    let safe = base.join("safe");
+    let shared = base.join("shared");
+    std::fs::create_dir(&safe).unwrap();
+    std::fs::create_dir(&shared).unwrap();
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let link = base.join("link");
+    std::os::unix::fs::symlink(&safe, &link).unwrap();
+    let endpoint = Endpoint::in_folder(link.join("run"));
+    endpoint.prepare().unwrap();
+    assert_eq!(endpoint.check().unwrap(), safe.join("run"));
+
+    // The link now leads through a folder that other users can write.
+    std::fs::remove_file(&link).unwrap();
+    std::os::unix::fs::symlink(&shared, &link).unwrap();
+    std::fs::create_dir(shared.join("run")).unwrap();
+    std::fs::set_permissions(shared.join("run"), std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(
+        endpoint
+            .lock()
+            .unwrap_err()
+            .contains("Other users can replace")
+    );
+    assert_eq!(
+        endpoint.connect().await.unwrap_err().kind(),
+        std::io::ErrorKind::PermissionDenied
+    );
+}
+
+#[tokio::test]
+async fn a_client_that_does_not_read_loses_its_place_at_the_hello_deadline() {
+    let place = place();
+    let _server = start(
+        &place,
+        Limits {
+            hello: Duration::from_millis(300),
+            clients: 1,
+            ..limits()
+        },
+    );
+    // Many requests before hello, and no read of their answers, until the
+    // answers fill the buffers.
+    let mut flood = connect(&place.endpoint).await;
+    for id in 0..5000 {
+        let request = json!({"id": id, "method": "project.list", "params": {}});
+        if tokio::time::timeout(
+            Duration::from_millis(500),
+            flood.send(Message::text(request.to_string())),
+        )
+        .await
+        .is_err()
+        {
+            break;
+        }
+    }
+
+    // After the deadline, the place of the client is free for another one;
+    // until then, the engine closes a new connection at once.
+    let welcome = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(stream) = place.endpoint.connect().await
+                && let Ok((mut socket, _)) =
+                    tokio_tungstenite::client_async("ws://localhost/", stream).await
+            {
+                let message =
+                    json!({"id": 1, "method": "hello", "params": {"protocol": PROTOCOL_VERSION}});
+                if socket
+                    .send(Message::text(message.to_string()))
+                    .await
+                    .is_ok()
+                    && let Some(welcome) = receive(&mut socket).await
+                {
+                    return welcome;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(welcome["result"]["protocol"], PROTOCOL_VERSION);
+    drop(flood);
+}

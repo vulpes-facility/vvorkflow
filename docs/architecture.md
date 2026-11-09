@@ -98,7 +98,8 @@ The engine process stops on a root that is not correct; the app shows its messag
 3. On Linux and macOS, the engine makes the folder with mode 0700.\
    It refuses a folder that is a symbolic link, that another user owns, or that other users can open.\
    It also refuses a folder above it that a user other than this user and root owns, or that other users can write without the sticky bit.\
-   So no other user can replace the folder, and its path leads to the same folder at each use.
+   Each operation on the endpoint does these checks again, and then uses only the canonical path of the folder, which has no symbolic link.\
+   So no other user can replace the folder or lead an operation to another folder.
 4. The folder holds `engine.lock`, `engine.log`, and the socket `engine.sock`.\
    A client does the same checks of the folder before it connects, and refuses an engine that runs as another user (the peer credentials of the socket).
 5. On Windows, the folder is in the profile of the user, which other users cannot open.\
@@ -110,7 +111,9 @@ The engine process stops on a root that is not correct; the app shows its messag
 7. The engine serves at most 32 clients, and closes the connection of a client after them at once.\
    A client has 10 seconds for the WebSocket handshake and `hello`.\
    The engine reads a message of at most 1 MiB.\
-   It runs each request on a blocking thread: at most 8 requests of all clients at a time, and at most 8 queued requests of each connection.
+   It runs each request on a blocking thread: at most 8 requests of all clients at a time, and at most 8 queued requests of each connection.\
+   A client that does not take a frame for 30 seconds loses its connection.\
+   When a connection ends, its queued requests end too, and a request on a blocking thread keeps its place until it finishes.
 8. The engine stops when a client sends `shutdown`, or when no client is connected for a time ([Memory limits](#memory-limits)).
 9. The desktop app finds `vvorkflow-server` next to its own executable.\
    It connects, and when no engine answers, it starts one, detached, with stderr in `engine.log`.\

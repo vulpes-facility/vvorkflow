@@ -64,26 +64,9 @@ impl Endpoint {
     }
 
     /// The log of the engine process, which the app reads when the process
-    /// stops at start.
-    pub fn log(&self) -> PathBuf {
-        self.folder.join("engine.log")
-    }
-
-    fn lock_file(&self) -> PathBuf {
-        self.folder.join("engine.lock")
-    }
-
-    #[cfg(unix)]
-    fn socket(&self) -> PathBuf {
-        self.folder.join("engine.sock")
-    }
-
-    /// The file that holds the name of the pipe and the process id of the
-    /// engine. Only the user can read the folder, so no other user can learn
-    /// the name before the engine makes the pipe.
-    #[cfg(windows)]
-    fn pipe_file(&self) -> PathBuf {
-        self.folder.join("engine.pipe")
+    /// stops at start, in the folder that [`Endpoint::check`] gives.
+    pub fn log(&self) -> io::Result<PathBuf> {
+        Ok(self.check()?.join("engine.log"))
     }
 
     /// Makes the folder when it does not exist, then checks it.
@@ -108,19 +91,22 @@ impl Endpoint {
                 ));
             }
         }
-        self.check().map_err(|error| error.to_string())
+        self.check().map(|_| ()).map_err(|error| error.to_string())
     }
 
-    /// Checks that no other user can open or replace the folder.
+    /// Checks that no other user can open or replace the folder. Each other
+    /// method of the endpoint does this check first, and then uses only the
+    /// path that it gives.
     ///
-    /// On Unix, refuses (`PermissionDenied`) a folder that is a symbolic link,
-    /// that another user owns, or that other users can open, and a folder
-    /// above it that a user other than this one and root owns, or that other
-    /// users can write without the sticky bit. Then the path of the folder
-    /// leads to the same folder at each later use. On Windows, the folder is
-    /// in the profile of the user, which other users cannot open. Fails with
-    /// `NotFound` when the folder does not exist.
-    pub fn check(&self) -> io::Result<()> {
+    /// Returns the canonical path of the folder: a path without symbolic
+    /// links, through folders that no other user can change. On Unix, refuses
+    /// (`PermissionDenied`) a folder that is a symbolic link, that another
+    /// user owns, or that other users can open, and a folder above it that a
+    /// user other than this one and root owns, or that other users can write
+    /// without the sticky bit. On Windows, the folder is in the profile of the
+    /// user, which other users cannot open. Fails with `NotFound` when the
+    /// folder does not exist.
+    pub fn check(&self) -> io::Result<PathBuf> {
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
@@ -136,7 +122,8 @@ impl Endpoint {
                 .folder
                 .file_name()
                 .ok_or_else(|| refused(format!("{} has no name.", self.folder.display())))?;
-            let folder = std::fs::symlink_metadata(parent.join(name))?;
+            let canonical = parent.join(name);
+            let folder = std::fs::symlink_metadata(&canonical)?;
             if !folder.is_dir() || folder.uid() != user || folder.mode() & 0o077 != 0 {
                 return Err(refused(format!(
                     "{} MUST be a folder of this user that other users cannot open.",
@@ -156,11 +143,12 @@ impl Endpoint {
                     )));
                 }
             }
-            Ok(())
+            Ok(canonical)
         }
         #[cfg(windows)]
         {
-            std::fs::metadata(&self.folder).map(|_| ())
+            std::fs::metadata(&self.folder)?;
+            Ok(self.folder.clone())
         }
     }
 
@@ -169,7 +157,10 @@ impl Endpoint {
     /// Returns the lock, which the process keeps until it stops. Refuses when
     /// another engine holds it.
     pub fn lock(&self) -> Result<File, String> {
-        let path = self.lock_file();
+        let path = self
+            .check()
+            .map_err(|error| error.to_string())?
+            .join("engine.lock");
         let file = File::options()
             .create(true)
             .truncate(false)
@@ -195,7 +186,7 @@ impl Endpoint {
     pub fn bind(&self) -> io::Result<Listener> {
         #[cfg(unix)]
         {
-            let socket = self.socket();
+            let socket = self.check()?.join("engine.sock");
             match std::fs::remove_file(&socket) {
                 Ok(()) => {}
                 Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -210,7 +201,9 @@ impl Endpoint {
         {
             let pipe = format!(r"\\.\pipe\vvorkflow-{}", pipe::random_name());
             let next = pipe::instance(&pipe, true)?;
-            let file = self.pipe_file();
+            // Only the user can read the folder, so no other user learns the
+            // name of the pipe.
+            let file = self.check()?.join("engine.pipe");
             std::fs::write(&file, format!("{pipe}\n{}\n", std::process::id()))?;
             Ok(Listener { pipe, next, file })
         }
@@ -225,8 +218,8 @@ impl Endpoint {
     pub async fn connect(&self) -> io::Result<ClientStream> {
         #[cfg(unix)]
         {
-            self.check()?;
-            let stream = tokio::net::UnixStream::connect(self.socket()).await?;
+            let socket = self.check()?.join("engine.sock");
+            let stream = tokio::net::UnixStream::connect(socket).await?;
             if stream.peer_cred()?.uid() != effective_user() {
                 return Err(io::Error::new(
                     io::ErrorKind::PermissionDenied,
@@ -237,7 +230,7 @@ impl Endpoint {
         }
         #[cfg(windows)]
         {
-            let text = std::fs::read_to_string(self.pipe_file())?;
+            let text = std::fs::read_to_string(self.check()?.join("engine.pipe"))?;
             let mut lines = text.lines();
             let (Some(name), Some(Ok(engine))) =
                 (lines.next(), lines.next().map(str::parse::<u32>))

@@ -67,7 +67,12 @@ pub async fn serve(endpoint: &Endpoint, engine: Arc<Engine>, limits: Limits) -> 
     // client reaches an engine that stops.
     let mut listener = Some(listener);
     let stop = Arc::new(Stop::default());
-    let workers = Arc::new(Semaphore::new(WORKERS));
+    let shared = Arc::new(connection::Shared {
+        engine,
+        workers: Arc::new(Semaphore::new(WORKERS)),
+        hello: limits.hello,
+        stop: Arc::clone(&stop),
+    });
     let (clients, mut count) = watch::channel(0_usize);
     let clients = Arc::new(clients);
     loop {
@@ -76,14 +81,7 @@ pub async fn serve(endpoint: &Endpoint, engine: Arc<Engine>, limits: Limits) -> 
             accepted = accept(&mut listener) => match accepted {
                 Ok(stream) if *clients.borrow() < limits.clients => {
                     let client = Client::join(&clients);
-                    tokio::spawn(connection::serve(
-                        stream,
-                        Arc::clone(&engine),
-                        Arc::clone(&workers),
-                        limits.hello,
-                        Arc::clone(&stop),
-                        client,
-                    ));
+                    tokio::spawn(connection::serve(stream, Arc::clone(&shared), client));
                 }
                 // Too many clients: the stream closes when it drops.
                 Ok(_) => {}
