@@ -117,9 +117,23 @@ export function pathStatus(
   return importance.find((status) => inside.has(status))
 }
 
+// The ids of the rows name the kind of the row, and join their parts with
+// NUL, which no path holds. So a folder and a nested repository at the same
+// path have different ids.
+
 /** The id of the row of a repository. */
 export function repositoryNodeId(repository: ExplorerRepository): string {
-  return `repository:${repository.worktrees[0]?.path ?? repository.name}`
+  return `repository\0${repository.worktrees[0]?.path ?? repository.name}`
+}
+
+/** The id of the row of a worktree. */
+export function worktreeNodeId(worktree: string): string {
+  return `worktree\0${worktree}`
+}
+
+/** The id of the row of a folder or a file of a worktree. */
+export function entryNodeId(worktree: string, relative: string): string {
+  return `entry\0${worktree}\0${relative}`
 }
 
 /** A folder that the tree shows open, and that it has to read. */
@@ -156,7 +170,7 @@ export function buildTree(
     const changed = changes(worktree)
     return items.map((item) => {
       const relative = path === '' ? item.name : `${path}/${item.name}`
-      const id = `${worktree}/${relative}`
+      const id = entryNodeId(worktree, relative)
       const folder = item.kind === 'folder'
       const children =
         folder && expanded.has(id) ? entries(worktree, relative) : undefined
@@ -175,11 +189,12 @@ export function buildTree(
     const id = repositoryNodeId(repository)
     const worktrees = expanded.has(id)
       ? repository.worktrees.map((worktree): TreeNode => {
-          const children = expanded.has(worktree.path)
+          const id = worktreeNodeId(worktree.path)
+          const children = expanded.has(id)
             ? entries(worktree.path, '')
             : undefined
           return {
-            id: worktree.path,
+            id,
             kind: 'worktree',
             // A detached HEAD or a plain folder has no branch: show its folder.
             label: worktree.branch ?? worktree.path.split('/').pop() ?? '',

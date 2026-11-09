@@ -434,3 +434,31 @@ test('when the tree goes away while the user works elsewhere, the focus stays th
   await expect(page.getByRole('tree')).toBeVisible()
   await expect(welcome).toBeFocused()
 })
+
+test('a deep branch that opens again shows at once, without an error', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto(explorerStory)
+  const worktree = page.getByRole('treeitem', { name: /^feat\/explorer/ })
+  await worktree.click()
+  for (let level = 1; level <= 30; level++) {
+    await page
+      .getByRole('treeitem', { name: `level-${level}`, exact: true })
+      .click()
+    await expect(
+      page.getByRole('treeitem', {
+        name: level === 30 ? 'leaf.txt' : `level-${level + 1}`,
+        exact: true,
+      }),
+    ).toBeVisible()
+  }
+
+  // Close the worktree, and open it again: the cached branch opens in one pass.
+  await worktree.click()
+  await expect(page.getByRole('treeitem', { name: 'leaf.txt' })).toBeHidden()
+  await worktree.click()
+  await expect(page.getByRole('treeitem', { name: 'leaf.txt' })).toBeVisible()
+  expect(errors).toEqual([])
+})

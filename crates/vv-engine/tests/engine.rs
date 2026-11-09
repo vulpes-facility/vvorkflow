@@ -144,9 +144,10 @@ fn open_folder_refuses_a_relative_or_a_missing_path() {
         .open_folder(OpenFolder { path: "app".into() })
         .unwrap_err();
     assert_eq!(relative.code, ErrorCode::InvalidArgument);
+    let base = tempfile::tempdir().unwrap();
     let missing = engine
         .open_folder(OpenFolder {
-            path: "/vv-missing-folder".into(),
+            path: base.path().join("missing").to_string_lossy().into_owned(),
         })
         .unwrap_err();
     assert_eq!(missing.code, ErrorCode::NotFound);
@@ -340,5 +341,63 @@ fn the_status_has_each_kind_of_change_and_short_folder_entries() {
             changed("scratch/", GitStatus::Untracked),
             changed("src/lib.rs", GitStatus::Modified),
         ]
+    );
+}
+
+#[test]
+fn a_repository_opens_without_a_worktree_whose_folder_is_gone() {
+    let base = tempfile::tempdir().unwrap();
+    let main = repository(base.path());
+    // The folder of the linked worktree is gone, but git still lists it.
+    std::fs::remove_dir_all(base.path().join("app.feature")).unwrap();
+    let engine = Engine::default();
+
+    let opened = engine
+        .open_folder(OpenFolder { path: text(&main) })
+        .unwrap();
+    assert_eq!(
+        opened
+            .worktrees
+            .iter()
+            .map(|worktree| worktree.path.clone())
+            .collect::<Vec<_>>(),
+        vec![text(&main)]
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_folder_in_the_root_lists_as_a_folder() {
+    let base = tempfile::tempdir().unwrap();
+    let main = repository(base.path());
+    write(&main.join("shared/a.rs"), "a\n");
+    std::os::unix::fs::symlink("../shared", main.join("src/link")).unwrap();
+    let engine = Engine::default();
+    engine
+        .open_folder(OpenFolder { path: text(&main) })
+        .unwrap();
+
+    let listed = engine
+        .list_directory(ListDirectory {
+            worktree: text(&main),
+            path: "src".into(),
+        })
+        .unwrap();
+    assert!(listed.contains(&DirectoryEntry {
+        name: "link".into(),
+        kind: EntryKind::Folder,
+    }));
+    let inside = engine
+        .list_directory(ListDirectory {
+            worktree: text(&main),
+            path: "src/link".into(),
+        })
+        .unwrap();
+    assert_eq!(
+        inside,
+        vec![DirectoryEntry {
+            name: "a.rs".into(),
+            kind: EntryKind::File,
+        }]
     );
 }

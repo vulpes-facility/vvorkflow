@@ -13,6 +13,7 @@ The desktop app has its design tokens, its window shell, the Welcome tab, the te
 - `docs/conventions/writing.md` - How to write the documents: English, ASD-STE100, BCP 14 keywords, and Semantic Line Breaks.
 - `docs/conventions/git.md` - GitHub flow: branch names, Conventional Commits, signed commits, and the squash merge.
 - `docs/conventions/design.md` - The design rules: the tokens, WCAG 2.2 AA, the window shell, and the stories and screen captures.
+- `docs/conventions/engine.md` - The rules that keep each request of the engine in the opened folders, and their known limit.
 - `docs/conventions/tooling.md` - The tool rules that differ from the `vulpes-conventions` plugin: oxlint, the shadcn folder, the Node.js and Rust versions, and the Turborepo settings.
 - `apps/desktop/` - The desktop app: the React web UI in `src/`, and the Tauri 2 shell in `src-tauri/`.
 - `apps/desktop/src/app/styles/tokens.css` - The design tokens, the only source of design values, for the light and the dark theme.

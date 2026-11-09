@@ -1,8 +1,9 @@
-import { useQueries } from '@tanstack/react-query'
+import { useQueries, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import {
   buildTree,
   repositoryNodeId,
+  worktreeNodeId,
   type DirectoryItem,
   type ExplorerRepository,
   type ExplorerSource,
@@ -29,11 +30,11 @@ function opened(repository: ExplorerRepository) {
     repositoryNodeId(repository),
     ...repository.worktrees
       .filter((worktree) => worktree.current)
-      .map((worktree) => worktree.path),
+      .map((worktree) => worktreeNodeId(worktree.path)),
   ]
 }
 
-const folderKey = ({ worktree, path }: FolderToRead) => `${worktree}\n${path}`
+const folderKey = ({ worktree, path }: FolderToRead) => `${worktree}\0${path}`
 
 /**
  * The Explorer: the tree of the open repositories. It reads a folder only
@@ -78,17 +79,20 @@ export function ExplorerView({
     .flatMap((repository) => repository.worktrees.map(({ path }) => path))
 
   // The folders to read are the open ones that the tree reaches; the tree
-  // reaches more of them after each answer.
+  // reaches more of them after each answer. A folder that the cache already
+  // has counts at once, so a deep branch that opens again takes one pass.
+  const queryClient = useQueryClient()
+  const directoryKey = (folder: FolderToRead) => [
+    'explorer',
+    source.id,
+    'directory',
+    folder.worktree,
+    folder.path,
+  ]
   const [wanted, setWanted] = useState<FolderToRead[]>([])
   const folders = useQueries({
     queries: wanted.map((folder) => ({
-      queryKey: [
-        'explorer',
-        source.id,
-        'directory',
-        folder.worktree,
-        folder.path,
-      ],
+      queryKey: directoryKey(folder),
       queryFn: () => source.listDirectory(folder.worktree, folder.path),
     })),
   })
@@ -100,8 +104,12 @@ export function ExplorerView({
     repositories,
     expanded,
     (worktree, path) => {
-      reached.push({ worktree, path })
-      return read.get(folderKey({ worktree, path }))
+      const folder = { worktree, path }
+      reached.push(folder)
+      return (
+        read.get(folderKey(folder)) ??
+        queryClient.getQueryData<DirectoryItem[]>(directoryKey(folder))
+      )
     },
     (worktree) => statuses[gitWorktrees.indexOf(worktree)]?.data,
   )

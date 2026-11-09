@@ -57,16 +57,30 @@ impl Engine {
         }
         let (repository, roots) = match git::toplevel(&folder) {
             Some(top) => {
-                let worktrees = git::worktrees(&top)?;
+                let mut worktrees = git::worktrees(&top)?;
                 let name = name_of(worktrees.first().map_or(&top, |main| &main.0));
+                // Git also lists a worktree whose folder is gone until it is
+                // pruned: leave such a worktree out, but not the opened one.
                 let mut roots = Vec::new();
-                for (path, _) in &worktrees {
-                    roots.push(Root {
-                        dir: open_dir(path)?,
-                        git_dir: Some(git::git_dir(path)?),
-                        path: path.clone(),
+                let mut available = Vec::new();
+                for (path, branch) in worktrees.drain(..) {
+                    let root = open_dir(path.as_path()).and_then(|dir| {
+                        Ok(Root {
+                            dir,
+                            git_dir: Some(git::git_dir(&path)?),
+                            path: path.clone(),
+                        })
                     });
+                    match root {
+                        Ok(root) => {
+                            roots.push(root);
+                            available.push((path, branch));
+                        }
+                        Err(error) if path == top => return Err(error),
+                        Err(_) => {}
+                    }
                 }
+                let worktrees = available;
                 let repository = Repository {
                     name,
                     git: true,
@@ -133,14 +147,16 @@ impl Engine {
             .filter(|entry| entry.file_name() != ".git")
             .map(|entry| {
                 let name = entry.file_name();
-                // A link to a folder in the root opens as a folder; the handle
-                // does not follow a link out of the root.
-                let folder = folder
-                    .metadata(&name)
+                // A link to a folder in the root opens as a folder, also when
+                // it leads up and back down, as `src/link -> ../shared`. The
+                // root handle does not follow a link out of the root.
+                let is_folder = root
+                    .dir
+                    .metadata(relative.join(&name))
                     .is_ok_and(|metadata| metadata.is_dir());
                 DirectoryEntry {
                     name: name.to_string_lossy().into_owned(),
-                    kind: if folder {
+                    kind: if is_folder {
                         EntryKind::Folder
                     } else {
                         EntryKind::File

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildTree,
+  entryNodeId,
   pathStatus,
+  repositoryNodeId,
+  worktreeNodeId,
   survivingRow,
   visibleRows,
   type ChangedItem,
@@ -78,7 +81,11 @@ describe('buildTree', () => {
   it('reads only the open folders under open folders', () => {
     const { toRead } = buildTree(
       repositories,
-      new Set(['repository:/code/app', '/code/app', '/code/app/src']),
+      new Set([
+        repositoryNodeId(repositories[0]),
+        worktreeNodeId('/code/app'),
+        entryNodeId('/code/app', 'src'),
+      ]),
       () => undefined,
       status,
     )
@@ -88,10 +95,10 @@ describe('buildTree', () => {
     const next = buildTree(
       repositories,
       new Set([
-        'repository:/code/app',
-        '/code/app',
-        '/code/app/src',
-        '/code/app/node_modules/x',
+        repositoryNodeId(repositories[0]),
+        worktreeNodeId('/code/app'),
+        entryNodeId('/code/app', 'src'),
+        entryNodeId('/code/app', 'node_modules/x'),
       ]),
       (worktree, path) => (path === '' ? read(worktree, path) : undefined),
       status,
@@ -102,13 +109,17 @@ describe('buildTree', () => {
   it('builds the rows with their status, and an empty folder cannot open', () => {
     const { nodes } = buildTree(
       repositories,
-      new Set(['repository:/code/app', '/code/app', '/code/app/empty']),
+      new Set([
+        repositoryNodeId(repositories[0]),
+        worktreeNodeId('/code/app'),
+        entryNodeId('/code/app', 'empty'),
+      ]),
       read,
       status,
     )
     const worktree = nodes[0].children![0]
     expect(worktree).toMatchObject({
-      id: '/code/app',
+      id: worktreeNodeId('/code/app'),
       label: 'main',
       status: 'modified',
       current: true,
@@ -125,6 +136,38 @@ describe('buildTree', () => {
       ['node_modules', undefined, true],
       ['README.md', undefined, false],
     ])
+  })
+})
+
+describe('the ids of the rows', () => {
+  it('differ for a folder and a nested repository at the same path', () => {
+    const outer: ExplorerRepository = {
+      name: 'app',
+      git: true,
+      worktrees: [{ path: '/code/app', current: true }],
+    }
+    const nested: ExplorerRepository = {
+      name: 'nested',
+      git: true,
+      worktrees: [{ path: '/code/app/nested', current: true }],
+    }
+    const expanded = new Set([
+      repositoryNodeId(outer),
+      worktreeNodeId('/code/app'),
+      repositoryNodeId(nested),
+      worktreeNodeId('/code/app/nested'),
+    ])
+    const { nodes } = buildTree(
+      [outer, nested],
+      expanded,
+      (worktree, path) =>
+        worktree === '/code/app' && path === ''
+          ? [{ name: 'nested', kind: 'folder' }]
+          : [],
+      () => [],
+    )
+    const ids = visibleRows(nodes, expanded).map((row) => row.node.id)
+    expect(new Set(ids).size).toBe(ids.length)
   })
 })
 

@@ -1,10 +1,13 @@
 // Sample repositories for the stories and the screen capture. It never goes into `src/`.
-import type {
-  ChangedItem,
-  DirectoryItem,
-  ExplorerRepository,
-  ExplorerSource,
-  GitStatus,
+import {
+  entryNodeId,
+  repositoryNodeId,
+  worktreeNodeId,
+  type ChangedItem,
+  type DirectoryItem,
+  type ExplorerRepository,
+  type ExplorerSource,
+  type GitStatus,
 } from '../src/pages/workbench'
 
 /** A sample file or folder: the whole tree at once, as the engine never sends it. */
@@ -34,6 +37,14 @@ function folder(
   children: SampleEntry[],
 ): SampleEntry {
   return { kind: 'folder', id, name, children }
+}
+
+/** A chain of folders, `level-1` to `level-<depth>`, with one file at the end. */
+function deepChain(depth: number): SampleEntry {
+  let entry = file(`deep/${depth}/leaf`, 'leaf.txt')
+  for (let level = depth; level >= 1; level--)
+    entry = folder(`deep/${level}`, `level-${level}`, [entry])
+  return entry
 }
 
 export const repositories: SampleRepository[] = [
@@ -81,6 +92,7 @@ export const repositories: SampleRepository[] = [
         branch: 'feat/explorer',
         path: '~/code/vvorkflow.explorer',
         children: [
+          deepChain(30),
           file('ex/explorer-tree.tsx', 'explorer-tree.tsx', 'modified'),
         ],
       },
@@ -115,15 +127,25 @@ export const repositories: SampleRepository[] = [
 /** The nodes that the Explorer story shows open: the current worktree, down to the deep folder. */
 const current = '~/code/vvorkflow.terminal-tabs'
 export const expandedPaths = [
-  `repository:${current}`,
-  current,
-  `${current}/apps`,
-  `${current}/apps/desktop`,
-  `${current}/apps/desktop/src`,
-  `${current}/apps/desktop/src/pages`,
-  `${current}/apps/desktop/src/pages/workbench`,
-  `${current}/dist`,
-  'repository:~/code/atlas/api',
+  repositoryNodeId({
+    name: 'vvorkflow',
+    git: true,
+    worktrees: [{ path: current }],
+  }),
+  worktreeNodeId(current),
+  ...[
+    'apps',
+    'apps/desktop',
+    'apps/desktop/src',
+    'apps/desktop/src/pages',
+    'apps/desktop/src/pages/workbench',
+    'dist',
+  ].map((folder) => entryNodeId(current, folder)),
+  repositoryNodeId({
+    name: 'atlas-api',
+    git: true,
+    worktrees: [{ path: '~/code/atlas/api' }],
+  }),
 ]
 
 /** The repositories of the samples, as the engine sends them when it opens a folder. */
