@@ -44,7 +44,8 @@ The receiver checks each message against the schema, at run time.
 1. A request has an `id`, a `method`, and `params`.\
    Its response has the same `id`, and a `result` or an `error`.
 2. An event has no `id`.\
-   The engine sends the events of a subject only to the clients that watch it, for example the output of a session only to its attached clients.
+   The engine sends the events of a subject only to the clients that watch it.\
+   For example, only the attached clients of a session get its output.
 3. The first request of a connection is `hello`, with the protocol version of the client.\
    When the engine does not know that version, it answers with the error `failedPrecondition`, and closes the connection.
 4. The protocol version changes at each change that an older client cannot read.
@@ -88,7 +89,7 @@ A setting changes each one.
 | Part | Rule | Default |
 | --- | --- | --- |
 | Session screen | The engine keeps the screen and the scrollback of each session. | 5,000 lines |
-| Engine output | The engine sends output only for attached sessions. When a client is slow, the engine sends the output in larger batches. When a client falls behind, the engine sends the current screen again. | - |
+| Engine output | The engine sends output only for attached sessions. Each client has an output queue with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | Proposal in M4 |
 | App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |
 | Media and previews | The engine reads a large file in ranges, not all at once. A hidden media tab stops playback and decoding. | 1 MB ranges |
 | Explorer | The web UI reads only the open folders, and drops the folders that it does not use. A large folder scrolls virtually. | 5 minutes |
@@ -100,7 +101,8 @@ A setting changes each one.
 | Subject | Rule | Status |
 | --- | --- | --- |
 | Access | Remote access is off by default. When it is on, the engine listens only on 127.0.0.1 and requires a token. A remote client comes through an SSH tunnel. | Planned (M6) |
-| Paths | A request can reach only the folders of the [projects root](#projects-root) rules. The engine reads the folders through directory handles, and runs git only with the git directory that it found when the folder opened. | Done |
+| Paths | A request can reach only the folders that the user opened, and the worktrees of their repositories. The engine reads the folders through directory handles, and runs git only with the git directory that it found when the folder opened. | Done |
+| Projects root | The engine also reaches the [projects root](#projects-root). A remote client can open only the projects in it. | Next (M3) for the root, planned (M6) for remote clients |
 | Commands | The app does not run installs. It types a command in the terminal, and the user presses Enter. | Done |
 | Previews | The Markdown preview removes HTML and scripts from the document. It blocks remote images by default, and the user can allow them for each document. | Planned (M5) |
 | Sessions | A session runs as the user that runs the engine. | Planned (M4) |

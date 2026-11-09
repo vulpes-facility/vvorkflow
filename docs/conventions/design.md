@@ -84,7 +84,7 @@ The shell follows value 5 of the [core values](../core-values.md).
 
 ## Explorer
 
-The Explorer follows value 3 of the [core values](../core-values.md).
+The Explorer follows value 4 of the [core values](../core-values.md).
 
 1. The tree shows each repository, then its worktrees, then the folders and the files of each worktree.\
    A worktree shows its branch and its path, and the current worktree has a heavier font.
