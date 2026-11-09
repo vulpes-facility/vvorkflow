@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!--
+    The source of the app icons: `pnpm tauri icon src-tauri/icons/icon.svg`
+    makes every size. The colors are the sRGB values of the tokens vv-gray-950,
+    vv-gray-850, vv-gray-150, and vv-indigo-400 of tokens.css, because an icon
+    file cannot read them. An XML comment cannot hold two hyphens in a row.
+  -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#0d0f12"/>
+  <rect x="104" y="104" width="816" height="816" rx="181" fill="none" stroke="#1b1d22" stroke-width="8"/>
+  <g transform="translate(176 176) scale(28)" fill="none" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2.5 6 7.25 18 12 6" stroke="#e8eaed"/>
+    <path d="M12 6 16.75 18 21.5 6" stroke="#8694fa"/>
+  </g>
+</svg>

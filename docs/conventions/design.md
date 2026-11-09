@@ -11,7 +11,10 @@ There is no separate design file.
 3. Use the semantic variables only through the Tailwind utilities of `src/app/styles/index.css`, for example `bg-editor` and `text-muted-foreground`.\
    Do not write a raw color in a component, and do not use an arbitrary color class.
 4. Map each third-party theme, such as dockview, to the semantic variables, as `src/app/styles/dockview-theme.css` does.
-5. `apps/desktop/tests/design-tokens.test.ts` checks these rules in part:\
+5. The app icon is the exception to rule 1, because an icon file cannot read `tokens.css`.\
+   Its source, `apps/desktop/src-tauri/icons/icon.svg`, keeps the sRGB values of the tokens that it uses.\
+   After a change to it, run `pnpm --filter @vvorkflow/desktop tauri icon src-tauri/icons/icon.svg -o src-tauri/icons`, and keep only the desktop sizes.
+6. `apps/desktop/tests/design-tokens.test.ts` checks these rules in part:\
    the structure of `tokens.css` (rules 1 and 2), raw color values and Tailwind palette colors in `src/` (rule 3), and the contrast rules below.\
    It does not check raw sizes or opacity modifiers such as `bg-primary/80`, so check those in review.\
    When you add a semantic color, add its pairs to that test.
