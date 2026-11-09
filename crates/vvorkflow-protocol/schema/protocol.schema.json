@@ -47,6 +47,10 @@
         "kind"
       ]
     },
+    "done": {
+      "description": "The answer of a request that has no value.",
+      "type": "object"
+    },
     "engine_error": {
       "description": "A refused or failed request.",
       "type": "object",
@@ -336,8 +340,30 @@
             "method",
             "params"
           ]
+        },
+        {
+          "description": "Stops the engine process. Answers [`Done`], then the process stops.\nIt is valid before `hello`, and its shape never changes, so that each\napp can stop an engine of an older version.",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "shutdown"
+            },
+            "params": {
+              "description": "Stops the engine process.",
+              "type": "object"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
         }
       ]
+    },
+    "shutdown": {
+      "description": "Stops the engine process.",
+      "type": "object"
     },
     "welcome": {
       "description": "The answer to [`Hello`] when the engine speaks the protocol of the client.",
@@ -364,6 +390,8 @@
     "hello",
     "welcome",
     "list_projects",
+    "shutdown",
+    "done",
     "project",
     "open_folder",
     "repository",

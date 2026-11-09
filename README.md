@@ -67,7 +67,8 @@ Each task MUST pass with no errors and no warnings before a pull request.
 │       └── tests/          The Vitest tests, such as the token and contrast checks
 ├── crates/
 │   ├── vvorkflow-protocol/ The protocol of the engine, and its JSON Schema
-│   └── vvorkflow-engine/   The engine: folders, worktrees, and git status
+│   ├── vvorkflow-engine/   The engine: folders, worktrees, and git status
+│   └── vvorkflow-server/   The engine process, on a local socket
 ├── packages/               The shared packages (none yet)
 ├── docs/                   The core values, the architecture, and the conventions
 ├── Cargo.toml              The Cargo workspace

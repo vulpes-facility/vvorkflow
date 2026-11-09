@@ -438,8 +438,9 @@ fn a_branch_keeps_a_name_that_starts_like_a_reference() {
 #[test]
 fn the_projects_are_the_folders_in_the_root() {
     let base = tempfile::tempdir().unwrap();
+    // Git on Windows does not take the `\\?\` form of a canonical path.
+    repository(base.path());
     let root = base.path().canonicalize().unwrap();
-    repository(&root);
     std::fs::create_dir(root.join("Notes")).unwrap();
     std::fs::create_dir(root.join(".cache")).unwrap();
     write(&root.join("todo.txt"), "one\n");

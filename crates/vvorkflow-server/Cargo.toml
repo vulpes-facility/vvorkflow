@@ -1,0 +1,22 @@
+[package]
+name = "vvorkflow-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "net", "io-util", "sync", "time", "macros", "fs"] }
+tokio-tungstenite = "0.30.0"
+vvorkflow-engine = { version = "0.1.0", path = "../vvorkflow-engine" }
+vvorkflow-protocol = { version = "0.1.0", path = "../vvorkflow-protocol" }
+
+[target."cfg(unix)".dependencies]
+libc = "0.2"
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_System_Pipes", "Win32_System_Threading"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

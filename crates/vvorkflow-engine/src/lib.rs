@@ -134,7 +134,9 @@ impl Engine {
 
     /// Does one request.
     ///
-    /// Returns the value of its method, or the error of that method.
+    /// Returns the value of its method, or the error of that method. Refuses
+    /// `shutdown` (`failedPrecondition`), which the engine process does
+    /// itself.
     pub fn handle(&self, request: Request) -> Result<Response, EngineError> {
         Ok(match request {
             Request::Hello(hello) => Response::Welcome(self.hello(hello)?),
@@ -142,6 +144,12 @@ impl Engine {
             Request::OpenFolder(open) => Response::Repository(self.open_folder(open)?),
             Request::ListDirectory(list) => Response::Entries(self.list_directory(list)?),
             Request::ReadStatus(read) => Response::Status(self.read_status(read)?),
+            Request::Shutdown(_) => {
+                return Err(error(
+                    ErrorCode::FailedPrecondition,
+                    "Only the engine process can stop.".to_owned(),
+                ));
+            }
         })
     }
 
