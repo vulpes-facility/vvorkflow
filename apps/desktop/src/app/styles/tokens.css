@@ -84,6 +84,8 @@
   --vv-sidebar-min-w: 240px;
   --vv-sidebar-max-w: 560px;
   --vv-editor-min-w: 320px;
+  /* At this window width and under, the side bar becomes a drawer. */
+  --vv-narrow-max-w: 640px;
   --vv-hairline-w: 1px;
   --vv-radius-none: 0px;
   --vv-space-none: 0px;

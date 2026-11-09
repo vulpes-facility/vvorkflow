@@ -118,3 +118,32 @@ test('the separator is off at 320 px, so the keyboard cannot reopen the docked p
   for (let step = 0; step < 10; step++) await page.keyboard.press('ArrowRight')
   expect(await close.boundingBox()).toEqual(before)
 })
+
+// WCAG 2.2 SC 2.4.3: when the side bar opens or closes, the focus stays on a
+// visible control.
+test('mod+B moves the focus out of the side bar that it closes', async ({
+  page,
+}) => {
+  const content = page.getByRole('region', { name: 'Explorer content' })
+  await content.focus()
+  await page.keyboard.press('Meta+B')
+  await expect(content).toBeHidden()
+  await expect(page.getByRole('tab', { name: 'Explorer' })).toBeFocused()
+})
+
+test('in a narrow window, the drawer takes the focus from the inert editor area, and gives it back', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 256 })
+  await page.goto(
+    '/iframe.html?id=screens-workbench--macos-dark&viewMode=story&globals=a11y.manual:!true',
+  )
+  await page.getByRole('button', { name: 'New project…' }).focus()
+  await page.keyboard.press('Meta+B')
+  const drawerContent = page.getByRole('region', { name: 'Explorer content' })
+  await expect(drawerContent).toBeFocused()
+
+  await page.keyboard.press('Meta+B')
+  await expect(drawerContent).toBeHidden()
+  await expect(page.getByRole('tab', { name: 'Explorer' })).toBeFocused()
+})
