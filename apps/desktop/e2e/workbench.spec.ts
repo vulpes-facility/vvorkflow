@@ -203,7 +203,9 @@ test('a git status has a shape and a name, not only a color', async ({
   const conflict = page.getByRole('treeitem', {
     name: /^merge-notes\.md\s*,\s*conflict$/,
   })
-  const warning = conflict.locator('[data-git-status="conflict"] svg')
+  const warning = conflict.locator(
+    '[data-git-status="conflict"] svg.lucide-triangle-alert',
+  )
   await expect(warning).toBeVisible()
   expect((await warning.boundingBox())?.width).toBeGreaterThanOrEqual(12)
 

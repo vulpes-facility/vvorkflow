@@ -41,7 +41,10 @@ The app MUST conform to WCAG 2.2 Level AA.
    When a control has visible text, its accessible name MUST contain that text.
 5. Do not show a meaning with color alone.\
    For example, a git status has a color and a shape.
-6. Each action that uses a drag MUST also have a way that does not use a drag, for example a context menu item or a command.
+6. Each action that uses a drag MUST also have a way that does not use a drag, for example a context menu item or a command.\
+   A tab moves with the items of its menu: split right, and move to the next or the previous group.\
+   Shift+F10 or the Menu key opens the menu of the focused tab (`useTabMenuKeys`).\
+   The side bar width changes with the menu of its header row, or with the arrow keys on the separator.
 7. A control that is inside a tab or a row, such as the close icon of a tab, is a pointer target only.\
    Give its action a keyboard shortcut or a menu item, so that interactive controls do not nest.\
    In a terminal on Windows and Linux, the program takes the Ctrl shortcuts, so press F6 first (see [Terminal](#terminal)).
@@ -58,11 +61,6 @@ The app MUST conform to WCAG 2.2 Level AA.
     It also measures each pointer target, and finds horizontal scroll in the page and in each scroll area.\
     A screen MUST pass all of these checks.
 
-Known gaps, to close with the context menus of the editor area:
-
-- A tab moves to another group only by a drag.
-- The side bar width changes only by a drag or with the arrow keys on the separator.
-
 ## Shell
 
 The shell follows value 5 of the [core values](../core-values.md).
@@ -77,6 +75,9 @@ The shell follows value 5 of the [core values](../core-values.md).
    `src-tauri/tauri.macos.conf.json` repeats the whole window object of `tauri.conf.json`, because Tauri merges the platform file as a JSON Merge Patch, which replaces an array and does not merge it.
 3. The title bar and the top strip of the activity bar and the side bar drag the window (`data-tauri-drag-region`).
 4. When the side bar is closed on macOS, the window buttons reach into the title bar, so the title bar content starts after them.
+5. Actions open from context menus, as value 5 says.\
+   A menu shows only the actions that apply now, and hides the others.\
+   When an action takes away the element that opened the menu, the focus goes to the element that is active after it.
 
 ## Explorer
 

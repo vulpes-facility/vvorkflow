@@ -1,4 +1,11 @@
 export { Button, buttonVariants } from './button'
+export {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from './context-menu'
 export { EmptyState } from './empty-state'
 export { Kbd, KbdGroup } from './kbd'
 export { LogoMark } from './logo'
