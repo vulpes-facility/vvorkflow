@@ -27,6 +27,8 @@ pnpm dev
 ```
 
 `pnpm dev` opens the desktop app in a Tauri window.\
+The engine keeps the projects in `~/vvorkflow`.\
+To use a different folder, set `VVORKFLOW_ROOT` to its absolute path, as `.env.example` shows.\
 To open only the web UI in a browser, run `pnpm --filter @vvorkflow/desktop dev:web`.
 
 ## Tasks

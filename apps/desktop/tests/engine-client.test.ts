@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // The process boundary: the IPC of Tauri.
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
-const { openFolder, readStatus, EngineRequestError } =
+const { hello, listProjects, openFolder, readStatus, EngineRequestError } =
   await import('../src/shared/api/engine.ts')
 
 // A hook that returns a function gets it called as a cleanup, so return nothing.
@@ -20,8 +20,25 @@ describe('the engine client', () => {
     }
     invoke.mockResolvedValue(repository)
     await expect(openFolder('/code/app')).resolves.toEqual(repository)
-    expect(invoke).toHaveBeenCalledWith('open_folder', {
-      request: { path: '/code/app' },
+    expect(invoke).toHaveBeenCalledWith('request', {
+      request: { method: 'folder.open', params: { path: '/code/app' } },
+    })
+  })
+
+  it('starts with the protocol version, and lists the projects', async () => {
+    invoke.mockResolvedValueOnce({ protocol: 1, root: '/home/me/vvorkflow' })
+    await expect(hello()).resolves.toEqual({
+      protocol: 1,
+      root: '/home/me/vvorkflow',
+    })
+    expect(invoke).toHaveBeenLastCalledWith('request', {
+      request: { method: 'hello', params: { protocol: 1 } },
+    })
+    const project = { name: 'app', path: '/home/me/vvorkflow/app', git: true }
+    invoke.mockResolvedValueOnce([project])
+    await expect(listProjects()).resolves.toEqual([project])
+    expect(invoke).toHaveBeenLastCalledWith('request', {
+      request: { method: 'project.list', params: {} },
     })
   })
 

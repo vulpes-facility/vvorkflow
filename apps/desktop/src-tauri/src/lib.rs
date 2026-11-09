@@ -2,21 +2,29 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::State;
-use vvorkflow_engine::Engine;
-use vvorkflow_protocol::{
-    ChangedPath, DirectoryEntry, EngineError, ErrorCode, ListDirectory, OpenFolder, ReadStatus,
-    Repository,
-};
+use vvorkflow_engine::{Engine, projects_root_from_env};
+use vvorkflow_protocol::{EngineError, ErrorCode, Request, Response};
 
 /// The folders of the command line, which the app opens at start.
 struct StartupFolders(Vec<String>);
 
-/// Runs a request of the engine on a blocking thread, because it waits for
-/// the file system and for git, and the main thread draws the window.
-async fn blocking<T: Send + 'static>(
-    work: impl FnOnce() -> Result<T, EngineError> + Send + 'static,
-) -> Result<T, EngineError> {
-    tauri::async_runtime::spawn_blocking(work)
+/// The engine, or the error that stopped it at start, for example a projects
+/// root that is not a folder. Each request then answers that error.
+type EngineState = Result<Arc<Engine>, EngineError>;
+
+/// Sends one request to the engine, on a blocking thread, because the engine
+/// waits for the file system and for git, and the main thread draws the
+/// window.
+///
+/// Returns the value of the request, or its error. When the engine did not
+/// start, returns the error that stopped it.
+#[tauri::command]
+async fn request(
+    engine: State<'_, EngineState>,
+    request: Request,
+) -> Result<Response, EngineError> {
+    let engine = Arc::clone(engine.inner().as_ref().map_err(Clone::clone)?);
+    tauri::async_runtime::spawn_blocking(move || engine.handle(request))
         .await
         .unwrap_or_else(|error| {
             Err(EngineError {
@@ -24,33 +32,6 @@ async fn blocking<T: Send + 'static>(
                 message: format!("The engine stopped: {error}"),
             })
         })
-}
-
-#[tauri::command]
-async fn open_folder(
-    engine: State<'_, Arc<Engine>>,
-    request: OpenFolder,
-) -> Result<Repository, EngineError> {
-    let engine = Arc::clone(&engine);
-    blocking(move || engine.open_folder(request)).await
-}
-
-#[tauri::command]
-async fn list_directory(
-    engine: State<'_, Arc<Engine>>,
-    request: ListDirectory,
-) -> Result<Vec<DirectoryEntry>, EngineError> {
-    let engine = Arc::clone(&engine);
-    blocking(move || engine.list_directory(request)).await
-}
-
-#[tauri::command]
-async fn read_status(
-    engine: State<'_, Arc<Engine>>,
-    request: ReadStatus,
-) -> Result<Vec<ChangedPath>, EngineError> {
-    let engine = Arc::clone(&engine);
-    blocking(move || engine.read_status(request)).await
 }
 
 /// The folders to open at start: each argument of the command line, as an
@@ -72,14 +53,11 @@ pub fn run() {
         .collect();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(Arc::new(Engine::default()))
+        .manage::<EngineState>(
+            projects_root_from_env().and_then(|root| Engine::new(&root).map(Arc::new)),
+        )
         .manage(StartupFolders(folders))
-        .invoke_handler(tauri::generate_handler![
-            open_folder,
-            list_directory,
-            read_status,
-            startup_folders
-        ])
+        .invoke_handler(tauri::generate_handler![request, startup_folders])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

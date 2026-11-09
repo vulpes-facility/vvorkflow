@@ -8,6 +8,74 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// The version of this protocol. It changes at each change that an older
+/// client or engine cannot read.
+pub const PROTOCOL_VERSION: u32 = 1;
+
+/// A request to the engine: its method, and its params.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "method", content = "params")]
+pub enum Request {
+    /// The first request of a connection. Answers [`Welcome`].
+    #[serde(rename = "hello")]
+    Hello(Hello),
+    /// Answers each [`Project`] in the projects root.
+    #[serde(rename = "project.list")]
+    ListProjects(ListProjects),
+    /// Answers a [`Repository`].
+    #[serde(rename = "folder.open")]
+    OpenFolder(OpenFolder),
+    /// Answers each [`DirectoryEntry`] of the folder.
+    #[serde(rename = "directory.list")]
+    ListDirectory(ListDirectory),
+    /// Answers each [`ChangedPath`] of the worktree.
+    #[serde(rename = "git.status")]
+    ReadStatus(ReadStatus),
+}
+
+/// The value of a request, in the type that its method gives.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Response {
+    Welcome(Welcome),
+    Projects(Vec<Project>),
+    Repository(Repository),
+    Entries(Vec<DirectoryEntry>),
+    Status(Vec<ChangedPath>),
+}
+
+/// Starts a connection with the protocol version of the client.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Hello {
+    pub protocol: u32,
+}
+
+/// The answer to [`Hello`] when the engine speaks the protocol of the client.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Welcome {
+    pub protocol: u32,
+    /// The absolute path of the projects root.
+    pub root: String,
+}
+
+/// Lists the projects: the folders directly in the projects root.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ListProjects {}
+
+/// A folder directly in the projects root.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct Project {
+    pub name: String,
+    /// The absolute path, which `folder.open` takes.
+    pub path: String,
+    /// True when the folder has a `.git` entry.
+    pub git: bool,
+}
+
 /// Opens a folder: a git repository, or a plain folder.
 /// The engine adds the folder, and each worktree of its repository, to the
 /// roots that later requests can reach (core value 6).
@@ -29,7 +97,7 @@ pub struct Repository {
     pub worktrees: Vec<Worktree>,
 }
 
-/// One worktree of a repository. In vvorkflow, one worktree is one project.
+/// One worktree of a repository.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Worktree {
@@ -124,10 +192,17 @@ pub enum ErrorCode {
 
 /// The JSON Schema of each type that crosses the protocol, in one document,
 /// with each type written in place, so that a generator needs no references.
+/// The keyword `x-protocol-version` holds [`PROTOCOL_VERSION`], so that a
+/// client can check its own version against it.
 pub fn schema() -> schemars::Schema {
     #[derive(JsonSchema)]
     #[allow(dead_code)]
     struct Protocol {
+        request: Request,
+        hello: Hello,
+        welcome: Welcome,
+        list_projects: ListProjects,
+        project: Project,
         open_folder: OpenFolder,
         repository: Repository,
         list_directory: ListDirectory,
@@ -136,10 +211,12 @@ pub fn schema() -> schemars::Schema {
         changed_path: ChangedPath,
         engine_error: EngineError,
     }
-    schemars::generate::SchemaSettings::draft2020_12()
+    let mut schema = schemars::generate::SchemaSettings::draft2020_12()
         .with(|settings| settings.inline_subschemas = true)
         .into_generator()
-        .into_root_schema_for::<Protocol>()
+        .into_root_schema_for::<Protocol>();
+    schema.insert("x-protocol-version".to_owned(), PROTOCOL_VERSION.into());
+    schema
 }
 
 #[cfg(test)]

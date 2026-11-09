@@ -34,6 +34,9 @@ export const protocol = z.object({
       message: z.string().describe('A sentence for the user.'),
     })
     .describe('A refused or failed request.'),
+  hello: z
+    .object({ protocol: z.number().int().gte(0) })
+    .describe('Starts a connection with the protocol version of the client.'),
   list_directory: z
     .object({
       path: z
@@ -46,6 +49,9 @@ export const protocol = z.object({
     .describe(
       'Lists one folder of a worktree. The engine reads only this folder, so that\na large tree, such as `node_modules`, costs nothing until the user opens it.',
     ),
+  list_projects: z
+    .record(z.string(), z.any())
+    .describe('Lists the projects: the folders directly in the projects root.'),
   open_folder: z
     .object({
       path: z
@@ -55,6 +61,15 @@ export const protocol = z.object({
     .describe(
       'Opens a folder: a git repository, or a plain folder.\nThe engine adds the folder, and each worktree of its repository, to the\nroots that later requests can reach (core value 6).',
     ),
+  project: z
+    .object({
+      git: z.boolean().describe('True when the folder has a `.git` entry.'),
+      name: z.string(),
+      path: z
+        .string()
+        .describe('The absolute path, which `folder.open` takes.'),
+    })
+    .describe('A folder directly in the projects root.'),
   read_status: z
     .object({
       worktree: z.string().describe('The absolute path of the worktree.'),
@@ -91,12 +106,124 @@ export const protocol = z.object({
               .describe('True for the worktree of the opened folder.'),
             path: z.string().describe('The absolute path of the worktree.'),
           })
-          .describe(
-            'One worktree of a repository. In vvorkflow, one worktree is one project.',
-          ),
+          .describe('One worktree of a repository.'),
       ),
     })
     .describe(
       'A repository and its worktrees, or a plain folder as one worktree.',
+    ),
+  request: z
+    .any()
+    .superRefine((x, ctx) => {
+      const schemas = [
+        z
+          .object({
+            method: z.literal('hello'),
+            params: z
+              .object({ protocol: z.number().int().gte(0) })
+              .describe(
+                'Starts a connection with the protocol version of the client.',
+              ),
+          })
+          .describe('The first request of a connection. Answers [`Welcome`].'),
+        z
+          .object({
+            method: z.literal('project.list'),
+            params: z
+              .record(z.string(), z.any())
+              .describe(
+                'Lists the projects: the folders directly in the projects root.',
+              ),
+          })
+          .describe('Answers each [`Project`] in the projects root.'),
+        z
+          .object({
+            method: z.literal('folder.open'),
+            params: z
+              .object({
+                path: z
+                  .string()
+                  .describe('An absolute path on the machine of the engine.'),
+              })
+              .describe(
+                'Opens a folder: a git repository, or a plain folder.\nThe engine adds the folder, and each worktree of its repository, to the\nroots that later requests can reach (core value 6).',
+              ),
+          })
+          .describe('Answers a [`Repository`].'),
+        z
+          .object({
+            method: z.literal('directory.list'),
+            params: z
+              .object({
+                path: z
+                  .string()
+                  .describe(
+                    'The folder, relative to the worktree, with `/` between the names.\nAn empty path is the worktree itself.',
+                  ),
+                worktree: z
+                  .string()
+                  .describe('The absolute path of the worktree.'),
+              })
+              .describe(
+                'Lists one folder of a worktree. The engine reads only this folder, so that\na large tree, such as `node_modules`, costs nothing until the user opens it.',
+              ),
+          })
+          .describe('Answers each [`DirectoryEntry`] of the folder.'),
+        z
+          .object({
+            method: z.literal('git.status'),
+            params: z
+              .object({
+                worktree: z
+                  .string()
+                  .describe('The absolute path of the worktree.'),
+              })
+              .describe('Reads the git status of a worktree.'),
+          })
+          .describe('Answers each [`ChangedPath`] of the worktree.'),
+      ]
+      const { errors, failed } = schemas.reduce<{
+        errors: z.core.$ZodIssue[]
+        failed: number
+      }>(
+        ({ errors, failed }, schema) =>
+          ((result) =>
+            result.error
+              ? {
+                  errors: [...errors, ...result.error.issues],
+                  failed: failed + 1,
+                }
+              : { errors, failed })(schema.safeParse(x)),
+        { errors: [], failed: 0 },
+      )
+      const passed = schemas.length - failed
+      if (passed !== 1) {
+        ctx.addIssue(
+          errors.length
+            ? {
+                path: [],
+                code: 'invalid_union',
+                errors: [errors],
+                message:
+                  'Invalid input: Should pass single schema. Passed ' + passed,
+              }
+            : {
+                path: [],
+                code: 'custom',
+                errors: [errors],
+                message:
+                  'Invalid input: Should pass single schema. Passed ' + passed,
+              },
+        )
+      }
+    })
+    .describe('A request to the engine: its method, and its params.'),
+  welcome: z
+    .object({
+      protocol: z.number().int().gte(0),
+      root: z.string().describe('The absolute path of the projects root.'),
+    })
+    .describe(
+      'The answer to [`Hello`] when the engine speaks the protocol of the client.',
     ),
 })
