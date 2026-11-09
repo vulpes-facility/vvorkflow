@@ -139,6 +139,11 @@
   }
 }
 
+/* The stroke of a git status shape: heavier than an icon, so that a small mark stays clear. */
+@utility stroke-status {
+  stroke-width: var(--vv-status-stroke);
+}
+
 /* A row of a tree moves in by one indent for each level after the first. Set --level on the row. */
 @utility tree-inset {
   padding-left: calc(

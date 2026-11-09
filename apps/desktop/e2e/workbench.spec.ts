@@ -199,23 +199,40 @@ test('a git status has a shape and a name, not only a color', async ({
   page,
 }) => {
   await page.goto(explorerStory)
+  // A conflict has a warning shape.
   const conflict = page.getByRole('treeitem', {
     name: /^merge-notes\.md\s*,\s*conflict$/,
   })
-  await expect(conflict.locator('[data-git-status="conflict"]')).toBeVisible()
+  const warning = conflict.locator('[data-git-status="conflict"] svg')
+  await expect(warning).toBeVisible()
+  expect((await warning.boundingBox())?.width).toBeGreaterThanOrEqual(12)
+
+  // A change has a filled dot in the color of the status.
   const changed = page.getByRole('treeitem', {
     name: /^editor-area\.tsx\s*,\s*modified$/,
   })
-  await expect(changed.locator('[data-git-status="modified"]')).toBeVisible()
-  // An ignored file has no mark: its name is in italics.
-  const ignored = page.getByRole('treeitem', {
-    name: /^dist\s*,\s*contains ignored files$/,
+  const dot = changed.locator('[data-git-status="modified"] > span')
+  const [width, height, fill, color] = await dot.evaluate((element) => {
+    const style = getComputedStyle(element)
+    const box = element.getBoundingClientRect()
+    return [box.width, box.height, style.backgroundColor, style.color]
   })
-  await expect(ignored.locator('[data-git-status]')).toHaveCount(0)
-  await expect(ignored.getByText('dist', { exact: true })).toHaveCSS(
-    'font-style',
-    'italic',
-  )
+  expect(width).toBeGreaterThanOrEqual(6)
+  expect(height).toBeGreaterThanOrEqual(6)
+  expect(fill).toBe(color)
+
+  // An ignored folder and an ignored file have no shape: their names are in italics.
+  for (const name of [
+    /^dist\s*,\s*contains ignored files$/,
+    /^index\.js\s*,\s*ignored$/,
+  ]) {
+    const ignored = page.getByRole('treeitem', { name })
+    await expect(ignored.locator('[data-git-status]')).toHaveCount(0)
+    await expect(ignored.locator('span.italic')).toHaveCSS(
+      'font-style',
+      'italic',
+    )
+  }
 })
 
 test('the Explorer opens as a drawer at 320 px and keeps the tree usable', async ({
