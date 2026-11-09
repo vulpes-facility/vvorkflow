@@ -101,3 +101,20 @@ for (const platform of ['macos', 'windows', 'linux'] as const) {
     await expect(explorer).toBeFocused()
   })
 }
+
+test('the separator is off at 320 px, so the keyboard cannot reopen the docked panel', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 256 })
+  await page.goto(
+    '/iframe.html?id=screens-workbench--windows-dark&viewMode=story&globals=a11y.manual:!true',
+  )
+  const separator = page.getByRole('separator')
+  await expect(separator).toHaveAttribute('aria-disabled', 'true')
+  expect(await separator.getAttribute('tabindex')).toBeNull()
+  const close = page.getByRole('button', { name: 'Close' })
+  const before = await close.boundingBox()
+  await separator.evaluate((element) => element.focus())
+  for (let step = 0; step < 10; step++) await page.keyboard.press('ArrowRight')
+  expect(await close.boundingBox()).toEqual(before)
+})

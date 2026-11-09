@@ -23,7 +23,9 @@ The app MUST conform to WCAG 2.2 Level AA.
 1. Text MUST have a contrast of 4.5:1 or more against each surface that it is on, also in the hover and pressed states.\
    Give a state its own opaque semantic color, such as `--primary-hover`, and not a color with alpha, so that the test can check it.\
    Icons, focus indicators, and control boundaries MUST have 3:1 or more.\
-   `--subtle-foreground` is for icons only, because it meets 3:1 and not 4.5:1.
+   `--subtle-foreground` is for icons only, because it meets 3:1 and not 4.5:1.\
+   A hairline that only divides two regions is decoration and MAY be fainter.\
+   When a hairline is also a control, such as the separator of the side bar, a grip with the `--grip` color identifies the control.
 2. Each pointer target MUST be 24 by 24 CSS pixels or more.\
    This is why a list row is 24 px high.\
    Keep the root font size at the default 16 px, because the Tailwind sizes are in rem.\

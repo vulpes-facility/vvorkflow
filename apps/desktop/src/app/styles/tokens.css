@@ -165,6 +165,7 @@
   --subtle-foreground: var(--vv-gray-500);
   --hairline: var(--vv-gray-200);
   --scrollbar-thumb: var(--vv-gray-500);
+  --grip: var(--vv-gray-500);
   --overlay-shadow: var(--vv-black-shadow-soft);
   --indicator: var(--vv-indigo-600);
   --link: var(--vv-indigo-600);
@@ -225,6 +226,7 @@
   --subtle-foreground: var(--vv-gray-500);
   --hairline: var(--vv-gray-850);
   --scrollbar-thumb: var(--vv-gray-550);
+  --grip: var(--vv-gray-550);
   --overlay-shadow: var(--vv-black-shadow-strong);
   --indicator: var(--vv-indigo-400);
   --link: var(--vv-indigo-300);

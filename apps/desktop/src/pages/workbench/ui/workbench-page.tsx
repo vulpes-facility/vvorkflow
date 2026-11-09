@@ -223,6 +223,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             >
               <ResizablePanel
                 panelRef={sideBarPanel}
+                disabled={narrow}
                 collapsible
                 collapsedSize={0}
                 onResize={(size) => {
@@ -236,7 +237,12 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
                 {!narrow && sideBar}
               </ResizablePanel>
               {/* The line starts at the border of the header row, so that the header row looks like one row. */}
-              <ResizableHandle className="w-px bg-transparent before:absolute before:inset-x-0 before:top-[calc(var(--vv-titlebar-h)-var(--vv-hairline-w))] before:bottom-0 before:bg-hairline before:transition-colors before:delay-(--vv-delay-sash) before:duration-(--vv-duration-fast) after:w-2 data-[separator=active]:before:bg-indicator data-[separator=hover]:before:bg-indicator" />
+              <ResizableHandle
+                // In a narrow window the side bar is a drawer, so the separator does nothing.
+                disabled={narrow}
+                withHandle={!narrow}
+                className="w-px bg-transparent before:absolute before:inset-x-0 before:top-[calc(var(--vv-titlebar-h)-var(--vv-hairline-w))] before:bottom-0 before:bg-hairline before:transition-colors before:delay-(--vv-delay-sash) before:duration-(--vv-duration-fast) after:w-2 data-[separator=active]:before:bg-indicator data-[separator=hover]:before:bg-indicator"
+              />
               <ResizablePanel
                 className="flex min-w-0 flex-col"
                 // The side bar cannot squeeze the editor area below a usable width.

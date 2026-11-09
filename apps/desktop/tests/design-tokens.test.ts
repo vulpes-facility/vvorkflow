@@ -221,6 +221,8 @@ const nonTextPairs: [string, string[]][] = [
   ['ring', ['editor', 'chrome', 'sidebar', 'popover', 'hover']],
   ['input', ['editor', 'sidebar', 'popover']],
   ['scrollbar-thumb', ['editor', 'chrome', 'sidebar', 'popover']],
+  // The grip identifies the separator, a control; the hairline beside it is decoration.
+  ['grip', ['editor', 'chrome', 'sidebar']],
   ['window-close-hover-foreground', ['window-close-hover']],
 ]
 

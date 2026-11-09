@@ -24,4 +24,5 @@ This file gives only the rules that are different from that plugin, or that it d
 9. Use only package versions that are older than the `minimumReleaseAge` of pnpm.\
    Do not add a `minimumReleaseAgeExclude` entry.\
    Pick an older version.
-10. Keep the stories, the fixtures, the Playwright specs, and the Vitest tests of `apps/desktop` outside `src/`, in `stories/`, `fixtures/`, `e2e/`, and `tests/`.
+10. Keep the Playwright specs and the Vitest tests of `apps/desktop` outside `src/`, in `e2e/` and `tests/`.\
+    [design.md](design.md) gives the place of the stories and the fixtures.
