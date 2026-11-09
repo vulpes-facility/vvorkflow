@@ -83,11 +83,10 @@ const importance: GitStatus[] = [
  * Finds the status of a path from the changed paths of its worktree.
  *
  * @param path The path relative to the worktree; empty for the worktree.
- * @returns For a file, its own status. For a folder, the most important
- * status of the folder itself, such as a changed submodule, and of the paths
- * in it, without the ignored ones. A path in a folder that
- * git reports as a whole, or that folder itself, has the status of the folder.
- * A path with no change has none.
+ * @returns The most important status of the path itself, of the paths in
+ * it for a folder, and of a folder above it that git reports as a whole, such
+ * as an untracked or an ignored folder. An ignored path in a folder does not
+ * make the folder ignored. A path with no change has none.
  */
 export function pathStatus(
   changes: readonly ChangedItem[] | undefined,
@@ -96,25 +95,29 @@ export function pathStatus(
 ): GitStatus | undefined {
   if (!changes) return undefined
   const asFolder = `${path}/`
-  const whole = changes.find(
-    (change) =>
+  const statuses = new Set<GitStatus>()
+  for (const change of changes) {
+    // The path itself, as a file, or as a folder that git reports as a whole.
+    const own = change.path === path || change.path === asFolder
+    // A path in the folder; an ignored one does not make the folder ignored.
+    const inside =
+      folder &&
+      (path === '' || change.path.startsWith(asFolder)) &&
+      change.status !== 'ignored'
+    // A folder above, that git reports as a whole, holds the path.
+    const above =
       path !== '' &&
       change.path.endsWith('/') &&
-      (folder ? asFolder : path).startsWith(change.path),
+      change.path !== asFolder &&
+      path.startsWith(change.path)
+    if (own || inside || above) statuses.add(change.status)
+  }
+  // The most important status wins, so a deletion in an untracked or an
+  // ignored folder still shows; ignored shows only when nothing else does.
+  return (
+    importance.find((status) => statuses.has(status)) ??
+    (statuses.has('ignored') ? 'ignored' : undefined)
   )
-  if (whole) return whole.status
-  if (!folder) return changes.find((change) => change.path === path)?.status
-  const prefix = path === '' ? '' : asFolder
-  const inside = new Set(
-    changes
-      .filter(
-        (change) =>
-          (change.path === path || change.path.startsWith(prefix)) &&
-          change.status !== 'ignored',
-      )
-      .map((change) => change.status),
-  )
-  return importance.find((status) => inside.has(status))
 }
 
 // The ids of the rows name the kind of the row, and join their parts with
@@ -197,7 +200,7 @@ export function buildTree(
             id,
             kind: 'worktree',
             // A detached HEAD or a plain folder has no branch: show its folder.
-            label: worktree.branch ?? worktree.path.split('/').pop() ?? '',
+            label: worktree.branch ?? worktree.path.split(/[\\/]/).pop() ?? '',
             detail: worktree.path,
             current: worktree.current,
             status: pathStatus(changes(worktree.path), '', true),

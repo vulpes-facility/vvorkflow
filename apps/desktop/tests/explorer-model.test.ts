@@ -52,6 +52,19 @@ describe('pathStatus', () => {
     expect(pathStatus(submodule, 'vendor', true)).toBe('modified')
   })
 
+  it('lets a change in a folder that git reports as a whole win over that folder', () => {
+    for (const whole of ['untracked', 'ignored'] as const) {
+      const removed: ChangedItem[] = [
+        { path: 'dir/file', status: 'deleted' },
+        { path: 'dir/', status: whole },
+      ]
+      expect(pathStatus(removed, 'dir', true)).toBe('deleted')
+      expect(pathStatus(removed, 'dir/file', false)).toBe('deleted')
+      expect(pathStatus(removed, 'dir/other', false)).toBe(whole)
+      expect(pathStatus(removed, '', true)).toBe('deleted')
+    }
+  })
+
   it('has no status before the status is read', () => {
     expect(pathStatus(undefined, 'src', true)).toBeUndefined()
   })
@@ -212,5 +225,25 @@ describe('survivingRow', () => {
     expect(
       survivingRow(previous, visibleRows([file('q')], new Set()), 'y'),
     ).toBe('q')
+  })
+})
+
+describe('the label of a worktree without a branch', () => {
+  it('is the name of its folder, with either separator', () => {
+    for (const path of ['/code/notes', 'C:\\code\\notes']) {
+      const { nodes } = buildTree(
+        [{ name: 'notes', git: false, worktrees: [{ path, current: true }] }],
+        new Set([
+          repositoryNodeId({
+            name: 'notes',
+            git: false,
+            worktrees: [{ path }],
+          }),
+        ]),
+        () => [],
+        () => undefined,
+      )
+      expect(nodes[0].children![0].label).toBe('notes')
+    }
   })
 })
