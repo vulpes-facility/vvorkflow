@@ -83,6 +83,7 @@ The shell follows value 5 of the [core values](../core-values.md).
    When an action takes away the element that opened the menu, the focus goes to the element that is active after it.
 6. Do not write a description under a title, an item, or an empty state.\
    The name, the icon, and the data, such as a path, are sufficient.\
+   An error shows as a warning icon, with its message in a tooltip on hover and on keyboard focus, and in an alert for assistive technology.\
    The owner asked for this rule on 2026-11-09.
 
 ## Explorer

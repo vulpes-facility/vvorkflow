@@ -9,7 +9,13 @@ import {
 } from 'lucide-react'
 import { useLayoutEffect, useRef } from 'react'
 import type { Platform } from '@/shared/lib'
-import { LogoMark, Shortcut } from '@/shared/ui'
+import {
+  LogoMark,
+  Shortcut,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/shared/ui'
 
 /** A folder in the projects root of the engine. */
 export interface WelcomeProject {
@@ -19,6 +25,9 @@ export interface WelcomeProject {
   /** True for a git repository, which has its own icon. */
   git: boolean
 }
+
+/** The id of the error icon of the Projects section, among the project ids. */
+const ERROR_MARK = '\0error'
 
 interface StartAction {
   label: string
@@ -45,7 +54,8 @@ interface WelcomeProps {
  * the projects root. It shows only the actions that have a handler, and no
  * Projects section when the root has no project. When an update removes the
  * focused project, the focus moves to the project in its place, or to the tab
- * when no project is left (WCAG 2.2 SC 2.4.3).
+ * when no project is left; when it removes the focused error icon, the focus
+ * moves to the first project, or to the tab (WCAG 2.2 SC 2.4.3).
  */
 export function Welcome({
   platform,
@@ -78,7 +88,8 @@ export function Welcome({
   ].filter((action): action is StartAction => Boolean(action))
 
   const region = useRef<HTMLDivElement>(null)
-  // The id of the focused project, and the ids that the last update showed.
+  // The id of the focused project or error icon, and the ids that the last
+  // update showed.
   const focusedProject = useRef<string | null>(null)
   const shown = useRef<string[]>([])
   useLayoutEffect(() => {
@@ -90,9 +101,23 @@ export function Welcome({
     focusedProject.current = null
     const rows =
       region.current?.querySelectorAll<HTMLElement>('[data-project]') ?? []
-    const row = rows[Math.min(before.indexOf(id), rows.length - 1)]
+    const index = id === ERROR_MARK ? 0 : before.indexOf(id)
+    const row = rows[Math.min(index, rows.length - 1)]
     ;(row ?? region.current)?.focus()
   }, [projects, engineError])
+
+  // A focus that moves to another element, or a click on the page, leaves the
+  // Projects section. A control that goes away, or a window that loses the
+  // focus, does not.
+  function leave(event: React.FocusEvent<HTMLElement>) {
+    const control = event.currentTarget
+    if (event.relatedTarget) focusedProject.current = null
+    else
+      requestAnimationFrame(() => {
+        if (control.isConnected && document.hasFocus())
+          focusedProject.current = null
+      })
+  }
 
   return (
     // The scroll area takes the focus, so that the keyboard can scroll it.
@@ -157,26 +182,22 @@ export function Welcome({
                   : 'flex flex-col gap-2 @2xl:col-span-2'
               }
             >
-              <h2
-                id="welcome-projects"
-                className="px-2 text-xs font-medium text-muted-foreground"
-              >
-                Projects
-              </h2>
-              {engineError ? (
-                // The message can come after the tab shows, so it is an alert.
-                <p
-                  role="alert"
-                  className="flex items-start gap-2.5 px-2 py-1 text-ui text-foreground"
+              <div className="flex items-center gap-1 px-2">
+                <h2
+                  id="welcome-projects"
+                  className="text-xs font-medium text-muted-foreground"
                 >
-                  <TriangleAlert
-                    className="mt-0.5 size-icon shrink-0 text-destructive"
-                    strokeWidth={1.75}
-                    aria-hidden
+                  Projects
+                </h2>
+                {engineError && (
+                  <EngineErrorMark
+                    message={engineError}
+                    onFocus={() => (focusedProject.current = ERROR_MARK)}
+                    onBlur={leave}
                   />
-                  <span className="min-w-0 wrap-anywhere">{engineError}</span>
-                </p>
-              ) : (
+                )}
+              </div>
+              {engineError ? null : (
                 <ul className="flex flex-col">
                   {projects.map((project) => (
                     <li key={project.id}>
@@ -184,18 +205,7 @@ export function Welcome({
                         project={project}
                         onOpen={onOpenProject}
                         onFocus={() => (focusedProject.current = project.id)}
-                        onBlur={(event) => {
-                          // A focus that moves to another element, or a click
-                          // on the page, leaves the projects. A row that goes
-                          // away, or a window that loses the focus, does not.
-                          const row = event.currentTarget
-                          if (event.relatedTarget) focusedProject.current = null
-                          else
-                            requestAnimationFrame(() => {
-                              if (row.isConnected && document.hasFocus())
-                                focusedProject.current = null
-                            })
-                        }}
+                        onBlur={leave}
                       />
                     </li>
                   ))}
@@ -225,7 +235,7 @@ function ProjectRow({
   project: WelcomeProject
   onOpen?: (project: WelcomeProject) => void
   onFocus: () => void
-  onBlur: (event: React.FocusEvent<HTMLButtonElement>) => void
+  onBlur: (event: React.FocusEvent<HTMLElement>) => void
 }) {
   const Icon = project.git ? FolderGit2 : Folder
   const content = (
@@ -255,5 +265,47 @@ function ProjectRow({
     >
       {content}
     </button>
+  )
+}
+
+/**
+ * The error of an engine that did not start: a warning icon, with the
+ * message in a tooltip on hover and on keyboard focus, and no text on the
+ * screen. The message is also an alert for assistive technology, because it
+ * can come after the tab shows (WCAG 2.2 SC 4.1.3).
+ */
+function EngineErrorMark({
+  message,
+  onFocus,
+  onBlur,
+}: {
+  message: string
+  onFocus: () => void
+  onBlur: (event: React.FocusEvent<HTMLElement>) => void
+}) {
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Engine error"
+              onFocus={onFocus}
+              onBlur={onBlur}
+              className="flex size-6 items-center justify-center rounded-md text-destructive outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          }
+        >
+          <TriangleAlert className="size-icon" strokeWidth={1.75} aria-hidden />
+        </TooltipTrigger>
+        <TooltipContent side="bottom" align="start" className="wrap-anywhere">
+          {message}
+        </TooltipContent>
+      </Tooltip>
+      <p role="alert" className="sr-only">
+        {message}
+      </p>
+    </>
   )
 }
