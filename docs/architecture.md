@@ -98,10 +98,12 @@ The engine process stops on a root that is not correct; the app shows its messag
 3. On Linux and macOS, the engine makes the folder with mode 0700.\
    It refuses a folder that is a symbolic link, that another user owns, or that other users can open.\
    It also refuses a folder above it that a user other than this user and root owns, or that other users can write without the sticky bit.\
-   Each operation on the endpoint does these checks again, and then uses only the canonical path of the folder, which has no symbolic link.\
+   Each operation on the endpoint does these checks again on the canonical path, from `/` down, and does not follow a link.\
+   A folder that passes cannot change under the next one, because no other user can rename an entry in it.\
    So no other user can replace the folder or lead an operation to another folder.
 4. The folder holds `engine.lock`, `engine.log`, and the socket `engine.sock`.\
-   A client does the same checks of the folder before it connects, and refuses an engine that runs as another user (the peer credentials of the socket).
+   A client does the same checks of the folder before it connects.\
+   Each side refuses the other side when it runs as another user (the peer credentials of the socket).
 5. On Windows, the folder is in the profile of the user, which other users cannot open.\
    The engine makes a named pipe with a random name, and writes the name and its process id to `engine.pipe` in the folder.\
    The pipe lets only its owner and the system open it, and it refuses remote clients.\

@@ -461,3 +461,29 @@ async fn a_client_that_does_not_read_loses_its_place_at_the_hello_deadline() {
     assert_eq!(welcome["result"]["protocol"], PROTOCOL_VERSION);
     drop(flood);
 }
+
+#[tokio::test]
+async fn a_close_after_a_request_still_gets_a_close() {
+    let place = place();
+    let _server = start(&place, limits());
+    let mut socket = connect(&place.endpoint).await;
+
+    send(
+        &mut socket,
+        json!({"id": 1, "method": "project.list", "params": {}}),
+    )
+    .await;
+    socket.close(None).await.unwrap();
+    let closed = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match socket.next().await {
+                Some(Ok(Message::Close(_))) => return true,
+                Some(Ok(_)) => {}
+                Some(Err(_)) | None => return false,
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert!(closed);
+}

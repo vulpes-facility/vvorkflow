@@ -218,8 +218,11 @@ async fn write<S>(
         let close = matches!(message, Message::Close(_));
         match tokio::time::timeout(WRITE_TIME, sink.send(message)).await {
             Ok(Ok(())) if !close => {}
-            Ok(Ok(())) => break,
-            Ok(Err(_)) | Err(_) => return,
+            // A close frame, or a frame that the closing connection refuses:
+            // the rest of the outbox does not go out, but the close does.
+            Ok(Ok(()) | Err(_)) => break,
+            // A client that does not read gets no close frame.
+            Err(_) => return,
         }
     }
     let _ = tokio::time::timeout(CLOSE_TIME, sink.close()).await;

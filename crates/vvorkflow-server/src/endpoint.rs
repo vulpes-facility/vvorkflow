@@ -109,8 +109,6 @@ impl Endpoint {
     pub fn check(&self) -> io::Result<PathBuf> {
         #[cfg(unix)]
         {
-            use std::os::unix::fs::MetadataExt;
-            let user = effective_user();
             let refused =
                 |message: String| io::Error::new(io::ErrorKind::PermissionDenied, message);
             let parent = self
@@ -123,26 +121,7 @@ impl Endpoint {
                 .file_name()
                 .ok_or_else(|| refused(format!("{} has no name.", self.folder.display())))?;
             let canonical = parent.join(name);
-            let folder = std::fs::symlink_metadata(&canonical)?;
-            if !folder.is_dir() || folder.uid() != user || folder.mode() & 0o077 != 0 {
-                return Err(refused(format!(
-                    "{} MUST be a folder of this user that other users cannot open.",
-                    self.folder.display()
-                )));
-            }
-            for above in parent.ancestors() {
-                let metadata = std::fs::metadata(above)?;
-                let owner = metadata.uid() == 0 || metadata.uid() == user;
-                let sticky = metadata.mode() & 0o1000 != 0;
-                let shared = metadata.mode() & 0o022 != 0;
-                if !owner || (shared && !sticky) {
-                    return Err(refused(format!(
-                        "Other users can replace {}, because of {}.",
-                        self.folder.display(),
-                        above.display()
-                    )));
-                }
-            }
+            walk(&canonical, effective_user())?;
             Ok(canonical)
         }
         #[cfg(windows)]
@@ -274,7 +253,16 @@ impl Listener {
     pub async fn accept(&mut self) -> io::Result<ServerStream> {
         #[cfg(unix)]
         {
-            Ok(self.listener.accept().await?.0)
+            // Only this user can reach the folder; the check of the peer
+            // keeps that true also when the folder changes later.
+            let stream = self.listener.accept().await?.0;
+            if stream.peer_cred()?.uid() != effective_user() {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "Another user connected to the engine.",
+                ));
+            }
+            Ok(stream)
         }
         #[cfg(windows)]
         {
@@ -296,6 +284,44 @@ impl Drop for Listener {
         #[cfg(windows)]
         let _ = std::fs::remove_file(&self.file);
     }
+}
+
+/// Checks each folder of a canonical path from `/` down, without following
+/// a link: each one MUST be a real folder that this user or root owns, and
+/// that other users cannot write without the sticky bit; the last one MUST be
+/// a folder of this user that other users cannot open.
+///
+/// A folder checked so cannot change under the next one, because no other
+/// user can rename an entry in it. So a link that another user puts in the
+/// path at any time makes the walk fail, and does not lead it elsewhere.
+#[cfg(unix)]
+fn walk(canonical: &Path, user: u32) -> io::Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let refused = |message: String| io::Error::new(io::ErrorKind::PermissionDenied, message);
+    let mut path = PathBuf::new();
+    let mut parts = canonical.components().peekable();
+    while let Some(part) = parts.next() {
+        path.push(part);
+        let last = parts.peek().is_none();
+        let metadata = std::fs::symlink_metadata(&path)?;
+        let owner = metadata.uid() == 0 || metadata.uid() == user;
+        let sticky = metadata.mode() & 0o1000 != 0;
+        let shared = metadata.mode() & 0o022 != 0;
+        if !metadata.is_dir() || !owner || (shared && !sticky) {
+            return Err(refused(format!(
+                "Other users can replace {}, because of {}.",
+                canonical.display(),
+                path.display()
+            )));
+        }
+        if last && (metadata.uid() != user || metadata.mode() & 0o077 != 0) {
+            return Err(refused(format!(
+                "{} MUST be a folder of this user that other users cannot open.",
+                canonical.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -535,6 +561,26 @@ mod tests {
             unix_folder(None, long, 1000),
             PathBuf::from("/tmp/vvorkflow-1000")
         );
+    }
+
+    #[test]
+    fn the_walk_does_not_follow_a_link() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let safe = base.join("safe");
+        std::fs::create_dir(&safe).unwrap();
+        std::fs::create_dir(safe.join("run")).unwrap();
+        std::fs::set_permissions(safe.join("run"), std::fs::Permissions::from_mode(0o700)).unwrap();
+        // SAFETY: geteuid has no preconditions and cannot fail.
+        let user = unsafe { libc::geteuid() };
+        super::walk(&safe.join("run"), user).unwrap();
+
+        // A link in place of a folder, as another user could put it after the
+        // path became canonical, makes the walk fail.
+        std::os::unix::fs::symlink(&safe, base.join("link")).unwrap();
+        let refused = super::walk(&base.join("link").join("run"), user).unwrap_err();
+        assert_eq!(refused.kind(), std::io::ErrorKind::PermissionDenied);
     }
 
     #[test]
