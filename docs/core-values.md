@@ -56,6 +56,8 @@ This bar applies to each value and each decision in this file.
 The owner confirmed these decisions on 2026-11-09.
 
 - **Users:** vvorkflow is for its owner alone, for now.
+- **Accessibility:** The app MUST conform to WCAG 2.2 Level AA.\
+  The owner confirmed this on 2026-11-09.
 - **Platforms:** The desktop app on macOS, Windows, and Linux comes first.\
   iOS and Android come later (value 1).
 - **Webview:** The app uses Tauri 2 with the system webview of each platform.\

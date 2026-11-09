@@ -1,0 +1,241 @@
+/*
+ * The design tokens of vvorkflow: the only source of design values.
+ *
+ * - Primitives (`--vv-*`) are raw values. Only this file may contain raw values.
+ * - Semantic variables give each primitive a role, once for the light theme
+ *   (`:root`) and once for the dark theme (`.dark`). Components use only the
+ *   semantic variables, through the Tailwind utilities of `index.css`.
+ *
+ * docs/conventions/design.md gives the rules.
+ */
+
+:root {
+  /* Neutral: graphite with a slight cool tint (hue 265). */
+  --vv-gray-0: oklch(1 0 0);
+  --vv-gray-25: oklch(0.988 0.002 265);
+  --vv-gray-50: oklch(0.974 0.003 265);
+  --vv-gray-100: oklch(0.958 0.004 265);
+  --vv-gray-150: oklch(0.936 0.005 265);
+  --vv-gray-200: oklch(0.905 0.006 265);
+  --vv-gray-300: oklch(0.84 0.008 265);
+  --vv-gray-400: oklch(0.71 0.01 265);
+  --vv-gray-500: oklch(0.6 0.011 265);
+  --vv-gray-550: oklch(0.53 0.012 265);
+  --vv-gray-600: oklch(0.49 0.012 265);
+  --vv-gray-700: oklch(0.37 0.012 265);
+  --vv-gray-750: oklch(0.31 0.011 265);
+  --vv-gray-800: oklch(0.265 0.01 265);
+  --vv-gray-850: oklch(0.232 0.009 265);
+  --vv-gray-900: oklch(0.205 0.008 265);
+  --vv-gray-925: oklch(0.186 0.008 265);
+  --vv-gray-950: oklch(0.168 0.007 265);
+  --vv-gray-975: oklch(0.152 0.007 265);
+
+  /* Accent: a calm indigo, the only brand color. */
+  --vv-indigo-300: oklch(0.8 0.1 276);
+  --vv-indigo-400: oklch(0.7 0.15 276);
+  --vv-indigo-500: oklch(0.6 0.19 276);
+  --vv-indigo-600: oklch(0.53 0.2 276);
+  --vv-indigo-700: oklch(0.46 0.19 276);
+
+  /* Git status: each color goes with a letter badge, never alone. */
+  --vv-green-400: oklch(0.76 0.14 150);
+  --vv-green-600: oklch(0.49 0.15 150);
+  --vv-amber-400: oklch(0.82 0.12 80);
+  --vv-amber-600: oklch(0.52 0.13 70);
+  --vv-red-400: oklch(0.7 0.17 25);
+  --vv-red-600: oklch(0.54 0.2 27);
+  --vv-teal-400: oklch(0.78 0.1 190);
+  --vv-teal-600: oklch(0.5 0.1 195);
+  --vv-magenta-400: oklch(0.72 0.17 330);
+  --vv-magenta-600: oklch(0.54 0.2 330);
+
+  --vv-black-shadow-strong: oklch(0 0 0 / 0.5);
+  --vv-black-shadow-soft: oklch(0.2 0.02 265 / 0.14);
+
+  /* Typography */
+  --vv-font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --vv-font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --vv-text-2xs: 11px;
+  --vv-text-xs: 12px;
+  --vv-text-ui: 13px;
+  --vv-text-sm: 14px;
+  --vv-text-lg: 16px;
+  --vv-text-xl: 20px;
+  --vv-text-2xl: 28px;
+  --vv-leading-2xs: 16px;
+  --vv-leading-xs: 16px;
+  --vv-leading-ui: 18px;
+  --vv-leading-sm: 20px;
+  --vv-leading-lg: 24px;
+  --vv-leading-xl: 28px;
+  --vv-leading-2xl: 34px;
+  /* Uppercase labels open up; the large display title closes in. */
+  --vv-tracking-label: 0.08em;
+  --vv-tracking-display: -0.02em;
+
+  /* Sizes: a compact desktop density on a 4 px grid. */
+  --vv-titlebar-h: 36px;
+  --vv-tab-h: 34px;
+  --vv-row-h: 24px;
+  --vv-statusbar-h: 24px;
+  --vv-activitybar-w: 48px;
+  --vv-sidebar-w: 300px;
+  --vv-sidebar-min-w: 240px;
+  --vv-sidebar-max-w: 560px;
+  --vv-editor-min-w: 320px;
+  --vv-hairline-w: 1px;
+  --vv-radius-none: 0px;
+  --vv-space-none: 0px;
+  --vv-icon-sm: 14px;
+  --vv-icon: 16px;
+  --vv-icon-lg: 20px;
+  /* The width of one Windows caption button. */
+  --vv-caption-button-w: 46px;
+  /*
+   * The macOS window buttons, with the space after them, cover this width from
+   * the left window edge. tauri.macos.conf.json puts them at x 14 and centers
+   * them in the title bar.
+   */
+  --vv-traffic-lights-w: 84px;
+
+  /* Corners */
+  --vv-radius-sm: 3px;
+  --vv-radius-md: 4px;
+  --vv-radius-lg: 6px;
+  --vv-radius-xl: 8px;
+
+  /*
+   * The shadow of overlays: menus, popovers, and tooltips. Its color is the
+   * semantic --overlay-shadow, so that it follows the theme.
+   */
+  --vv-shadow-overlay:
+    0 12px 32px -8px var(--overlay-shadow), 0 2px 6px -2px var(--overlay-shadow);
+
+  /* Motion: only menus, popovers, the palette, and the sash move. */
+  --vv-duration-fast: 120ms;
+  /* A separator shows its accent only after the pointer rests on it. */
+  --vv-delay-sash: 300ms;
+}
+
+/* Light theme */
+:root {
+  color-scheme: light;
+
+  --background: var(--vv-gray-0);
+  --foreground: var(--vv-gray-900);
+  --card: var(--vv-gray-0);
+  --card-foreground: var(--vv-gray-900);
+  --popover: var(--vv-gray-0);
+  --popover-foreground: var(--vv-gray-900);
+  --primary: var(--vv-indigo-600);
+  --primary-foreground: var(--vv-gray-0);
+  --primary-hover: var(--vv-indigo-700);
+  --secondary: var(--vv-gray-100);
+  --secondary-foreground: var(--vv-gray-900);
+  --muted: var(--vv-gray-100);
+  --muted-foreground: var(--vv-gray-600);
+  --accent: var(--vv-gray-150);
+  --accent-foreground: var(--vv-gray-900);
+  --destructive: var(--vv-red-600);
+  --border: var(--vv-gray-200);
+  --input: var(--vv-gray-500);
+  --ring: var(--vv-indigo-500);
+  --chart-1: var(--vv-indigo-500);
+  --chart-2: var(--vv-teal-600);
+  --chart-3: var(--vv-amber-600);
+  --chart-4: var(--vv-magenta-600);
+  --chart-5: var(--vv-green-600);
+  --radius: var(--vv-radius-lg);
+  --sidebar: var(--vv-gray-50);
+  --sidebar-foreground: var(--vv-gray-900);
+  --sidebar-primary: var(--vv-indigo-600);
+  --sidebar-primary-foreground: var(--vv-gray-0);
+  --sidebar-accent: var(--vv-gray-150);
+  --sidebar-accent-foreground: var(--vv-gray-900);
+  --sidebar-border: var(--vv-gray-200);
+  --sidebar-ring: var(--vv-indigo-500);
+
+  /* IDE roles */
+  --editor: var(--vv-gray-0);
+  --chrome: var(--vv-gray-50);
+  --chrome-foreground: var(--vv-gray-700);
+  --hover: var(--vv-gray-100);
+  --selection: var(--vv-gray-150);
+  --subtle-foreground: var(--vv-gray-500);
+  --hairline: var(--vv-gray-200);
+  --scrollbar-thumb: var(--vv-gray-500);
+  --grip: var(--vv-gray-500);
+  --overlay-shadow: var(--vv-black-shadow-soft);
+  --indicator: var(--vv-indigo-600);
+  --link: var(--vv-indigo-600);
+  --git-added: var(--vv-green-600);
+  --git-modified: var(--vv-amber-600);
+  --git-deleted: var(--vv-red-600);
+  --git-untracked: var(--vv-teal-600);
+  --git-conflict: var(--vv-magenta-600);
+  --git-ignored: var(--vv-gray-600);
+  --window-close-hover: var(--vv-red-600);
+  --window-close-hover-foreground: var(--vv-gray-0);
+}
+
+/* Dark theme */
+.dark {
+  color-scheme: dark;
+
+  --background: var(--vv-gray-950);
+  --foreground: var(--vv-gray-150);
+  --card: var(--vv-gray-925);
+  --card-foreground: var(--vv-gray-150);
+  --popover: var(--vv-gray-900);
+  --popover-foreground: var(--vv-gray-150);
+  --primary: var(--vv-indigo-600);
+  --primary-foreground: var(--vv-gray-0);
+  --primary-hover: var(--vv-indigo-700);
+  --secondary: var(--vv-gray-850);
+  --secondary-foreground: var(--vv-gray-150);
+  --muted: var(--vv-gray-850);
+  --muted-foreground: var(--vv-gray-400);
+  --accent: var(--vv-gray-800);
+  --accent-foreground: var(--vv-gray-100);
+  --destructive: var(--vv-red-400);
+  --border: var(--vv-gray-800);
+  --input: var(--vv-gray-550);
+  --ring: var(--vv-indigo-400);
+  --chart-1: var(--vv-indigo-400);
+  --chart-2: var(--vv-teal-400);
+  --chart-3: var(--vv-amber-400);
+  --chart-4: var(--vv-magenta-400);
+  --chart-5: var(--vv-green-400);
+  --radius: var(--vv-radius-lg);
+  --sidebar: var(--vv-gray-975);
+  --sidebar-foreground: var(--vv-gray-150);
+  --sidebar-primary: var(--vv-indigo-400);
+  --sidebar-primary-foreground: var(--vv-gray-975);
+  --sidebar-accent: var(--vv-gray-850);
+  --sidebar-accent-foreground: var(--vv-gray-100);
+  --sidebar-border: var(--vv-gray-850);
+  --sidebar-ring: var(--vv-indigo-400);
+
+  /* IDE roles */
+  --editor: var(--vv-gray-950);
+  --chrome: var(--vv-gray-975);
+  --chrome-foreground: var(--vv-gray-300);
+  --hover: var(--vv-gray-850);
+  --selection: var(--vv-gray-800);
+  --subtle-foreground: var(--vv-gray-500);
+  --hairline: var(--vv-gray-850);
+  --scrollbar-thumb: var(--vv-gray-550);
+  --grip: var(--vv-gray-550);
+  --overlay-shadow: var(--vv-black-shadow-strong);
+  --indicator: var(--vv-indigo-400);
+  --link: var(--vv-indigo-300);
+  --git-added: var(--vv-green-400);
+  --git-modified: var(--vv-amber-400);
+  --git-deleted: var(--vv-red-400);
+  --git-untracked: var(--vv-teal-400);
+  --git-conflict: var(--vv-magenta-400);
+  --git-ignored: var(--vv-gray-400);
+  --window-close-hover: var(--vv-red-600);
+  --window-close-hover-foreground: var(--vv-gray-0);
+}

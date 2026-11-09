@@ -5,9 +5,11 @@ This file gives only the rules that are different from that plugin, or that it d
 
 1. Lint TypeScript with oxlint, not ESLint.\
    create-vite 9 makes oxlint the linter of the `react-compiler-ts` template.
-2. Keep the shadcn components in `apps/desktop/src/shared/ui/` in the form that shadcn makes.\
+2. Keep the shadcn components in `apps/desktop/src/shared/ui/`.\
    `components.json` points shadcn at the `shared` segments of Feature-Sliced Design.\
-   The oxlint rule `react/only-export-components` is off only in that folder, because shadcn components also export their variants.
+   You MAY change their classes to fit the design, but keep their structure and their exports, so that the diff of a later `shadcn add` stays small.\
+   The oxlint rule `react/only-export-components` is off in that folder, because shadcn components also export their variants.\
+   It is also off in `apps/desktop/.storybook/`, because the Storybook preview exports its configuration next to a decorator component, and fast refresh does not apply to it.
 3. Pin Node.js with `devEngines.runtime` in the root `package.json`, and let pnpm download it.\
    Do not add a different Node.js version manager.
 4. Pin Rust in `rust-toolchain.toml`.
@@ -19,3 +21,8 @@ This file gives only the rules that are different from that plugin, or that it d
    The `dev` task has no cache, so the loose mode does not change a cache key.
 8. When a root file changes the result of every task, add it to `globalDependencies` in `turbo.json`.\
    Examples are `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`.
+9. Use only package versions that are older than the `minimumReleaseAge` of pnpm.\
+   Do not add a `minimumReleaseAgeExclude` entry.\
+   Pick an older version.
+10. Keep the Playwright specs and the Vitest tests of `apps/desktop` outside `src/`, in `e2e/` and `tests/`.\
+    [design.md](design.md) gives the place of the stories and the fixtures.

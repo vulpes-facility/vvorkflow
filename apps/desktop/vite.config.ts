@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url'
 import react, { reactCompilerPreset } from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
@@ -23,4 +24,13 @@ export default defineConfig({
     watch: { ignored: ['**/src-tauri/**'] },
   },
   envPrefix: ['VITE_', 'TAURI_ENV_'],
+  build: {
+    // The desktop app loads its bundle from disk, not over a network, so the
+    // default web limit of 500 kB does not apply.
+    chunkSizeWarningLimit: 2000,
+  },
+  test: {
+    // The Playwright specs in `e2e/` run with `pnpm screens`, not with Vitest.
+    include: ['tests/**/*.test.ts', 'src/**/*.test.{ts,tsx}'],
+  },
 })
