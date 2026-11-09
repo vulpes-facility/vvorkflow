@@ -48,6 +48,31 @@ test('when the focused project goes away, the focus moves to the project in its 
   await expect(page.getByRole('button', { name: /^vvorkflow\b/ })).toBeFocused()
 })
 
+test('a project that comes before the focused one does not change where the focus goes', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: /^harbor-web\b/ }).focus()
+  const all = [
+    project('atlas-api'),
+    project('field-notes', false),
+    project('harbor-web'),
+    project('vvorkflow'),
+  ]
+  await update(page, { projects: [project('alpha'), ...all] })
+  await expect(page.getByRole('button', { name: /^alpha\b/ })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: /^harbor-web\b/ }),
+  ).toBeFocused()
+  await update(page, {
+    projects: [
+      project('alpha'),
+      ...all.filter(({ name }) => name !== 'harbor-web'),
+    ],
+  })
+  await expect(page.getByRole('button', { name: /^harbor-web\b/ })).toBeHidden()
+  await expect(page.getByRole('button', { name: /^vvorkflow\b/ })).toBeFocused()
+})
+
 test('when an error takes the place of the projects, the focus moves to the tab and the error is an alert', async ({
   page,
 }) => {

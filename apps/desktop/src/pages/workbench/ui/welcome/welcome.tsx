@@ -78,15 +78,19 @@ export function Welcome({
   ].filter((action): action is StartAction => Boolean(action))
 
   const region = useRef<HTMLDivElement>(null)
-  const focusedProject = useRef<number | null>(null)
+  // The id of the focused project, and the ids that the last update showed.
+  const focusedProject = useRef<string | null>(null)
+  const shown = useRef<string[]>([])
   useLayoutEffect(() => {
-    const index = focusedProject.current
+    const before = shown.current
+    shown.current = engineError ? [] : projects.map((project) => project.id)
+    const id = focusedProject.current
     // Only a focus that the update took away moves.
-    if (index === null || document.activeElement !== document.body) return
+    if (id === null || document.activeElement !== document.body) return
     focusedProject.current = null
     const rows =
       region.current?.querySelectorAll<HTMLElement>('[data-project]') ?? []
-    const row = rows[Math.min(index, rows.length - 1)]
+    const row = rows[Math.min(before.indexOf(id), rows.length - 1)]
     ;(row ?? region.current)?.focus()
   }, [projects, engineError])
 
@@ -174,12 +178,12 @@ export function Welcome({
                 </p>
               ) : (
                 <ul className="flex flex-col">
-                  {projects.map((project, index) => (
+                  {projects.map((project) => (
                     <li key={project.id}>
                       <ProjectRow
                         project={project}
                         onOpen={onOpenProject}
-                        onFocus={() => (focusedProject.current = index)}
+                        onFocus={() => (focusedProject.current = project.id)}
                         onBlur={(event) => {
                           // A focus that moves to another element, or a click
                           // on the page, leaves the projects. A row that goes
