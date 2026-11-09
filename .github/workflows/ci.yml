@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+    # `edited` checks the title again after a change; the title becomes the squash commit.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [main]
 

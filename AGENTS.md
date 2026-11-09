@@ -12,8 +12,14 @@ The repository has the scaffold of the desktop app, and no features yet.
 - `docs/conventions/agent-instructions.md` - The rules for `CLAUDE.md`, `AGENTS.md`, `docs/conventions/`, and the format of each index.
 - `docs/conventions/writing.md` - How to write the documents: English, ASD-STE100, BCP 14 keywords, and Semantic Line Breaks.
 - `docs/conventions/git.md` - GitHub flow: branch names, Conventional Commits, signed commits, and the squash merge.
-- `docs/conventions/tooling.md` - The tool rules that differ from the `vulpes-conventions` plugin: oxlint, the shadcn folder, and the Node.js and Rust versions.
+- `docs/conventions/tooling.md` - The tool rules that differ from the `vulpes-conventions` plugin: oxlint, the shadcn folder, the Node.js and Rust versions, and the Turborepo settings.
 - `apps/desktop/` - The desktop app: the React web UI in `src/`, and the Tauri 2 shell in `src-tauri/`.
-- `turbo.json` - The root tasks `build`, `dev`, `lint`, `check-types`, `test`, and `format`.
+- `package.json` - The root scripts that run each task with Turborepo, and the pinned versions of pnpm and Node.js.
+- `pnpm-workspace.yaml` - The workspace packages, and the packages that may run install scripts.
+- `turbo.json` - The root tasks `build`, `dev`, `lint`, `check-types`, `test`, and `format`, and the root files that change every task.
+- `Cargo.toml` - The Cargo workspace and its member crates.
+- `rust-toolchain.toml` - The pinned Rust version and its components.
+- `commitlint.config.js` - The commit message rules: Conventional Commits, with the pnpm package names as scopes.
+- `lefthook.yml` - The git hook that checks each commit message with commitlint.
 - `.github/workflows/ci.yml` - The CI checks that run on each pull request and on `main`.
 - `LICENSE` - The MIT License of the repository.

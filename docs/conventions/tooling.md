@@ -14,3 +14,8 @@ This file gives only the rules that are different from that plugin, or that it d
 5. Let a package run its install script only when it is necessary.\
    Approve it with `pnpm approve-builds <package>`, which writes `allowBuilds` in `pnpm-workspace.yaml`.
 6. The `lint` and `test` tasks of `apps/desktop` run after its `build` task, because the Tauri crate compiles only when `apps/desktop/dist` exists.
+7. The root `dev` script runs Turborepo with `--env-mode=loose`.\
+   In strict mode, Turborepo removes environment variables that the desktop app can need, for example `WAYLAND_DISPLAY`.\
+   The `dev` task has no cache, so the loose mode does not change a cache key.
+8. When a root file changes the result of every task, add it to `globalDependencies` in `turbo.json`.\
+   Examples are `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`.
