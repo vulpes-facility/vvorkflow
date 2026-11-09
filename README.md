@@ -26,7 +26,8 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` opens the desktop app in a Tauri window.\
+`pnpm dev` builds the engine process, `vvorkflow-server`, and opens the desktop app in a Tauri window.\
+The app starts the engine process, which continues after the app closes and stops 5 minutes after the last app leaves.\
 The engine keeps the projects in `~/vvorkflow`.\
 To use a different folder, set `VVORKFLOW_ROOT` to its absolute path, as `.env.example` shows.\
 To open only the web UI in a browser, run `pnpm --filter @vvorkflow/desktop dev:web`.

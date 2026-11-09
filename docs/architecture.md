@@ -15,8 +15,8 @@ web UI (React) ──Tauri IPC──► app core (Rust) ──local socket──
 | Part | What it does | Status |
 | --- | --- | --- |
 | Web UI | Shows the folders, the files, and the terminals, and sends requests. It does not know if the engine is local or remote. | Done for the shell, the Explorer, and the projects on the Welcome tab |
-| App core | The Rust part of the Tauri app. It connects to one engine, and sends the requests, the responses, and the events between the web UI and the engine. It keeps the token out of the web UI. | Next (M3) |
-| Engine | One Rust process. It owns the projects root, the files, git, and the terminal sessions. On the desktop, the app starts it as a daemon. On a remote machine, it runs headless. | Done in the app process, and as the process `vvorkflow-server`; the app starts the process next (M3) |
+| App core | The Rust part of the Tauri app. It connects to one engine, and sends the requests, the responses, and the events between the web UI and the engine. It keeps the token out of the web UI. | Done for the local engine (M3); the remote engine and the token come in M6 |
+| Engine | One Rust process. It owns the projects root, the files, git, and the terminal sessions. On the desktop, the app starts it as a daemon. On a remote machine, it runs headless. | Done as the process `vvorkflow-server` (M3) |
 | Protocol | The Rust types of `crates/vvorkflow-protocol`, their JSON Schema, and the TypeScript client that the schema makes. | Done for `hello`, the projects, the folders, and git |
 
 The engine continues when the app closes, so its terminal sessions continue.
@@ -26,7 +26,7 @@ The engine continues when the app closes, so its terminal sessions continue.
 | Transport | Between | Status |
 | --- | --- | --- |
 | Tauri IPC | The web UI and the app core. | Done |
-| Local socket | The app core and the engine on the same computer: a Unix socket, or a named pipe on Windows ([Engine process](#engine-process)). | Done in the engine process; the app connects next (M3) |
+| Local socket | The app core and the engine on the same computer: a Unix socket, or a named pipe on Windows ([Engine process](#engine-process)). | Done (M3) |
 | SSH tunnel | The app core and a remote engine, through an SSH tunnel that the user opens. It requires a token. | Planned (M6) |
 
 Each connection of the app core carries WebSocket frames, on the local socket and in the SSH tunnel.\
@@ -61,8 +61,7 @@ The receiver checks each message against the schema, at run time.
    A request with an `id` and a method or params that the engine does not know gets `invalidArgument`.
 7. Over Tauri IPC, the web UI sends only `method` and `params`, and the app core adds the `id`.
 
-Status: the methods, the version check, and `shutdown` are done.\
-The envelope with the `id` is done in the engine process (M3); the app core uses it next (M3).\
+Status: the methods, the version check, `shutdown`, and the envelope with the `id` are done (M3).\
 The events come with the terminal sessions (M4).
 
 ## Projects root
@@ -83,7 +82,7 @@ The events come with the terminal sessions (M4).
 
 Status: done (M3), with the method `project.list`.\
 The Welcome tab shows the projects, or the message of a root that is not correct.\
-The engine process stops on a root that is not correct; the app shows its message when the app starts the process, which is next (M3).
+The engine process stops on a root that is not correct, and the app shows its message.
 
 [`conventions/engine.md`](conventions/engine.md) gives the rules that keep each request in these folders.
 
@@ -118,10 +117,13 @@ The engine process stops on a root that is not correct; the app shows its messag
 9. The desktop app finds `vvorkflow-server` next to its own executable.\
    It connects, and when no engine answers, it starts one, detached, with stderr in `engine.log`.\
    When the engine stops before it listens, the app shows the last line of `engine.log`.\
-   When `hello` fails because of the version, the app sends `shutdown`, and starts its own engine.
+   When `hello` fails because of the version, the app sends `shutdown`, and starts its own engine.\
+   The app keeps one connection while it runs, and sends each request of the web UI on it with a new `id`.\
+   When the engine stops, the next request opens a new connection, and starts an engine when none listens.
+10. The engine continues when the app closes, with the projects root that it started with.\
+    To use another root, set `VVORKFLOW_ROOT` and start the app after the engine stops: 5 minutes after the last client leaves.
 
-Status: rules 1 to 8 are done (M3).\
-Rule 9 is next (M3).
+Status: done (M3).
 
 ## Terminal sessions
 
@@ -176,7 +178,7 @@ A setting changes each one.
 | --- | --- | --- |
 | M1 Shell | The design tokens, the window shell, accessibility, the tabs and the menus, and the icon. | Done |
 | M2 Engine base | The protocol, the roots, the folders, git, and the Explorer on real folders. | Done |
-| M3 Engine process | The protocol envelope with the version check, the projects root and the project list, the engine as a daemon, and the local socket. | In progress |
+| M3 Engine process | The protocol envelope with the version check, the projects root and the project list, the engine as a daemon, and the local socket. | Done |
 | M4 Terminals | The sessions of the engine: the pseudo-terminal, the screen state, attach and detach, and the terminal tabs on real sessions. | Planned |
 | M5 Editor and viewers | Open, edit, and save files, the diff, the Markdown preview, the media viewer, the file watch, and the Explorer menus. | Planned |
 | M6 Remote | The headless install of `vvorkflow-server`, WebSocket, the token, and the connection manager. | Planned |

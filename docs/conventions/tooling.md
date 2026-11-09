@@ -35,7 +35,12 @@ This file gives only the rules that are different from that plugin, or that it d
     The generator types the union of the requests as `any`, so `engine.ts` keeps a map of each method to its params and its value, and a Vitest test checks the map and the protocol version against the schema.\
     The envelope of a connection, `ClientMessage` and `ServerMessage`, is not in the schema, because only the app core reads it; a Rust test checks its shape.\
     The client parses each answer of the engine at run time, because a value from another process can be wrong.
-13. The `lint` and `test` scripts of `apps/desktop` check the whole Cargo workspace, and `apps/desktop/turbo.json` adds `crates/**` to their inputs.
-14. Check a change of the engine in the real app.\
+13. `apps/desktop/scripts/build-server.mjs` builds `vvorkflow-server` before `tauri dev` and `tauri build`, so that the app finds it next to its own executable.\
+    `pnpm --filter @vvorkflow/desktop bundle` adds `src-tauri/tauri.bundle.json`, which puts the binary in the installer as a sidecar.\
+    The sidecar is only in that file, because `tauri-build` copies each sidecar at each build of the app, also for the lint.
+14. The `lint` and `test` scripts of `apps/desktop` check the whole Cargo workspace, and `apps/desktop/turbo.json` adds `crates/**` to their inputs.
+15. Check a change of the engine in the real app.\
     Run `pnpm --filter @vvorkflow/desktop tauri build --debug --no-bundle`, then `target/debug/vvorkflow-desktop <folder>`: each folder of the command line opens at start.\
+    The build also makes `target/debug/vvorkflow-server`, and the app starts it as the engine process, which continues after the app closes.\
+    Stop it with `pkill -x vvorkflow-serve` (the name of a Linux process has at most 15 characters) to start the next check with a new engine.\
     On a machine with no display, run it under `Xvfb` and `dbus-run-session`, with `WEBKIT_DISABLE_DMABUF_RENDERER=1`.

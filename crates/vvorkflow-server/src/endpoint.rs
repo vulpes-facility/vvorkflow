@@ -7,6 +7,10 @@ use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 
+/// The start of the message of an engine that stops because another engine
+/// listens on its endpoint.
+pub(crate) const BUSY: &str = "Another engine already listens in";
+
 /// The local endpoint of one engine process.
 #[derive(Clone, Debug)]
 pub struct Endpoint {
@@ -169,10 +173,9 @@ impl Endpoint {
             .map_err(|error| format!("The engine cannot open {}: {error}.", path.display()))?;
         match file.try_lock() {
             Ok(()) => Ok(file),
-            Err(std::fs::TryLockError::WouldBlock) => Err(format!(
-                "Another engine already listens in {}.",
-                self.folder.display()
-            )),
+            Err(std::fs::TryLockError::WouldBlock) => {
+                Err(format!("{BUSY} {}.", self.folder.display()))
+            }
             Err(std::fs::TryLockError::Error(error)) => Err(format!(
                 "The engine cannot lock {}: {error}.",
                 path.display()
