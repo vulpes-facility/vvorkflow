@@ -110,6 +110,8 @@
 
   /* Motion: only menus, popovers, the palette, and the sash move. */
   --vv-duration-fast: 120ms;
+  /* A separator shows its accent only after the pointer rests on it. */
+  --vv-delay-sash: 300ms;
 }
 
 /* Light theme */

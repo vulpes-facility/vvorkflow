@@ -45,7 +45,7 @@ Turborepo runs it in each package.
 | `pnpm format` | Formats the TypeScript and Rust code. |
 | `pnpm --filter @vvorkflow/desktop bundle` | Builds the installable desktop app. |
 | `pnpm --filter @vvorkflow/desktop storybook` | Opens the components and the screens in Storybook, at `http://localhost:6006`. |
-| `pnpm --filter @vvorkflow/desktop screens` | Captures each screen in Chromium and WebKit into `apps/desktop/screens/`, and checks it against WCAG 2.2 AA. |
+| `pnpm --filter @vvorkflow/desktop screens` | Captures each screen in Chromium and WebKit into `apps/desktop/screens/`, checks it against WCAG 2.2 AA, and runs the keyboard tests of the window shell. |
 
 Each task MUST pass with no errors and no warnings before a pull request.
 

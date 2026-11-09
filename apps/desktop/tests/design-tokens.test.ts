@@ -218,7 +218,7 @@ const textPairs: [string, string[]][] = [
 const nonTextPairs: [string, string[]][] = [
   ['subtle-foreground', ['chrome', 'sidebar', 'editor']],
   ['indicator', ['chrome', 'sidebar', 'editor']],
-  ['ring', ['editor', 'chrome', 'sidebar', 'popover']],
+  ['ring', ['editor', 'chrome', 'sidebar', 'popover', 'hover']],
   ['input', ['editor', 'sidebar', 'popover']],
   ['scrollbar-thumb', ['editor', 'chrome', 'sidebar', 'popover']],
   ['window-close-hover-foreground', ['window-close-hover']],

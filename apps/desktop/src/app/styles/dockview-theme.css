@@ -25,7 +25,7 @@
   --dv-sash-color: transparent;
   --dv-active-sash-color: var(--indicator);
   --dv-active-sash-transition-duration: var(--vv-duration-fast);
-  --dv-active-sash-transition-delay: 0.3s;
+  --dv-active-sash-transition-delay: var(--vv-delay-sash);
 
   --dv-drag-over-background-color: color-mix(
     in oklch,

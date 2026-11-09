@@ -13,8 +13,14 @@ import {
 interface ActivityBarProps {
   platform: Platform
   activities: Activity[]
+  /** The view that the side bar shows, or shows when it opens again. */
   activeId: string
+  /** Whether the side bar is open. A closed side bar has no selected view. */
+  open: boolean
+  /** A click or Enter on a tab: it opens the view, or closes the side bar when the view is open. */
   onSelect: (id: string) => void
+  /** An arrow key, Home, or End: it opens the view and never closes the side bar. */
+  onNavigate: (id: string) => void
   /** The id of the element that shows the selected view, for `aria-controls`. */
   panelId: string
   /** The items at the bottom, for example the settings. */
@@ -29,7 +35,9 @@ export function ActivityBar({
   platform,
   activities,
   activeId,
+  open,
   onSelect,
+  onNavigate,
   panelId,
   footer,
 }: ActivityBarProps) {
@@ -55,7 +63,7 @@ export function ActivityBar({
     event.preventDefault()
     if (next === index) return
     tabs.current[next]?.focus()
-    onSelect(activities[next].id)
+    onNavigate(activities[next].id)
   }
 
   return (
@@ -84,7 +92,9 @@ export function ActivityBar({
           className="flex w-full flex-col"
         >
           {activities.map((activity, index) => {
-            const selected = activity.id === activeId
+            // The roving focus stays on the active view; it is selected only while the side bar is open.
+            const active = activity.id === activeId
+            const selected = active && open
             const Icon = activity.icon
             return (
               <Tooltip key={activity.id}>
@@ -97,9 +107,10 @@ export function ActivityBar({
                       type="button"
                       role="tab"
                       aria-selected={selected}
+                      aria-expanded={active ? open : undefined}
                       aria-controls={panelId}
                       aria-label={activity.label}
-                      tabIndex={selected ? 0 : -1}
+                      tabIndex={active ? 0 : -1}
                       onClick={() => onSelect(activity.id)}
                       onKeyDown={(event) => onKeyDown(event, index)}
                       className={cn(

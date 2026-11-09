@@ -138,7 +138,7 @@ function Tokens() {
             ))}
             <div className="flex items-baseline gap-4">
               <code className="w-24 shrink-0 font-mono text-xs text-muted-foreground">
-                13 / 20
+                13 / 18
               </code>
               <span className="font-mono text-ui">
                 const worktree = await vv.worktree.add('feat/tabs')

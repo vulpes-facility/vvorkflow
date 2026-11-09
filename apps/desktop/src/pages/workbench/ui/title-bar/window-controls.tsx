@@ -56,7 +56,8 @@ export function WindowControls({ controls, variant }: WindowControlsProps) {
             variant === 'windows' && [
               'h-full w-caption-button',
               button.close
-                ? 'hover:bg-window-close-hover hover:text-window-close-hover-foreground'
+                ? // With the focus, the button keeps the neutral hover, so that the ring keeps its contrast.
+                  'hover:bg-window-close-hover hover:text-window-close-hover-foreground focus-visible:bg-hover focus-visible:text-foreground'
                 : 'hover:bg-hover hover:text-foreground',
             ],
             variant === 'linux' && [

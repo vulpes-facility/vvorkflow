@@ -118,7 +118,9 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             platform={platform}
             activities={[...views]}
             activeId={view}
+            open={sideBarOpen}
             onSelect={(id) => selectView(id as typeof view)}
+            onNavigate={(id) => showView(id as typeof view)}
             panelId={sideBarId}
             footer={
               onOpenSettings && (
@@ -182,7 +184,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
               </SideBar>
             </ResizablePanel>
             {/* The line starts at the border of the header row, so that the header row looks like one row. */}
-            <ResizableHandle className="w-px bg-transparent before:absolute before:inset-x-0 before:top-[calc(var(--vv-titlebar-h)-1px)] before:bottom-0 before:bg-hairline before:transition-colors before:delay-300 before:duration-150 after:w-2 data-[separator=active]:before:bg-indicator data-[separator=hover]:before:bg-indicator" />
+            <ResizableHandle className="w-px bg-transparent before:absolute before:inset-x-0 before:top-[calc(var(--vv-titlebar-h)-1px)] before:bottom-0 before:bg-hairline before:transition-colors before:delay-(--vv-delay-sash) before:duration-(--vv-duration-fast) after:w-2 data-[separator=active]:before:bg-indicator data-[separator=hover]:before:bg-indicator" />
             <ResizablePanel className="flex min-w-0 flex-col">
               <TitleBar
                 platform={platform}

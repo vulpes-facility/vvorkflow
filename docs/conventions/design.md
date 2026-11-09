@@ -74,7 +74,8 @@ The shell follows value 5 of the [core values](../core-values.md).
    Do not put sample data in `src/`.\
    A fixture MAY draw system UI that the app does not render, such as the macOS window buttons, in the colors of that system.\
    Those colors are not design tokens of vvorkflow, so they stay in the fixture and outside `tokens.css`.
-2. Give each screen a story under `Screens/`, and add its id to `apps/desktop/e2e/screens.spec.ts`.
+2. Give each screen a story under `Screens/`, and add its id to `apps/desktop/e2e/screens.spec.ts`.\
+   Test the keyboard behavior of the shell in `apps/desktop/e2e/workbench.spec.ts`.
 3. `pnpm --filter @vvorkflow/desktop screens` writes a screenshot of each screen to `apps/desktop/screens/`, in Chromium and in WebKit.\
    Chromium stands for WebView2 and Android.\
    WebKit stands for WKWebView and WebKitGTK.\
