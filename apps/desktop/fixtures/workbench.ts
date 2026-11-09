@@ -1,6 +1,6 @@
 // Sample data for the stories and the screen capture. It never goes into `src/`.
 // The handlers are Storybook spies (`fn`), so that the Actions panel shows each call.
-import { ArrowDownUp, Bot, GitBranch, Laptop } from 'lucide-react'
+import { ArrowDownUp, GitBranch, Laptop } from 'lucide-react'
 import { fn } from 'storybook/test'
 import type {
   RecentProject,
@@ -58,13 +58,6 @@ export const status: { start: StatusItem[]; end: StatusItem[] } = {
     },
   ],
   end: [
-    {
-      id: 'agents',
-      label: '3 agents',
-      icon: Bot,
-      description: 'The agent terminals of this worktree',
-      onClick: fn(),
-    },
     {
       id: 'engine',
       label: 'Local',

@@ -81,6 +81,9 @@ The shell follows value 5 of the [core values](../core-values.md).
 5. Actions open from context menus, as value 5 says.\
    A menu shows only the actions that apply now, and hides the others.\
    When an action takes away the element that opened the menu, the focus goes to the element that is active after it.
+6. Do not write a description under a title, an item, or an empty state.\
+   The name, the icon, and the data, such as a path, are sufficient.\
+   The owner asked for this rule on 2026-11-09.
 
 ## Explorer
 

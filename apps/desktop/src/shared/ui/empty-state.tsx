@@ -4,17 +4,15 @@ import { cn } from '../lib'
 interface EmptyStateProps {
   icon: LucideIcon
   title: string
-  description?: string
   /** The actions that are always visible, for example a button. */
   children?: React.ReactNode
   className?: string
 }
 
-/** A short message for a view that has no content, with an optional action. */
+/** A title for a view that has no content, with an optional action, and no description under it. */
 export function EmptyState({
   icon: Icon,
   title,
-  description,
   children,
   className,
 }: EmptyStateProps) {
@@ -30,12 +28,7 @@ export function EmptyState({
         strokeWidth={1.5}
         aria-hidden
       />
-      <div className="flex flex-col gap-1">
-        <p className="text-ui font-medium text-foreground">{title}</p>
-        {description && (
-          <p className="text-xs text-muted-foreground">{description}</p>
-        )}
-      </div>
+      <p className="text-ui font-medium text-foreground">{title}</p>
       {children}
     </div>
   )

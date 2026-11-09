@@ -26,7 +26,7 @@ const git = [
 ] as const
 const typeScale = [
   ['text-2xl', '28 / 34', 'vvorkflow'],
-  ['text-xl', '20 / 28', 'Agent graphs'],
+  ['text-xl', '20 / 28', 'Open a folder'],
   ['text-lg', '16 / 24', 'Add worktree'],
   ['text-sm', '14 / 20', 'Open a folder to see its worktrees and files.'],
   [
@@ -143,7 +143,7 @@ function Tokens() {
                 13 / 18
               </code>
               <span className="font-mono text-ui">
-                const worktree = await vv.worktree.add('feat/tabs')
+                git worktree add ../app-tabs feat/tabs
               </span>
             </div>
           </Group>
