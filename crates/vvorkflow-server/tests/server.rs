@@ -11,7 +11,7 @@ use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
 use vvorkflow_engine::Engine;
 use vvorkflow_protocol::PROTOCOL_VERSION;
-use vvorkflow_server::{ClientStream, Endpoint, serve};
+use vvorkflow_server::{ClientStream, Endpoint, Limits, serve};
 
 type Socket = WebSocketStream<ClientStream>;
 
@@ -35,10 +35,19 @@ fn place() -> Place {
     }
 }
 
-fn start(place: &Place, idle: Duration) -> JoinHandle<Result<(), String>> {
+/// Limits with a short idle time, so that a test that fails does not leave
+/// an engine for long.
+fn limits() -> Limits {
+    Limits {
+        idle: Duration::from_secs(60),
+        ..Limits::default()
+    }
+}
+
+fn start(place: &Place, limits: Limits) -> JoinHandle<Result<(), String>> {
     let engine = Arc::new(Engine::new(&place.root).unwrap());
     let endpoint = place.endpoint.clone();
-    tokio::spawn(async move { serve(&endpoint, engine, idle).await })
+    tokio::spawn(async move { serve(&endpoint, engine, limits).await })
 }
 
 /// Connects when the engine listens, within two seconds.
@@ -82,7 +91,7 @@ async fn hello(socket: &mut Socket, protocol: u32) -> Value {
 #[tokio::test]
 async fn a_client_says_hello_then_sends_requests() {
     let place = place();
-    let server = start(&place, Duration::from_secs(60));
+    let server = start(&place, limits());
     let mut socket = connect(&place.endpoint).await;
 
     send(
@@ -135,7 +144,7 @@ async fn a_client_says_hello_then_sends_requests() {
 #[tokio::test]
 async fn another_protocol_version_closes_the_connection() {
     let place = place();
-    let _server = start(&place, Duration::from_secs(60));
+    let _server = start(&place, limits());
     let mut socket = connect(&place.endpoint).await;
 
     let refused = hello(&mut socket, PROTOCOL_VERSION + 1).await;
@@ -146,7 +155,7 @@ async fn another_protocol_version_closes_the_connection() {
 #[tokio::test]
 async fn a_message_without_an_id_closes_the_connection() {
     let place = place();
-    let _server = start(&place, Duration::from_secs(60));
+    let _server = start(&place, limits());
     let mut socket = connect(&place.endpoint).await;
 
     send(&mut socket, json!({"method": "hello"})).await;
@@ -156,7 +165,7 @@ async fn a_message_without_an_id_closes_the_connection() {
 #[tokio::test]
 async fn shutdown_works_before_hello() {
     let place = place();
-    let server = start(&place, Duration::from_secs(60));
+    let server = start(&place, limits());
     let mut socket = connect(&place.endpoint).await;
 
     send(
@@ -174,17 +183,23 @@ async fn shutdown_works_before_hello() {
 #[tokio::test]
 async fn only_one_engine_listens_on_an_endpoint() {
     let place = place();
-    let _first = start(&place, Duration::from_secs(60));
+    let _first = start(&place, limits());
     let _socket = connect(&place.endpoint).await;
 
-    let refused = start(&place, Duration::from_secs(60)).await.unwrap();
+    let refused = start(&place, limits()).await.unwrap();
     assert!(refused.unwrap_err().contains("Another engine"));
 }
 
 #[tokio::test]
 async fn the_engine_stops_when_no_client_comes() {
     let place = place();
-    let server = start(&place, Duration::from_millis(300));
+    let server = start(
+        &place,
+        Limits {
+            idle: Duration::from_millis(300),
+            ..limits()
+        },
+    );
     let socket = connect(&place.endpoint).await;
 
     // A connected client keeps the engine.
@@ -198,7 +213,7 @@ async fn the_engine_stops_when_no_client_comes() {
         .unwrap()
         .unwrap();
     // The next engine starts on the same endpoint.
-    let _next = start(&place, Duration::from_secs(60));
+    let _next = start(&place, limits());
     connect(&place.endpoint).await;
 }
 
@@ -213,7 +228,7 @@ async fn a_socket_that_an_engine_left_does_not_stop_the_next_one() {
         .unwrap();
     std::fs::write(place.endpoint.folder().join("engine.sock"), "").unwrap();
 
-    let _server = start(&place, Duration::from_secs(60));
+    let _server = start(&place, limits());
     let mut socket = connect(&place.endpoint).await;
     let welcome = hello(&mut socket, PROTOCOL_VERSION).await;
     assert_eq!(welcome["result"]["protocol"], PROTOCOL_VERSION);
@@ -229,6 +244,110 @@ async fn a_folder_that_other_users_can_open_is_refused() {
         .create(place.endpoint.folder())
         .unwrap();
 
-    let refused = start(&place, Duration::from_secs(60)).await.unwrap();
+    let refused = start(&place, limits()).await.unwrap();
     assert!(refused.unwrap_err().contains("other users cannot open"));
+}
+
+#[tokio::test]
+async fn the_engine_answers_a_close_with_a_close() {
+    let place = place();
+    let _server = start(&place, limits());
+    let mut socket = connect(&place.endpoint).await;
+
+    socket.close(None).await.unwrap();
+    let answer = tokio::time::timeout(Duration::from_secs(5), socket.next())
+        .await
+        .unwrap();
+    assert!(matches!(answer, Some(Ok(Message::Close(_)))), "{answer:?}");
+}
+
+#[tokio::test]
+async fn a_client_that_does_not_say_hello_in_time_is_closed() {
+    let place = place();
+    let _server = start(
+        &place,
+        Limits {
+            hello: Duration::from_millis(300),
+            ..limits()
+        },
+    );
+    let mut socket = connect(&place.endpoint).await;
+
+    let closed = tokio::time::timeout(Duration::from_secs(5), receive(&mut socket)).await;
+    assert_eq!(closed, Ok(None));
+}
+
+#[tokio::test]
+async fn a_client_after_the_limit_is_closed_at_once() {
+    let place = place();
+    let _server = start(
+        &place,
+        Limits {
+            clients: 2,
+            ..limits()
+        },
+    );
+    let mut first = connect(&place.endpoint).await;
+    let _second = connect(&place.endpoint).await;
+    let stream = place.endpoint.connect().await.unwrap();
+    assert!(
+        tokio_tungstenite::client_async("ws://localhost/", stream)
+            .await
+            .is_err()
+    );
+
+    // The clients in the limit still work.
+    let welcome = hello(&mut first, PROTOCOL_VERSION).await;
+    assert_eq!(welcome["result"]["protocol"], PROTOCOL_VERSION);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_folder_that_other_users_can_replace_is_refused() {
+    use std::os::unix::fs::PermissionsExt;
+    let place = place();
+    let shared = place.endpoint.folder().parent().unwrap().join("shared");
+    std::fs::create_dir(&shared).unwrap();
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let endpoint = Endpoint::in_folder(shared.join("run"));
+
+    let refused = endpoint.prepare().unwrap_err();
+    assert!(refused.contains("Other users can replace"), "{refused}");
+
+    // With the sticky bit, as on /tmp, other users cannot rename the folder.
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o1777)).unwrap();
+    endpoint.prepare().unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_client_does_not_connect_through_a_folder_that_others_can_open() {
+    use std::os::unix::fs::PermissionsExt;
+    let place = place();
+    let _server = start(&place, limits());
+    connect(&place.endpoint).await;
+    std::fs::set_permissions(
+        place.endpoint.folder(),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+
+    let refused = place.endpoint.connect().await.unwrap_err();
+    assert_eq!(refused.kind(), std::io::ErrorKind::PermissionDenied);
+}
+
+// A client that opens the pipe and leaves at once does not stop the next
+// client.
+#[cfg(windows)]
+#[tokio::test]
+async fn clients_that_leave_at_once_do_not_spoil_the_pipe() {
+    let place = place();
+    let _server = start(&place, limits());
+    connect(&place.endpoint).await;
+    for _ in 0..5 {
+        drop(place.endpoint.connect().await.unwrap());
+    }
+    let mut socket = connect(&place.endpoint).await;
+    let welcome = hello(&mut socket, PROTOCOL_VERSION).await;
+    assert_eq!(welcome["result"]["protocol"], PROTOCOL_VERSION);
 }

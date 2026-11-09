@@ -1,14 +1,15 @@
 //! `vvorkflow-server`: the engine process. It reads the projects root from
 //! `VVORKFLOW_ROOT`, or uses `~/vvorkflow`, and serves the engine on the
 //! endpoint of the user until a client stops it or no client comes for
-//! [`IDLE`]. It writes each error to stderr and stops with exit code 1.
+//! the idle time of [`Limits::default`]. It writes each error to stderr and
+//! stops with exit code 1.
 
 use std::io::Write;
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use vvorkflow_engine::{Engine, projects_root_from_env};
-use vvorkflow_server::{Endpoint, IDLE, serve};
+use vvorkflow_server::{Endpoint, Limits, serve};
 
 fn main() -> ExitCode {
     match run() {
@@ -31,5 +32,5 @@ fn run() -> Result<(), String> {
         .enable_all()
         .build()
         .map_err(|error| format!("The engine cannot start its runtime: {error}."))?
-        .block_on(serve(&endpoint, Arc::new(engine), IDLE))
+        .block_on(serve(&endpoint, Arc::new(engine), Limits::default()))
 }

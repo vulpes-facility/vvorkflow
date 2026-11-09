@@ -2,6 +2,7 @@
 //! requests, each on a blocking thread, with their answers in any order.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
@@ -28,16 +29,25 @@ struct Id {
     id: u64,
 }
 
-/// Serves one client until it leaves, until `hello` fails, or until it sends
-/// `shutdown`, which then stops the engine after the answer.
-pub(crate) async fn serve<S>(stream: S, engine: Arc<Engine>, stop: Arc<Notify>, _client: Client)
-where
+/// Serves one client until it leaves, until `hello` fails or does not come
+/// in the `hello` time, or until it sends `shutdown`, which then stops the
+/// engine after the answer. Each request waits for one of the `workers`.
+pub(crate) async fn serve<S>(
+    stream: S,
+    engine: Arc<Engine>,
+    workers: Arc<Semaphore>,
+    hello: Duration,
+    stop: Arc<Notify>,
+    _client: Client,
+) where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
+    let deadline = tokio::time::Instant::now() + hello;
     let config = WebSocketConfig::default()
         .max_message_size(Some(MAX_MESSAGE))
         .max_frame_size(Some(MAX_MESSAGE));
-    let Ok(socket) = tokio_tungstenite::accept_async_with_config(stream, Some(config)).await else {
+    let handshake = tokio_tungstenite::accept_async_with_config(stream, Some(config));
+    let Ok(Ok(socket)) = tokio::time::timeout_at(deadline, handshake).await else {
         return;
     };
     let (mut sink, mut source) = socket.split();
@@ -49,12 +59,29 @@ where
                 break;
             }
         }
+        // Send the close frame, also the answer to a close of the client, and
+        // flush it.
+        let _ = sink.close().await;
     });
 
     let parallel = Arc::new(Semaphore::new(PARALLEL));
     let mut greeted = false;
     let mut stopping = false;
-    while let Some(Ok(message)) = source.next().await {
+    loop {
+        let next = if greeted {
+            source.next().await
+        } else {
+            match tokio::time::timeout_at(deadline, source.next()).await {
+                Ok(next) => next,
+                Err(_) => {
+                    close(&send, CloseCode::Policy, "Send hello first.").await;
+                    break;
+                }
+            }
+        };
+        let Some(Ok(message)) = next else {
+            break;
+        };
         let text = match message {
             Message::Text(text) => text,
             Message::Close(_) => break,
@@ -116,8 +143,12 @@ where
                     break;
                 };
                 let engine = Arc::clone(&engine);
+                let workers = Arc::clone(&workers);
                 let send = send.clone();
                 tokio::spawn(async move {
+                    let Ok(_worker) = workers.acquire_owned().await else {
+                        return;
+                    };
                     let value = tokio::task::spawn_blocking(move || engine.handle(request))
                         .await
                         .unwrap_or_else(|error| {
