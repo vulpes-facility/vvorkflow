@@ -32,6 +32,7 @@ import { Welcome, type RecentProject } from './welcome/welcome'
 import { useLayout } from '../model/layout'
 import { useActionShortcuts } from '../model/use-action-shortcuts'
 import { useEditorShortcuts } from '../model/use-editor-shortcuts'
+import { useFocusRescue } from '../model/use-focus-rescue'
 import { useNarrowWindow } from '../model/use-narrow-window'
 import { useViewShortcuts } from '../model/use-view-shortcuts'
 import { views } from '../model/views'
@@ -116,6 +117,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [drawer, setSideBarOpen])
+  useFocusRescue(root, sideBarOpen, drawer)
 
   const editor = useRef<DockviewApi | undefined>(undefined)
   const getEditor = useCallback(() => editor.current, [])
@@ -212,7 +214,10 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
           />
           {drawer && (
             // The drawer starts under the header row, so that the window buttons stay usable.
-            <div className="absolute top-titlebar bottom-0 left-(--vv-activitybar-w) z-30 w-[min(var(--vv-sidebar-w),calc(100%-var(--vv-activitybar-w)))] border-r border-hairline shadow-overlay">
+            <div
+              data-drawer
+              className="absolute top-titlebar bottom-0 left-(--vv-activitybar-w) z-30 w-[min(var(--vv-sidebar-w),calc(100%-var(--vv-activitybar-w)))] border-r border-hairline shadow-overlay"
+            >
               {sideBarDrawer}
             </div>
           )}

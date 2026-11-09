@@ -32,7 +32,8 @@ The app MUST conform to WCAG 2.2 Level AA.
    `pnpm screens` measures each target of each screen.\
    Mark a target that is not a control, such as the close icon of a tab, with `data-pointer-target`.
 3. Each control MUST work with the keyboard, and MUST show the focus with the opaque `--ring` color.\
-   Do not put an opacity modifier on a focus color, such as `ring-ring/50`.
+   Do not put an opacity modifier on a focus color, such as `ring-ring/50`.\
+   When a change hides the focused element or makes it inert, move the focus to a visible control, as `useFocusRescue` does for the side bar.
 4. Each control without visible text MUST have an accessible name.\
    When a control has visible text, its accessible name MUST contain that text.
 5. Do not show a meaning with color alone.\
@@ -41,7 +42,7 @@ The app MUST conform to WCAG 2.2 Level AA.
 7. A control that is inside a tab or a row, such as the close icon of a tab, is a pointer target only.\
    Give its action a keyboard shortcut or a menu item, so that interactive controls do not nest.
 8. The window MUST reflow at 320 CSS pixels wide, as at 400 % zoom, with no horizontal scroll.\
-   At 640 px and less the side bar closes by itself.\
+   At `--vv-narrow-max-w` (640 px) and less the side bar closes by itself.\
    There the activity bar and `mod+B` open it as a drawer under the header row and over the editor area.\
    The editor area and the status bar are inert until Escape or the activity bar closes the drawer, and the header row with the window buttons stays usable.\
    In a wider window the side bar cannot make the editor area narrower than `--vv-editor-min-w`.\
