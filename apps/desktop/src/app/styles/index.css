@@ -40,6 +40,8 @@
   --spacing-icon-sm: var(--vv-icon-sm);
   --spacing-icon: var(--vv-icon);
   --spacing-icon-lg: var(--vv-icon-lg);
+  --spacing-tree-pad: var(--vv-tree-pad);
+  --spacing-tree-indent: var(--vv-tree-indent);
 
   --tracking-label: var(--vv-tracking-label);
   --tracking-display: var(--vv-tracking-display);
@@ -132,6 +134,13 @@
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
   }
+}
+
+/* A row of a tree moves in by one indent for each level after the first. Set --level on the row. */
+@utility tree-inset {
+  padding-left: calc(
+    var(--spacing-tree-pad) + var(--spacing-tree-indent) * (var(--level, 1) - 1)
+  );
 }
 
 /* WCAG 2.2 SC 2.3.3: no motion when the user asks for less motion. */

@@ -123,7 +123,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [drawer, setSideBarOpen])
-  useFocusRescue(root, sideBarOpen, drawer)
+  useFocusRescue(root, sideBarOpen, drawer, view)
 
   const editor = useRef<DockviewApi | undefined>(undefined)
   const getEditor = useCallback(() => editor.current, [])

@@ -159,3 +159,41 @@ export function visibleRows(
       : []),
   ])
 }
+
+/**
+ * Finds the row that takes the focus when the focused row leaves the tree,
+ * for example when its file is deleted or an update collapses its folder.
+ * It is the next sibling that is still visible, or else the previous one, or
+ * else the nearest ancestor that is still visible.
+ *
+ * @param previous The rows before the change.
+ * @param next The rows after the change.
+ * @param id The id of the row that left.
+ */
+export function survivingRow(
+  previous: VisibleRow[],
+  next: VisibleRow[],
+  id: string,
+): string | undefined {
+  const visible = new Set(next.map((row) => row.node.id))
+  const byId = new Map(previous.map((row) => [row.node.id, row]))
+  const removed = byId.get(id)
+  if (!removed) return next[0]?.node.id
+  const siblings = previous.filter((row) => row.parentId === removed.parentId)
+  const at = siblings.indexOf(removed)
+  const sibling =
+    siblings.slice(at + 1).find((row) => visible.has(row.node.id)) ??
+    siblings
+      .slice(0, at)
+      .reverse()
+      .find((row) => visible.has(row.node.id))
+  if (sibling) return sibling.node.id
+  for (
+    let parentId = removed.parentId;
+    parentId;
+    parentId = byId.get(parentId)?.parentId
+  ) {
+    if (visible.has(parentId)) return parentId
+  }
+  return next[Math.min(previous.indexOf(removed), next.length - 1)]?.node.id
+}

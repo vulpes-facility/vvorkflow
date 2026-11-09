@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 // The keyboard behavior of the activity bar and the side bar.
 test.beforeEach(async ({ page }) => {
@@ -253,4 +253,108 @@ test('a window that becomes narrow moves the focus out of the docked side bar', 
 test('the first render does not take the focus', async ({ page }) => {
   const focused = await page.evaluate(() => document.activeElement?.tagName)
   expect(focused).toBe('BODY')
+})
+
+test('a view shortcut moves the focus from the tree into the new view', async ({
+  page,
+}) => {
+  await page.goto(explorerStory)
+  const row = page.getByRole('treeitem', { name: /^scratch\.md/ })
+  await row.focus()
+  await page.keyboard.press('Meta+Shift+F')
+  await expect(row).toBeHidden()
+  await expect(
+    page.getByRole('region', { name: 'Search content' }),
+  ).toBeFocused()
+})
+
+/**
+ * Removes entries from the repositories of the Explorer story, as an update
+ * from the engine would. It goes through the args store and the channel of
+ * Storybook, so the tree gets new data and keeps its state.
+ */
+async function removeEntries(page: Page, ids: string[]) {
+  // Storybook knows the args of the story only after it renders.
+  await page.getByRole('tree', { name: 'Explorer' }).waitFor()
+  await page.evaluate((removed) => {
+    interface Entry {
+      id: string
+      children?: Entry[]
+    }
+    interface Group {
+      worktrees: { children: Entry[] }[]
+    }
+    const storyId = 'screens-workbench--explorer'
+    const preview = (
+      window as unknown as {
+        __STORYBOOK_PREVIEW__: {
+          storyStoreValue: {
+            args: { get: (id: string) => { repositories: Group[] } }
+          }
+          channel: { emit: (event: string, data: unknown) => void }
+        }
+      }
+    ).__STORYBOOK_PREVIEW__
+    const keep = (entries: Entry[]): Entry[] =>
+      entries
+        .filter((entry) => !removed.includes(entry.id))
+        .map((entry) =>
+          entry.children ? { ...entry, children: keep(entry.children) } : entry,
+        )
+    const { repositories } = preview.storyStoreValue.args.get(storyId)
+    preview.channel.emit('updateStoryArgs', {
+      storyId,
+      updatedArgs: {
+        repositories: repositories.map((group) => ({
+          ...group,
+          worktrees: group.worktrees.map((worktree) => ({
+            ...worktree,
+            children: keep(worktree.children),
+          })),
+        })),
+      },
+    })
+  }, ids)
+}
+
+test('when an update removes the focused row, the focus moves to the next row', async ({
+  page,
+}) => {
+  await page.goto(explorerStory)
+  const scratch = page.getByRole('treeitem', { name: /^scratch\.md/ })
+  await scratch.click()
+  await expect(scratch).toBeFocused()
+
+  await removeEntries(page, ['tt/scratch.md'])
+  await expect(scratch).toBeHidden()
+  const readme = page.getByRole('treeitem', { name: 'README.md' }).first()
+  await expect(readme).toBeFocused()
+  await expect(readme).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('[role="treeitem"][tabindex="0"]')).toHaveCount(1)
+})
+
+test('an update does not take the focus when the user works elsewhere', async ({
+  page,
+}) => {
+  await page.goto(explorerStory)
+  await page.getByRole('treeitem', { name: /^scratch\.md/ }).click()
+  const welcome = page.getByRole('tab', { name: 'Welcome' })
+  await welcome.focus()
+
+  await removeEntries(page, ['tt/scratch.md'])
+  await expect(
+    page.getByRole('treeitem', { name: /^scratch\.md/ }),
+  ).toBeHidden()
+  await expect(welcome).toBeFocused()
+})
+
+test('an empty folder has no expanded state', async ({ page }) => {
+  await page.goto(explorerStory)
+  await removeEntries(page, ['tt/dist/index.js'])
+  const dist = page.getByRole('treeitem', { name: /^dist/ })
+  await expect(dist).not.toHaveAttribute('aria-expanded')
+  await dist.focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(dist).toBeFocused()
+  await expect(dist).not.toHaveAttribute('aria-expanded')
 })

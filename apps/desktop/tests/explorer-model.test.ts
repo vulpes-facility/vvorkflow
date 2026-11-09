@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   rollUpStatus,
+  survivingRow,
   toTreeNodes,
   visibleRows,
   type RepositoryGroup,
+  type TreeNode,
 } from '../src/pages/workbench/model/explorer.ts'
 
 describe('rollUpStatus', () => {
@@ -77,5 +79,43 @@ describe('toTreeNodes and visibleRows', () => {
       ['f', 3, 'w', 1, 1],
       ['a', 4, 'f', 1, 1],
     ])
+  })
+})
+
+describe('survivingRow', () => {
+  const file = (id: string): TreeNode => ({ id, kind: 'file', label: id })
+  const tree = (files: string[], open = true) => {
+    const nodes: TreeNode[] = [
+      {
+        id: 'f',
+        kind: 'folder',
+        label: 'f',
+        children: files.map(file),
+      },
+      file('z'),
+    ]
+    return visibleRows(nodes, new Set(open ? ['f'] : []))
+  }
+
+  it('takes the next sibling, or else the previous one', () => {
+    expect(survivingRow(tree(['a', 'b', 'c']), tree(['a', 'c']), 'b')).toBe('c')
+    expect(survivingRow(tree(['a', 'b', 'c']), tree(['a', 'b']), 'c')).toBe('b')
+  })
+
+  it('takes the parent when no sibling is visible', () => {
+    expect(survivingRow(tree(['a']), tree([]), 'a')).toBe('f')
+    expect(survivingRow(tree(['a', 'b']), tree(['a', 'b'], false), 'b')).toBe(
+      'f',
+    )
+  })
+
+  it('takes the row at the same place when no relative is left', () => {
+    const previous = visibleRows([file('x'), file('y')], new Set())
+    expect(survivingRow(previous, visibleRows([], new Set()), 'x')).toBe(
+      undefined,
+    )
+    expect(
+      survivingRow(previous, visibleRows([file('q')], new Set()), 'y'),
+    ).toBe('q')
   })
 })

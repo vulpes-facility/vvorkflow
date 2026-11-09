@@ -7,11 +7,12 @@ import {
   GitBranch,
   type LucideIcon,
 } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/shared/lib'
 import {
   gitStatusLetters,
   gitStatusNames,
+  survivingRow,
   visibleRows,
   type GitStatus,
   type TreeNode,
@@ -54,12 +55,38 @@ export function ExplorerTree({
   const [selectedId, setSelectedId] = useState<string | undefined>()
   const [focusedId, setFocusedId] = useState<string | undefined>()
   const items = useRef(new Map<string, HTMLLIElement>())
+  // The item that has the focus, until the focus leaves the tree.
+  const focusedItem = useRef<HTMLElement | null>(null)
 
   const rows = useMemo(() => visibleRows(nodes, expanded), [nodes, expanded])
+
+  // When an update takes away the focused row, the focus and the selection
+  // move to the nearest row that is left.
+  const [previousRows, setPreviousRows] = useState(rows)
+  if (rows !== previousRows) {
+    setPreviousRows(rows)
+    const visible = new Set(rows.map((row) => row.node.id))
+    if (focusedId && !visible.has(focusedId)) {
+      const survivor = survivingRow(previousRows, rows, focusedId)
+      setFocusedId(survivor)
+      if (selectedId === focusedId) setSelectedId(survivor)
+    } else if (selectedId && !visible.has(selectedId)) {
+      setSelectedId(undefined)
+    }
+  }
   const activeId =
     focusedId && rows.some((row) => row.node.id === focusedId)
       ? focusedId
       : rows[0]?.node.id
+
+  // The removed item took the focus with it, so give the focus to its survivor.
+  useEffect(() => {
+    const item = focusedItem.current
+    if (!item || item.isConnected || !activeId) return
+    if (document.activeElement && document.activeElement !== document.body)
+      return
+    items.current.get(activeId)?.focus()
+  }, [rows, activeId])
 
   function toggle(id: string, open?: boolean) {
     setExpanded((current) => {
@@ -77,8 +104,8 @@ export function ExplorerTree({
   }
 
   function activate(node: TreeNode) {
-    if (node.children) toggle(node.id)
-    else onOpenFile?.(node.id)
+    if (node.kind === 'file') onOpenFile?.(node.id)
+    else if (node.children?.length) toggle(node.id)
   }
 
   function onKeyDown(event: React.KeyboardEvent) {
@@ -86,7 +113,8 @@ export function ExplorerTree({
     const row = rows[index]
     if (!row) return
     const { node } = row
-    const isOpen = expanded.has(node.id)
+    const hasChildren = Boolean(node.children?.length)
+    const isOpen = hasChildren && expanded.has(node.id)
     let handled = true
     switch (event.key) {
       case 'ArrowDown':
@@ -96,11 +124,11 @@ export function ExplorerTree({
         if (rows[index - 1]) focus(rows[index - 1].node.id)
         break
       case 'ArrowRight':
-        if (node.children && !isOpen) toggle(node.id, true)
-        else if (node.children?.[0]) focus(node.children[0].id)
+        if (hasChildren && !isOpen) toggle(node.id, true)
+        else if (isOpen && node.children?.[0]) focus(node.children[0].id)
         break
       case 'ArrowLeft':
-        if (node.children && isOpen) toggle(node.id, false)
+        if (isOpen) toggle(node.id, false)
         else if (row.parentId) focus(row.parentId)
         break
       case 'Home':
@@ -132,8 +160,9 @@ export function ExplorerTree({
       className="py-1 select-none"
     >
       {rows.map(({ node, level, position, siblings }) => {
-        const hasChildren = Boolean(node.children)
-        const isOpen = expanded.has(node.id)
+        // An empty folder has nothing to open, so it has no expanded state.
+        const hasChildren = Boolean(node.children?.length)
+        const isOpen = hasChildren && expanded.has(node.id)
         return (
           <li
             key={node.id}
@@ -148,7 +177,19 @@ export function ExplorerTree({
             aria-expanded={hasChildren ? isOpen : undefined}
             aria-selected={node.id === selectedId}
             tabIndex={node.id === activeId ? 0 : -1}
-            onFocus={() => setFocusedId(node.id)}
+            onFocus={(event) => {
+              focusedItem.current = event.currentTarget
+              setFocusedId(node.id)
+            }}
+            onBlur={(event) => {
+              // A removed item also loses the focus; only an item that is
+              // still there lost it to the user.
+              const item = event.currentTarget
+              queueMicrotask(() => {
+                if (item.isConnected && focusedItem.current === item)
+                  focusedItem.current = null
+              })
+            }}
             className="outline-none"
           >
             <Row
@@ -193,7 +234,7 @@ function Row({ node, level, isOpen, hasChildren, onClick }: RowProps) {
       style={{ '--level': level } as React.CSSProperties}
       className={cn(
         'flex h-row items-center gap-1.5 pr-2 text-ui',
-        'pl-[calc(var(--vv-tree-pad)+var(--vv-tree-indent)*(var(--level)-1))]',
+        'tree-inset',
         'hover:bg-hover',
         // The row shows the state of its tree item: selected, and focused.
         '[[aria-selected=true]>&]:bg-selection',
