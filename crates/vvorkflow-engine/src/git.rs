@@ -73,7 +73,12 @@ pub fn worktrees(top: &Path) -> Result<Vec<(PathBuf, Option<String>)>, EngineErr
         } else if let Some(value) = field.strip_prefix("worktree ") {
             path = Some(PathBuf::from(value));
         } else if let Some(value) = field.strip_prefix("branch ") {
-            branch = Some(value.trim_start_matches("refs/heads/").to_owned());
+            branch = Some(
+                value
+                    .strip_prefix("refs/heads/")
+                    .unwrap_or(value)
+                    .to_owned(),
+            );
         } else if field == "bare" {
             bare = true;
         }

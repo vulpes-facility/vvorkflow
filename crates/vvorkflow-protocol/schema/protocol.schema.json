@@ -71,6 +71,20 @@
         "message"
       ]
     },
+    "hello": {
+      "description": "Starts a connection with the protocol version of the client.",
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "protocol"
+      ]
+    },
     "list_directory": {
       "description": "Lists one folder of a worktree. The engine reads only this folder, so that\na large tree, such as `node_modules`, costs nothing until the user opens it.",
       "type": "object",
@@ -89,6 +103,10 @@
         "path"
       ]
     },
+    "list_projects": {
+      "description": "Lists the projects: the folders directly in the projects root.",
+      "type": "object"
+    },
     "open_folder": {
       "description": "Opens a folder: a git repository, or a plain folder.\nThe engine adds the folder, and each worktree of its repository, to the\nroots that later requests can reach (core value 6).",
       "type": "object",
@@ -100,6 +118,28 @@
       },
       "required": [
         "path"
+      ]
+    },
+    "project": {
+      "description": "A folder directly in the projects root.",
+      "type": "object",
+      "properties": {
+        "git": {
+          "description": "True when the folder has a `.git` entry.",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "description": "The absolute path, which `folder.open` takes.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path",
+        "git"
       ]
     },
     "read_status": {
@@ -130,7 +170,7 @@
         "worktrees": {
           "type": "array",
           "items": {
-            "description": "One worktree of a repository. In vvorkflow, one worktree is one project.",
+            "description": "One worktree of a repository.",
             "type": "object",
             "properties": {
               "branch": {
@@ -161,9 +201,170 @@
         "git",
         "worktrees"
       ]
+    },
+    "request": {
+      "description": "A request to the engine: its method, and its params.",
+      "oneOf": [
+        {
+          "description": "The first request of a connection. Answers [`Welcome`].",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "hello"
+            },
+            "params": {
+              "description": "Starts a connection with the protocol version of the client.",
+              "type": "object",
+              "properties": {
+                "protocol": {
+                  "type": "integer",
+                  "format": "uint32",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "protocol"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Answers each [`Project`] in the projects root.",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "project.list"
+            },
+            "params": {
+              "description": "Lists the projects: the folders directly in the projects root.",
+              "type": "object"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Answers a [`Repository`].",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "folder.open"
+            },
+            "params": {
+              "description": "Opens a folder: a git repository, or a plain folder.\nThe engine adds the folder, and each worktree of its repository, to the\nroots that later requests can reach (core value 6).",
+              "type": "object",
+              "properties": {
+                "path": {
+                  "description": "An absolute path on the machine of the engine.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Answers each [`DirectoryEntry`] of the folder.",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "directory.list"
+            },
+            "params": {
+              "description": "Lists one folder of a worktree. The engine reads only this folder, so that\na large tree, such as `node_modules`, costs nothing until the user opens it.",
+              "type": "object",
+              "properties": {
+                "path": {
+                  "description": "The folder, relative to the worktree, with `/` between the names.\nAn empty path is the worktree itself.",
+                  "type": "string"
+                },
+                "worktree": {
+                  "description": "The absolute path of the worktree.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "worktree",
+                "path"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Answers each [`ChangedPath`] of the worktree.",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "git.status"
+            },
+            "params": {
+              "description": "Reads the git status of a worktree.",
+              "type": "object",
+              "properties": {
+                "worktree": {
+                  "description": "The absolute path of the worktree.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "worktree"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        }
+      ]
+    },
+    "welcome": {
+      "description": "The answer to [`Hello`] when the engine speaks the protocol of the client.",
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "root": {
+          "description": "The absolute path of the projects root.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "root"
+      ]
     }
   },
   "required": [
+    "request",
+    "hello",
+    "welcome",
+    "list_projects",
+    "project",
     "open_folder",
     "repository",
     "list_directory",
@@ -171,5 +372,6 @@
     "read_status",
     "changed_path",
     "engine_error"
-  ]
+  ],
+  "x-protocol-version": 1
 }

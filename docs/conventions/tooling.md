@@ -32,6 +32,7 @@ This file gives only the rules that are different from that plugin, or that it d
 12. The serde types of `crates/vvorkflow-protocol` are the source of truth of the engine protocol.\
     `VVORKFLOW_UPDATE_SCHEMA=1 cargo test -p vvorkflow-protocol` writes its JSON Schema, and `pnpm --filter @vvorkflow/desktop generate:protocol` writes the zod client from it.\
     A Rust test and a Vitest test fail when the schema or the client is out of date.\
+    The generator types the union of the requests as `any`, so `engine.ts` keeps a map of each method to its params and its value, and a Vitest test checks the map and the protocol version against the schema.\
     The client parses each answer of the engine at run time, because a value from another process can be wrong.
 13. The `lint` and `test` scripts of `apps/desktop` check the whole Cargo workspace, and `apps/desktop/turbo.json` adds `crates/**` to their inputs.
 14. Check a change of the engine in the real app.\

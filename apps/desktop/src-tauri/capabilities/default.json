@@ -14,9 +14,7 @@
     "core:window:allow-destroy",
     "core:window:allow-start-dragging",
     "core:window:allow-is-maximized",
-    "allow-open-folder",
-    "allow-list-directory",
-    "allow-read-status",
+    "allow-request",
     "allow-startup-folders",
     "dialog:allow-open"
   ]

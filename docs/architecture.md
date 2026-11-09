@@ -17,7 +17,7 @@ web UI (React) ──Tauri IPC──► app core (Rust) ──local socket──
 | Web UI | Shows the folders, the files, and the terminals, and sends requests. It does not know if the engine is local or remote. | Done for the shell and the Explorer |
 | App core | The Rust part of the Tauri app. It connects to one engine, and sends the requests, the responses, and the events between the web UI and the engine. It keeps the token out of the web UI. | Next (M3) |
 | Engine | One Rust process. It owns the projects root, the files, git, and the terminal sessions. On the desktop, the app starts it as a daemon. On a remote machine, it runs headless. | Done in the app process; next as a process (M3) |
-| Protocol | The Rust types of `crates/vvorkflow-protocol`, their JSON Schema, and the TypeScript client that the schema makes. | Done for folders and git |
+| Protocol | The Rust types of `crates/vvorkflow-protocol`, their JSON Schema, and the TypeScript client that the schema makes. | Done for `hello`, the projects, the folders, and git |
 
 The engine continues when the app closes, so its terminal sessions continue.
 
@@ -47,19 +47,26 @@ The receiver checks each message against the schema, at run time.
    The engine sends the events of a subject only to the clients that watch it.\
    For example, only the attached clients of a session get its output.
 3. The first request of a connection is `hello`, with the protocol version of the client.\
-   When the engine does not know that version, it answers with the error `failedPrecondition`, and closes the connection.
+   When the engine uses another version, it answers with the error `failedPrecondition`, and closes the connection.
 4. The protocol version changes at each change that an older client cannot read.
 
 ## Projects root
 
 1. The engine has one projects root: `~/vvorkflow`, or the folder in `VVORKFLOW_ROOT`.\
-   `VVORKFLOW_ROOT` MUST be an absolute path to a folder.
+   `VVORKFLOW_ROOT` MUST be an absolute path to a folder.\
+   An empty value is the same as no value.
 2. At start, the engine checks the root, and stops with a message when it is not correct.\
-   It makes `~/vvorkflow` when that folder does not exist.
+   It makes `~/vvorkflow` when that folder does not exist.\
+   While the engine is in the app process, it does not stop: each request answers that message.
 3. A project is a folder directly in the root.\
-   The worktrees of one repository are in one group.
-4. The desktop app can also open other folders on its own computer, as in VS Code.\
+   A name that starts with `.` is not a project.\
+   A symbolic link that leads out of the root is not a project, because the engine reads the root through a directory handle.
+4. The worktrees of one repository are in one group in the Explorer.
+5. The desktop app can also open other folders on its own computer, as in VS Code.\
    A remote client can open only the projects in the root.
+
+Status: done in the app process (M3), with the method `project.list`.\
+The engine process, which stops on a root that is not correct, is next (M3).
 
 [`conventions/engine.md`](conventions/engine.md) gives the rules that keep each request in these folders.
 
@@ -102,8 +109,9 @@ A setting changes each one.
 | --- | --- | --- |
 | Access | Remote access is off by default. When it is on, the engine listens only on 127.0.0.1 and requires a token. A remote client comes through an SSH tunnel. | Planned (M6) |
 | Paths | A request can reach only the folders that the user opened, and the worktrees of their repositories. The engine reads the folders through directory handles, and runs git only with the git directory that it found when the folder opened. | Done |
-| Projects root | The engine also reaches the [projects root](#projects-root). A remote client can open only the projects in it. | Next (M3) for the root, planned (M6) for remote clients |
-| Commands | The app does not run installs. It types a command in the terminal, and the user presses Enter. | Done |
+| Projects root | The engine also lists the [projects root](#projects-root), through a directory handle. A remote client can open only the projects in it. | Done for the root; planned (M6) for remote clients |
+| Installs | The app does not run installs for the user. | Done |
+| Commands | The app types a command in the terminal, and the user presses Enter. | Planned (M4) |
 | Previews | The Markdown preview removes HTML and scripts from the document. It blocks remote images by default, and the user can allow them for each document. | Planned (M5) |
 | Sessions | A session runs as the user that runs the engine. | Planned (M4) |
 
