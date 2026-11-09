@@ -91,6 +91,67 @@ test('when an error takes the place of the projects, the focus moves to the tab 
   ).toBeFocused()
 })
 
+test('the error of the engine is an icon, with its message in a tooltip on focus and on hover', async ({
+  page,
+}) => {
+  const message = 'VVORKFLOW_ROOT is not an absolute path: projects.'
+  await update(page, { projects: [], engineError: message })
+  const mark = page.getByRole('button', { name: 'Engine error' })
+  const tooltip = page.locator('[data-slot="tooltip-content"]')
+  // On the screen only the icon shows; the alert is for assistive technology.
+  await expect(
+    page.getByRole('region', { name: 'Projects' }).getByRole('alert'),
+  ).toHaveClass(/\bsr-only\b/)
+
+  // The tooltip opens on a keyboard focus, and Escape closes it.
+  await mark.focus()
+  await page.keyboard.press('Shift+Tab')
+  await page.keyboard.press('Tab')
+  await expect(mark).toBeFocused()
+  await expect(tooltip).toBeVisible()
+  await expect(tooltip).toHaveText(message)
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toBeHidden()
+
+  // WCAG 2.2 SC 1.4.13: the tooltip opens on hover, stays while the pointer
+  // is on it, and Escape closes it while the pointer stays.
+  await page
+    .getByRole('region', { name: 'Start' })
+    .getByRole('button', { name: 'Open folder…' })
+    .focus()
+  await page.mouse.move(0, 0)
+  await mark.hover()
+  await expect(tooltip).toBeVisible()
+  await tooltip.hover()
+  await page.waitForTimeout(1000)
+  await expect(tooltip).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toBeHidden()
+})
+
+test('when the error goes away from the focused icon, the focus moves to the first project or to the tab', async ({
+  page,
+}) => {
+  const mark = page.getByRole('button', { name: 'Engine error' })
+  const errorArgs = { projects: [], engineError: 'The engine stopped.' }
+  await update(page, errorArgs)
+  await mark.focus()
+  await update(page, {
+    projects: [project('atlas-api'), project('vvorkflow')],
+    engineError: undefined,
+  })
+  await expect(page.getByRole('button', { name: /^atlas-api\b/ })).toBeFocused()
+
+  await update(page, errorArgs)
+  await mark.focus()
+  await update(page, { projects: [], engineError: undefined })
+  await expect(
+    page
+      .getByRole('tabpanel', { name: 'Welcome' })
+      .getByRole('region', { name: 'Welcome' }),
+  ).toBeFocused()
+})
+
 test('an update does not take the focus from another part of the window', async ({
   page,
 }) => {

@@ -60,6 +60,8 @@ The receiver checks each message against the schema, at run time.
 6. A message that is not a request with an `id` closes the connection.\
    A request with an `id` and a method or params that the engine does not know gets `invalidArgument`.
 7. Over Tauri IPC, the web UI sends only `method` and `params`, and the app core adds the `id`.
+8. A client keeps at most 16 requests open on a connection: sent, and not answered yet.\
+   The engine closes the connection of a client that sends more.
 
 Status: the methods, the version check, `shutdown`, and the envelope with the `id` are done (M3).\
 The events come with the terminal sessions (M4).
@@ -91,26 +93,28 @@ The engine process stops on a root that is not correct, and the app shows its me
 1. The binary `vvorkflow-server` is the engine process.\
    At start it checks the [projects root](#projects-root).\
    When the root is not correct, it writes the message to stderr, and stops with exit code 1.
-2. On Linux and macOS, its folder is the first of these where the path of the socket has at most 100 bytes:\
+2. On Linux and macOS, its folder is the first of these where the canonical path of the socket has at most 100 bytes:\
    `$XDG_RUNTIME_DIR/vvorkflow`, `vvorkflow-<uid>` in the temporary folder, and `/tmp/vvorkflow-<uid>`.\
    On Windows, it is `%LOCALAPPDATA%\vvorkflow`.
 3. On Linux and macOS, the engine makes the folder with mode 0700.\
    It refuses a folder that is a symbolic link, that another user owns, or that other users can open.\
    It also refuses a folder above it that a user other than this user and root owns, or that other users can write without the sticky bit.\
-   Each operation on the endpoint does these checks again, and then uses only the canonical path of the folder, which has no symbolic link.\
+   Each operation on the endpoint does these checks again on the canonical path, from `/` down, and does not follow a link.\
+   A folder that passes cannot change under the next one, because no other user can rename an entry in it.\
    So no other user can replace the folder or lead an operation to another folder.
 4. The folder holds `engine.lock`, `engine.log`, and the socket `engine.sock`.\
-   A client does the same checks of the folder before it connects, and refuses an engine that runs as another user (the peer credentials of the socket).
+   A client does the same checks of the folder before it connects.\
+   Each side refuses the other side when it runs as another user (the peer credentials of the socket).
 5. On Windows, the folder is in the profile of the user, which other users cannot open.\
    The engine makes a named pipe with a random name, and writes the name and its process id to `engine.pipe` in the folder.\
    The pipe lets only its owner and the system open it, and it refuses remote clients.\
-   A client reads `engine.pipe`, and refuses a pipe whose server is not that process.
+   A client reads `engine.pipe`, and refuses a pipe whose server is not that process, or does not run as this user.
 6. Only one engine listens on an endpoint.\
    The engine locks `engine.lock`, then removes a socket that an old engine left, and then listens.
 7. The engine serves at most 32 clients, and closes the connection of a client after them at once.\
    A client has 10 seconds for the WebSocket handshake and `hello`.\
    The engine reads a message of at most 1 MiB.\
-   It runs each request on a blocking thread: at most 8 requests of all clients at a time, and at most 8 queued requests of each connection.\
+   It runs each request on a blocking thread, at most 8 requests of all clients at a time, and reads the next message also while a request waits.\
    A client that does not take a frame for 30 seconds loses its connection.\
    When a connection ends, its queued requests end too, and a request on a blocking thread keeps its place until it finishes.
 8. The engine stops when a client sends `shutdown`, or when no client is connected for a time ([Memory limits](#memory-limits)).
@@ -151,7 +155,7 @@ A setting changes each one.
 | Part | Rule | Default |
 | --- | --- | --- |
 | Engine process | The engine process stops when no client is connected for a time. From M4, it also waits for the end of each session. | 5 minutes |
-| Requests | At most 32 clients; at most 8 requests of all clients run at a time, and at most 8 queue on each connection; a message has at most 1 MiB. | - |
+| Requests | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message has at most 1 MiB. | - |
 | Session screen | The engine keeps the screen and the scrollback of each session. | 5,000 lines |
 | Engine output | The engine sends output only for attached sessions. Each client has an output queue with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | Proposal in M4 |
 | App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |

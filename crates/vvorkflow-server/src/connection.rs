@@ -23,15 +23,11 @@ use tokio_tungstenite::tungstenite::protocol::frame::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use vvorkflow_engine::Engine;
 use vvorkflow_protocol::{
-    ClientMessage, Done, EngineError, ErrorCode, Request, Response, ServerMessage,
+    ClientMessage, Done, EngineError, ErrorCode, MAX_OPEN_REQUESTS, Request, Response,
+    ServerMessage,
 };
 
 use crate::{Client, MAX_MESSAGE, Stop};
-
-/// The requests of one connection that wait or run at the same time. A
-/// client that sends more waits, so that it cannot fill the memory of the
-/// engine.
-const PARALLEL: usize = 8;
 
 /// The time that the engine waits for the client to take one frame. A client
 /// that does not read for this time loses its connection.
@@ -107,7 +103,6 @@ async fn read<S>(
 ) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let parallel = Arc::new(Semaphore::new(PARALLEL));
     while let Some(Ok(message)) = source.next().await {
         // Forget the requests that ended, so that the set stays small.
         while requests.try_join_next().is_some() {}
@@ -169,14 +164,16 @@ async fn read<S>(
                 .await;
             }
             request => {
-                let Ok(place) = Arc::clone(&parallel).acquire_owned().await else {
+                // The reader never waits for a place, so that it always sees
+                // the end of the connection.
+                if requests.len() >= MAX_OPEN_REQUESTS {
+                    close(send, CloseCode::Policy, "Too many open requests.").await;
                     return;
-                };
+                }
                 let engine = Arc::clone(&shared.engine);
                 let workers = Arc::clone(&shared.workers);
                 let send = send.clone();
                 requests.spawn(async move {
-                    let _place = place;
                     let Ok(worker) = workers.acquire_owned().await else {
                         return;
                     };
@@ -218,8 +215,11 @@ async fn write<S>(
         let close = matches!(message, Message::Close(_));
         match tokio::time::timeout(WRITE_TIME, sink.send(message)).await {
             Ok(Ok(())) if !close => {}
-            Ok(Ok(())) => break,
-            Ok(Err(_)) | Err(_) => return,
+            // A close frame, or a frame that the closing connection refuses:
+            // the rest of the outbox does not go out, but the close does.
+            Ok(Ok(()) | Err(_)) => break,
+            // A client that does not read gets no close frame.
+            Err(_) => return,
         }
     }
     let _ = tokio::time::timeout(CLOSE_TIME, sink.close()).await;

@@ -20,10 +20,6 @@ pub use endpoint::{ClientStream, Endpoint, Listener, ServerStream};
 /// request needs.
 pub const MAX_MESSAGE: usize = 1 << 20;
 
-/// The requests of all clients that run at the same time, each on a blocking
-/// thread.
-pub const WORKERS: usize = 8;
-
 /// The limits of an engine process, so that it does not keep memory for
 /// nobody, and no client can take all of it.
 #[derive(Clone, Copy, Debug)]
@@ -35,15 +31,20 @@ pub struct Limits {
     /// The clients that the engine serves at the same time. The engine
     /// closes the connection of a client after them at once.
     pub clients: usize,
+    /// The requests of all clients that run at the same time, each on a
+    /// blocking thread.
+    pub workers: usize,
 }
 
 impl Default for Limits {
-    /// The limits of the binary: 5 minutes, 10 seconds, and 32 clients.
+    /// The limits of the binary: 5 minutes, 10 seconds, 32 clients, and 8
+    /// workers.
     fn default() -> Limits {
         Limits {
             idle: Duration::from_secs(5 * 60),
             hello: Duration::from_secs(10),
             clients: 32,
+            workers: 8,
         }
     }
 }
@@ -71,7 +72,7 @@ pub async fn serve(endpoint: &Endpoint, engine: Arc<Engine>, limits: Limits) -> 
     let stop = Arc::new(Stop::default());
     let shared = Arc::new(connection::Shared {
         engine,
-        workers: Arc::new(Semaphore::new(WORKERS)),
+        workers: Arc::new(Semaphore::new(limits.workers)),
         hello: limits.hello,
         stop: Arc::clone(&stop),
     });
