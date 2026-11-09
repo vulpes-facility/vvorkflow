@@ -70,6 +70,18 @@ export const RootError: Story = {
 }
 
 /**
+ * The same error with a long path at 320 CSS pixels wide (WCAG 2.2 SC
+ * 1.4.10): the message wraps inside a long name, with no horizontal scroll.
+ */
+export const RootErrorReflow320: Story = {
+  args: {
+    ...RootError.args,
+    engineError:
+      'The projects root /home/someone/a-folder-name-that-has-no-place-to-break-in-it/vvorkflow is not a folder.',
+  },
+}
+
+/**
  * The window as the app opens it today: no handlers, so no start actions, no
  * settings, and no command hint.
  */

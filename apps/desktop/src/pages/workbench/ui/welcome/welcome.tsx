@@ -7,6 +7,7 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from 'lucide-react'
+import { useLayoutEffect, useRef } from 'react'
 import type { Platform } from '@/shared/lib'
 import { LogoMark, Shortcut } from '@/shared/ui'
 
@@ -42,7 +43,9 @@ interface WelcomeProps {
 /**
  * The landing tab of the editor area: the start actions and the projects of
  * the projects root. It shows only the actions that have a handler, and no
- * Projects section when the root has no project.
+ * Projects section when the root has no project. When an update removes the
+ * focused project, the focus moves to the project in its place, or to the tab
+ * when no project is left (WCAG 2.2 SC 2.4.3).
  */
 export function Welcome({
   platform,
@@ -74,9 +77,23 @@ export function Welcome({
     },
   ].filter((action): action is StartAction => Boolean(action))
 
+  const region = useRef<HTMLDivElement>(null)
+  const focusedProject = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const index = focusedProject.current
+    // Only a focus that the update took away moves.
+    if (index === null || document.activeElement !== document.body) return
+    focusedProject.current = null
+    const rows =
+      region.current?.querySelectorAll<HTMLElement>('[data-project]') ?? []
+    const row = rows[Math.min(index, rows.length - 1)]
+    ;(row ?? region.current)?.focus()
+  }, [projects, engineError])
+
   return (
     // The scroll area takes the focus, so that the keyboard can scroll it.
     <div
+      ref={region}
       role="region"
       aria-label="Welcome"
       tabIndex={0}
@@ -143,19 +160,39 @@ export function Welcome({
                 Projects
               </h2>
               {engineError ? (
-                <p className="flex items-start gap-2.5 px-2 py-1 text-ui text-foreground">
+                // The message can come after the tab shows, so it is an alert.
+                <p
+                  role="alert"
+                  className="flex items-start gap-2.5 px-2 py-1 text-ui text-foreground"
+                >
                   <TriangleAlert
                     className="mt-0.5 size-icon shrink-0 text-destructive"
                     strokeWidth={1.75}
                     aria-hidden
                   />
-                  {engineError}
+                  <span className="min-w-0 wrap-anywhere">{engineError}</span>
                 </p>
               ) : (
                 <ul className="flex flex-col">
-                  {projects.map((project) => (
+                  {projects.map((project, index) => (
                     <li key={project.id}>
-                      <ProjectRow project={project} onOpen={onOpenProject} />
+                      <ProjectRow
+                        project={project}
+                        onOpen={onOpenProject}
+                        onFocus={() => (focusedProject.current = index)}
+                        onBlur={(event) => {
+                          // A focus that moves to another element, or a click
+                          // on the page, leaves the projects. A row that goes
+                          // away, or a window that loses the focus, does not.
+                          const row = event.currentTarget
+                          if (event.relatedTarget) focusedProject.current = null
+                          else
+                            requestAnimationFrame(() => {
+                              if (row.isConnected && document.hasFocus())
+                                focusedProject.current = null
+                            })
+                        }}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -178,9 +215,13 @@ export function Welcome({
 function ProjectRow({
   project,
   onOpen,
+  onFocus,
+  onBlur,
 }: {
   project: WelcomeProject
   onOpen?: (project: WelcomeProject) => void
+  onFocus: () => void
+  onBlur: (event: React.FocusEvent<HTMLButtonElement>) => void
 }) {
   const Icon = project.git ? FolderGit2 : Folder
   const content = (
@@ -202,7 +243,10 @@ function ProjectRow({
   return (
     <button
       type="button"
+      data-project
       onClick={() => onOpen(project)}
+      onFocus={onFocus}
+      onBlur={onBlur}
       className={`${className} outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-ring`}
     >
       {content}

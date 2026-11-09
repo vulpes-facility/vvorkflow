@@ -16,6 +16,7 @@ const screens = [
   'screens-workbench--linux-dark',
   'screens-workbench--first-run',
   'screens-workbench--root-error',
+  'screens-workbench--root-error-reflow-320',
   'foundations-tokens--dark',
   'foundations-tokens--light',
 ]
@@ -24,6 +25,7 @@ const screens = [
 const viewports: Record<string, { width: number; height: number }> = {
   'screens-workbench--zoomed-200': { width: 720, height: 450 },
   'screens-workbench--reflow-320': { width: 320, height: 256 },
+  'screens-workbench--root-error-reflow-320': { width: 320, height: 256 },
 }
 
 for (const id of screens) {
