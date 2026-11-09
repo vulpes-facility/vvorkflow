@@ -10,6 +10,12 @@ interface SideBarProps {
    * has none, because the header row stays visible above it.
    */
   withTopStrip?: boolean
+  /**
+   * Whether the scroll area takes the focus, so that the keyboard can scroll
+   * it. Turn it off when the content has its own focusable control, such as a
+   * tree, so that the view has one tab stop.
+   */
+  contentFocusable?: boolean
   /** The id of the panel, which the tabs of the activity bar point at. */
   id: string
   title: string
@@ -31,6 +37,7 @@ export function SideBar({
   platform,
   open,
   withTopStrip = true,
+  contentFocusable = true,
   id,
   title,
   actions,
@@ -62,7 +69,7 @@ export function SideBar({
         </div>
         {/* The scroll area takes the focus, so that the keyboard can scroll it. */}
         <div
-          tabIndex={0}
+          tabIndex={contentFocusable ? 0 : undefined}
           aria-label={`${title} content`}
           role="region"
           className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"

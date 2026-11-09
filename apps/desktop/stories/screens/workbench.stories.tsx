@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { fn } from 'storybook/test'
 import { MacTrafficLights } from '../../fixtures/mac-traffic-lights'
+import { expandedPaths, repositories } from '../../fixtures/repositories'
 import {
   recentProjects,
   status,
@@ -87,3 +88,15 @@ export const Zoomed200: Story = {}
  * The side bar closes by itself, and the Welcome tab reflows to one column.
  */
 export const Reflow320: Story = {}
+
+/**
+ * The Explorer with two repositories of three worktrees each. The current
+ * worktree is open down to a deep folder, and it shows every git status.
+ */
+export const Explorer: Story = { args: { repositories, expandedPaths } }
+
+/** The same Explorer in the light theme. */
+export const ExplorerLight: Story = {
+  args: { repositories, expandedPaths },
+  globals: { colorScheme: 'light' },
+}

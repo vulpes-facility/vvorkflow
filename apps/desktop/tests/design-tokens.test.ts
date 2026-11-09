@@ -216,9 +216,10 @@ const textPairs: [string, string[]][] = [
 
 /** WCAG 2.2 SC 1.4.11: icons, focus indicators, and control boundaries need 3:1. */
 const nonTextPairs: [string, string[]][] = [
-  ['subtle-foreground', ['chrome', 'sidebar', 'editor']],
+  // The chevron and the folder icon of a tree row show if it is open, also on hover and selection.
+  ['subtle-foreground', ['chrome', 'sidebar', 'editor', 'hover', 'selection']],
   ['indicator', ['chrome', 'sidebar', 'editor']],
-  ['ring', ['editor', 'chrome', 'sidebar', 'popover', 'hover']],
+  ['ring', ['editor', 'chrome', 'sidebar', 'popover', 'hover', 'selection']],
   ['input', ['editor', 'sidebar', 'popover']],
   ['scrollbar-thumb', ['editor', 'chrome', 'sidebar', 'popover']],
   // The grip identifies the separator, a control; the hairline beside it is decoration.

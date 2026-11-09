@@ -37,6 +37,13 @@ const preview: Preview = {
     },
   },
   initialGlobals: { colorScheme: 'dark' },
+  // Select the theme before the story renders, as the app does before its first render.
+  beforeEach: ({ globals }) => {
+    applyColorScheme(
+      document.documentElement,
+      globals.colorScheme as ColorScheme,
+    )
+  },
   decorators: [withColorScheme],
   parameters: {
     layout: 'fullscreen',

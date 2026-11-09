@@ -147,3 +147,110 @@ test('in a narrow window, the drawer takes the focus from the inert editor area,
   await expect(drawerContent).toBeHidden()
   await expect(page.getByRole('tab', { name: 'Explorer' })).toBeFocused()
 })
+
+const explorerStory =
+  '/iframe.html?id=screens-workbench--explorer&viewMode=story&globals=a11y.manual:!true'
+
+test('the Explorer tree has one tab stop and follows the tree keys', async ({
+  page,
+}) => {
+  await page.goto(explorerStory)
+  const items = page.getByRole('treeitem')
+  await expect(page.locator('[role="treeitem"][tabindex="0"]')).toHaveCount(1)
+
+  const repository = items.first()
+  const worktree = page.getByRole('treeitem', { name: /^feat\/terminal-tabs/ })
+  await repository.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(worktree).toBeFocused()
+  await expect(worktree).toHaveAttribute('aria-selected', 'true')
+
+  // On an open node, Left closes it; on a closed node, Left goes to the parent.
+  await page.keyboard.press('ArrowLeft')
+  await expect(worktree).toHaveAttribute('aria-expanded', 'false')
+  await page.keyboard.press('ArrowLeft')
+  await expect(repository).toBeFocused()
+
+  // On a closed node, Right opens it; on an open node, Right goes to the first child.
+  await page.keyboard.press('ArrowLeft')
+  await expect(repository).toHaveAttribute('aria-expanded', 'false')
+  await expect(worktree).toBeHidden()
+  await page.keyboard.press('ArrowRight')
+  await expect(repository).toHaveAttribute('aria-expanded', 'true')
+  await page.keyboard.press('ArrowRight')
+  await expect(worktree).toBeFocused()
+  await page.keyboard.press('ArrowRight')
+  await expect(worktree).toHaveAttribute('aria-expanded', 'true')
+
+  await page.keyboard.press('End')
+  await expect(items.last()).toBeFocused()
+  await page.keyboard.press('Home')
+  await expect(repository).toBeFocused()
+
+  // Enter opens and closes a folder.
+  const dist = page.getByRole('treeitem', { name: /^dist/ })
+  await dist.focus()
+  await expect(dist).toHaveAttribute('aria-expanded', 'true')
+  await page.keyboard.press('Enter')
+  await expect(dist).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('a git status has a letter and a name, not only a color', async ({
+  page,
+}) => {
+  await page.goto(explorerStory)
+  await expect(
+    page.getByRole('treeitem', { name: /^merge-notes\.md\s*,\s*conflict$/ }),
+  ).toBeVisible()
+  await expect(
+    page.getByRole('treeitem', { name: /^dist\s*,\s*contains ignored files$/ }),
+  ).toBeVisible()
+})
+
+test('the Explorer opens as a drawer at 320 px and keeps the tree usable', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 256 })
+  await page.goto(explorerStory)
+  await page.getByRole('tab', { name: 'Explorer' }).click()
+  const tree = page.getByRole('tree', { name: 'Explorer' })
+  await expect(tree).toBeVisible()
+  const box = await tree.boundingBox()
+  expect(box && box.x + box.width).toBeLessThanOrEqual(320)
+  await page.screenshot({
+    path: `screens/${test.info().project.name}/drawer-320-explorer.png`,
+  })
+})
+
+// The focus paths of the side bar that the review of #4 asked for.
+test('a click on the open view moves the focus out of the side bar that it closes', async ({
+  page,
+}) => {
+  const button = page
+    .getByRole('tabpanel', { name: 'Explorer' })
+    .getByRole('button', { name: 'Open folder…' })
+  await button.focus()
+  await page.getByRole('tab', { name: 'Explorer' }).click()
+  await expect(button).toBeHidden()
+  await expect(page.getByRole('tab', { name: 'Explorer' })).toBeFocused()
+})
+
+test('a window that becomes narrow moves the focus out of the docked side bar', async ({
+  page,
+}) => {
+  const content = page.getByRole('region', { name: 'Explorer content' })
+  await content.focus()
+  await page.setViewportSize({ width: 320, height: 256 })
+  await expect(content).toBeHidden()
+  await expect(page.getByRole('tab', { name: 'Explorer' })).toBeFocused()
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(
+    page.getByRole('region', { name: 'Explorer content' }),
+  ).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Explorer' })).toBeFocused()
+})
+
+test('the first render does not take the focus', async ({ page }) => {
+  const focused = await page.evaluate(() => document.activeElement?.tagName)
+  expect(focused).toBe('BODY')
+})

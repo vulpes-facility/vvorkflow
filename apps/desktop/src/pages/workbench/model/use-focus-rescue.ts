@@ -32,7 +32,9 @@ export function useFocusRescue(
       document.activeElement === document.body
     if (!lost) return
     const target = drawer
-      ? container.querySelector<HTMLElement>('[data-drawer] [role="region"]')
+      ? container.querySelector<HTMLElement>(
+          '[data-drawer] [role="tabpanel"] [tabindex="0"]',
+        )
       : container.querySelector<HTMLElement>('nav [role="tab"][tabindex="0"]')
     target?.focus()
   }, [root, sideBarOpen, drawer])
