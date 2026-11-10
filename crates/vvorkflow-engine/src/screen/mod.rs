@@ -162,10 +162,8 @@ impl Screen {
         );
         let _ = writeln!(
             text,
-            "region {:?} normal region {:?} cursor style {:?}",
-            terminal.region,
-            terminal.normal_region,
-            terminal.term.cursor_style(),
+            "region {:?} normal region {:?} cursor style {:?} blink {}",
+            terminal.region, terminal.normal_region, terminal.cursor_style, terminal.blink,
         );
         let _ = writeln!(text, "title {:?}", terminal.title);
         let colors = terminal.term.colors();

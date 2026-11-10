@@ -389,8 +389,6 @@ fn encode_state(bytes: &mut Vec<u8>, terminal: &Terminal, part: &[u8], printed: 
     for (set, code) in [
         (mode.contains(TermMode::APP_CURSOR), &b"\x1b[?1h"[..]),
         (mode.contains(TermMode::APP_KEYPAD), b"\x1b="),
-        (!mode.contains(TermMode::SHOW_CURSOR), b"\x1b[?25l"),
-        (mode.contains(TermMode::LINE_FEED_NEW_LINE), b"\x1b[20h"),
         (mode.contains(TermMode::FOCUS_IN_OUT), b"\x1b[?1004h"),
         (mode.contains(TermMode::BRACKETED_PASTE), b"\x1b[?2004h"),
         (terminal.reverse_wraparound, b"\x1b[?45h"),
@@ -408,8 +406,26 @@ fn encode_state(bytes: &mut Vec<u8>, terminal: &Terminal, part: &[u8], printed: 
             bytes.extend_from_slice(code);
         }
     }
-    let style = term.cursor_style();
-    if style.shape != CursorShape::Block || style.blinking {
+    // A reset of xterm.js keeps a hidden cursor, the line feed mode, and the
+    // blink of mode 12, so the screen bytes set them, also to their
+    // defaults.
+    let switches: [(bool, &[u8], &[u8]); 3] = [
+        (
+            mode.contains(TermMode::SHOW_CURSOR),
+            b"\x1b[?25h",
+            b"\x1b[?25l",
+        ),
+        (
+            mode.contains(TermMode::LINE_FEED_NEW_LINE),
+            b"\x1b[20h",
+            b"\x1b[20l",
+        ),
+        (terminal.blink, b"\x1b[?12h", b"\x1b[?12l"),
+    ];
+    for (set, on, off) in switches {
+        bytes.extend_from_slice(if set { on } else { off });
+    }
+    if let Some(style) = terminal.cursor_style {
         let shape = match style.shape {
             CursorShape::Underline => 3,
             CursorShape::Beam => 5,

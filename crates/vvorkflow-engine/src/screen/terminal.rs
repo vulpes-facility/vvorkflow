@@ -16,7 +16,7 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::{Config, Osc52, TermMode};
 use alacritty_terminal::vte::ansi::{
-    Attr, CharsetIndex, ClearMode, CursorShape, CursorStyle, Handler, Hyperlink, KeyboardModes,
+    Attr, CharsetIndex, ClearMode, CursorStyle, Handler, Hyperlink, KeyboardModes,
     KeyboardModesApplyBehavior, LineClearMode, Mode, ModifyOtherKeys, NamedPrivateMode,
     PrivateMode, Rgb, ScpCharPath, ScpUpdateMode, StandardCharset, TabulationClearMode,
 };
@@ -102,6 +102,12 @@ pub(crate) struct Terminal {
     pub(crate) encoding: MouseEncoding,
     /// Mode 45.
     pub(crate) reverse_wraparound: bool,
+    /// Mode 12, the blink of the cursor. xterm.js keeps it apart from the
+    /// style of DECSCUSR (CSI q), as an option that a reset keeps; a style
+    /// decides the blink when the program set one.
+    pub(crate) blink: bool,
+    /// The style of DECSCUSR, or none for the style of the terminal.
+    pub(crate) cursor_style: Option<CursorStyle>,
     /// Mode 2026.
     pub(crate) synchronized: bool,
     /// Whether the engine answers the queries of the program: only while no
@@ -137,6 +143,8 @@ impl Terminal {
             mouse: MouseProtocol::None,
             encoding: MouseEncoding::Default,
             reverse_wraparound: false,
+            blink: false,
+            cursor_style: None,
             synchronized: false,
             answering: true,
             answers: Vec::new(),
@@ -338,11 +346,7 @@ impl Handler for Terminal {
     }
 
     fn set_cursor_style(&mut self, style: Option<CursorStyle>) {
-        self.term.set_cursor_style(style);
-    }
-
-    fn set_cursor_shape(&mut self, shape: CursorShape) {
-        self.term.set_cursor_shape(shape);
+        self.cursor_style = style;
     }
 
     fn input(&mut self, c: char) {
@@ -556,6 +560,7 @@ impl Handler for Terminal {
         self.mouse = MouseProtocol::None;
         self.encoding = MouseEncoding::Default;
         self.reverse_wraparound = false;
+        self.cursor_style = None;
         self.synchronized = false;
     }
 
@@ -607,6 +612,7 @@ impl Handler for Terminal {
             }
             PrivateMode::Unknown(1016) => self.encoding = MouseEncoding::SgrPixels,
             PrivateMode::Unknown(45) => self.reverse_wraparound = true,
+            PrivateMode::Named(NamedPrivateMode::BlinkingCursor) => self.blink = true,
             PrivateMode::Unknown(66) => self.term.set_keypad_application_mode(),
             PrivateMode::Named(NamedPrivateMode::SyncUpdate) => self.synchronized = true,
             // xterm.js does not change the columns, and so does not clear
@@ -648,6 +654,7 @@ impl Handler for Terminal {
             }
             PrivateMode::Unknown(1016) => self.encoding = MouseEncoding::Default,
             PrivateMode::Unknown(45) => self.reverse_wraparound = false,
+            PrivateMode::Named(NamedPrivateMode::BlinkingCursor) => self.blink = false,
             PrivateMode::Unknown(66) => self.term.unset_keypad_application_mode(),
             PrivateMode::Named(NamedPrivateMode::SyncUpdate) => self.synchronized = false,
             PrivateMode::Named(NamedPrivateMode::ColumnMode | NamedPrivateMode::Utf8Mouse) => {}

@@ -135,11 +135,35 @@ function lines(buffer: IBuffer, columns: number): string[] {
   return result
 }
 
+/** The state of a terminal that is not in the public API. */
+interface Core {
+  coreService: {
+    isCursorHidden: boolean
+    decPrivateModes: { cursorStyle?: string; cursorBlink?: boolean }
+  }
+  coreMouseService: { activeEncoding: string }
+  optionsService: {
+    rawOptions: {
+      cursorStyle: string
+      cursorBlink: boolean
+      convertEol: boolean
+    }
+  }
+}
+
 /** All that the comparison checks, as one value. */
 function state(made: ReturnType<typeof terminal>, skip: string[]) {
   const { terminal: shown } = made
   const active = shown.buffer.active
+  const core = (shown as unknown as { _core: Core })._core
+  const options = core.optionsService.rawOptions
+  const cursor = core.coreService.decPrivateModes
   return {
+    cursorHidden: core.coreService.isCursorHidden,
+    cursorStyle: cursor.cursorStyle ?? options.cursorStyle,
+    cursorBlink: cursor.cursorBlink ?? options.cursorBlink,
+    lineFeedMode: options.convertEol,
+    mouseEncoding: core.coreMouseService.activeEncoding,
     active: active.type,
     normal: lines(shown.buffer.normal, shown.cols),
     alternate:
@@ -159,9 +183,14 @@ function state(made: ReturnType<typeof terminal>, skip: string[]) {
 const probe =
   '\x1b8saved\x1b[999B\n\nscrolled\x1b[?1049lnormal\x1b8normal saved'
 
-/** Output that sets state, which the reset before a screen MUST clear. */
+/**
+ * Output that sets state, which the reset before a screen, or the screen
+ * bytes, MUST clear: xterm.js keeps a hidden cursor, the line feed mode, and
+ * the blink of mode 12 after a reset.
+ */
 const noise =
-  '\x1b[?1049h\x1b[41;1m\x1b[?2004h\x1b[?1003h\x1b[2;3rnoise\x1b]2;old title\x07\xe2\x94'
+  '\x1b[?1049h\x1b[41;1m\x1b[?2004h\x1b[?1003h\x1b[?1006h\x1b[?25l\x1b[20h' +
+  '\x1b[?12h\x1b[5 q\x1b[2;3rnoise\x1b]2;old title\x07\xe2\x94'
 
 describe.each(records)('the screen bytes of $name', ({ record }) => {
   const output = new TextEncoder().encode(record.output)
