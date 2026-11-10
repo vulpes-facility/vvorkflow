@@ -59,7 +59,7 @@ The receiver checks each message against the schema, at run time.
    A new method is such a change, because an older engine does not know it.
 5. `shutdown` stops the engine process: the engine stops to listen, answers `{}`, closes the connection, and stops.\
    It is valid before `hello`.\
-   Its params are `{}` or `{"force": true}` ([Engine stop with sessions](#engine-stop-with-sessions)), and this shape never changes from M4, so that each app can stop an engine of another version.
+   Its params are `{}` or `{"force": <boolean>}` ([Engine stop with sessions](#engine-stop-with-sessions)), and this shape never changes from M4, so that each app can stop an engine of another version.
 6. A message that is not a request with an `id` closes the connection.\
    A request with an `id` and a method or params that the engine does not know gets `invalidArgument`.
 7. Over Tauri IPC, the web UI sends only `method` and `params`, and the app core adds the `id`.
@@ -207,7 +207,8 @@ Kill (menu) / end of the shell ──► the session ends
 2. From this state the engine makes the screen bytes: bytes that draw the same state in a terminal that was reset to the size of the session.\
    The terminal of the web UI is xterm.js, so the measure is xterm.js:\
    for each recorded output in `crates/vvorkflow-engine/tests/screens/`, a terminal that gets the screen bytes of a position and then the output after it MUST show the same as a terminal that gets all the output.\
-   A Rust test keeps the screen bytes of these records current, and a Vitest test compares the two terminals: each line of both buffers, the cursor, and the modes.
+   A Rust test keeps the screen bytes of these records current, and a Vitest test compares the two terminals: each line of both buffers, the cursor, and the modes.\
+   The comparison leaves out the scrollback that rule 4 removes, and the differences of the known limits of rule 5.
 3. The engine can make the screen bytes in the middle of an escape sequence or of a character of more than one byte.\
    The screen bytes then end with the bytes of that part, so that the next output continues it.\
    The engine keeps at most 4 KiB of such a part.\
@@ -258,6 +259,7 @@ Kill (menu) / end of the shell ──► the session ends
 8. The session ends when its shell ends.\
    The engine then reads the output that is left, for at most 1 second, and sends it.\
    After it, each attached client gets the event `session.ended` once, with the exit code (a number from 0 to 4,294,967,295, or none) and the signal that ended the shell (a number, or none; always none on Windows), and no frame of that session after it.\
+   A screen that a client waits for, and the output that is left, come before that event: the engine keeps the state until the writer made that screen, or until the connection ends.\
    Then the engine removes the session and closes the pseudo-terminal.
 9. `session.kill` does what the close of a terminal window does: the engine sends SIGHUP to the shell and to the foreground job, and closes the pseudo-terminal when the shell ends.\
    After 3 seconds, it sends SIGKILL to the shell and to the foreground job that still run.\
