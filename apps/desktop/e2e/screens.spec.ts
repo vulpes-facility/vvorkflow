@@ -36,6 +36,7 @@ const screens = [
   'screens-editor--diff-narrow',
   'screens-editor--harness',
   'screens-editor--diff-harness',
+  'screens-editor--strict-harness',
   'foundations-tokens--dark',
   'foundations-tokens--light',
 ]

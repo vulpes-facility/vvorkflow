@@ -263,24 +263,122 @@ test('mod+Alt+U opens the collapsed regions of a diff', async ({ page }) => {
   await expect(regions).toHaveCount(0)
 })
 
+/**
+ * Finds what the user sees at a point of the page: the topmost element with a
+ * background that is not transparent, and that background.
+ */
+const paintAt = (page: Page, x: number, y: number) =>
+  page.evaluate(
+    ([px, py]) => {
+      for (const element of document.elementsFromPoint(px, py)) {
+        const background = getComputedStyle(element).backgroundColor
+        if (background !== 'rgba(0, 0, 0, 0)')
+          return { background, selected: element.matches('.cm-vv-selected') }
+      }
+      return { background: 'none', selected: false }
+    },
+    [x, y],
+  )
+
+/** The color of the token of the selection, as the browser computes it. */
+const selectionColor = (page: Page) =>
+  page.evaluate(() => {
+    const probe = document.createElement('div')
+    probe.style.background = 'var(--editor-selection)'
+    document.body.append(probe)
+    const color = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return color
+  })
+
 for (const width of [1200, 500]) {
-  test(`a selection shows over a changed line (${width} px)`, async ({
+  test(`each selected range shows over the changed lines and the changed text (${width} px)`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 900 })
     await open(page, 'diff-harness')
-    const line = page.locator('.cm-merge-b .cm-changedLine').first()
+    const wanted = await selectionColor(page)
+    // The first range: the word on a changed line. A second range: the next occurrence.
+    const line = page
+      .locator('.cm-merge-b .cm-changedLine', { hasText: 'RETRY_DELAY_MS' })
+      .first()
     await line.click()
     await page.keyboard.press('Home')
-    await page.keyboard.press('Shift+End')
-    const selection = await line.evaluate((element) => {
-      const color = (value: string) => value
-      return color(getComputedStyle(element, '::selection').backgroundColor)
-    })
-    // The selection is the opaque color of the token: not transparent.
-    expect(selection).toBe('oklch(0.31 0.011 265)')
+    for (let step = 0; step < 6; step++) await page.keyboard.press('ArrowRight')
+    await page.keyboard.press(`${await mod(page)}+d`)
+    await page.keyboard.press(`${await mod(page)}+d`)
+    const marks = page.locator('.cm-merge-b .cm-vv-selected')
+    await expect(marks).toHaveCount(2)
+    for (const index of [0, 1]) {
+      const box = (await marks.nth(index).boundingBox())!
+      const paint = await paintAt(page, box.x + box.width / 2, box.y + 4)
+      expect(paint.background).toBe(wanted)
+    }
+    // A range on changed text: the number after the `=`.
+    await line.click()
+    await page.keyboard.press('Home')
+    for (let step = 0; step < 23; step++)
+      await page.keyboard.press('ArrowRight')
+    for (let step = 0; step < 3; step++)
+      await page.keyboard.press('Shift+ArrowRight')
+    const changed = page.locator('.cm-merge-b .cm-vv-selected')
+    await expect(changed).toHaveCount(1)
+    expect(await changed.first().textContent()).toBe('250')
+    const box = (await changed.first().boundingBox())!
+    expect(
+      (await paintAt(page, box.x + box.width / 2, box.y + 4)).background,
+    ).toBe(wanted)
+    // A selection that crosses changed text and the lines below also shows.
+    await page.keyboard.press('Shift+ArrowDown')
+    await page.keyboard.press('Shift+ArrowDown')
+    const crossing = page.locator('.cm-merge-b .cm-vv-selected')
+    await expect(crossing.first()).toBeVisible()
+    for (let index = 0; index < (await crossing.count()); index++) {
+      const part = (await crossing.nth(index).boundingBox())!
+      if (part.width < 2) continue
+      const paint = await paintAt(page, part.x + part.width / 2, part.y + 4)
+      expect(paint.background).toBe(wanted)
+    }
   })
 }
+
+test('a long wide diff scrolls inside its height, and the page does not scroll', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 500 })
+  await open(page, 'diff-harness')
+  const lines = (suffix: string) =>
+    Array.from({ length: 400 }, (_, index) => `line ${index}${suffix}`).join(
+      '\n',
+    ) + '\n'
+  await probe(page, 'setOriginal', lines(' before'))
+  await setText(page, lines(' after'), '2')
+  await expect(page.locator('.cm-mergeView')).toBeVisible()
+  await expect(content(page)).toContainText('line 0 after')
+  const metrics = await page.evaluate(() => {
+    const view = document.querySelector<HTMLElement>('.cm-mergeView')!
+    const next = document.querySelector('[data-harness] > button')!
+    return {
+      scrolls: view.scrollHeight > view.clientHeight + 50,
+      viewHeight: view.clientHeight,
+      pageScrolls:
+        document.documentElement.scrollHeight >
+        document.documentElement.clientHeight,
+      nextBottom: next.getBoundingClientRect().bottom,
+      innerHeight: window.innerHeight,
+    }
+  })
+  expect(metrics.scrolls).toBe(true)
+  expect(metrics.viewHeight).toBeLessThan(500)
+  expect(metrics.pageScrolls).toBe(false)
+  expect(metrics.nextBottom).toBeLessThanOrEqual(metrics.innerHeight)
+  // The scroll area moves.
+  const scrolled = await page.locator('.cm-mergeView').evaluate((element) => {
+    element.scrollTop = 300
+    return element.scrollTop
+  })
+  expect(scrolled).toBe(300)
+})
 
 const searchCount = (page: Page) =>
   page.locator('.cm-vv-search [aria-live="polite"]').first()
