@@ -6,6 +6,7 @@ Its front end and its Rust engine are separate, so the app works with the engine
 ## Status
 
 The desktop app has its design tokens, its window shell, the Welcome tab, the terminal tabs on sample data, and an Explorer that reads real folders and their git status from the local Rust engine.\
+The engine runs terminal sessions and keeps their screens, which the app does not show yet.\
 The design follows the [core values](docs/core-values.md), [`docs/architecture.md`](docs/architecture.md), and [`docs/conventions/design.md`](docs/conventions/design.md).
 
 ## Requirements
@@ -65,11 +66,11 @@ Each task MUST pass with no errors and no warnings before a pull request.
 │       ├── stories/        The Storybook stories of the screens and the tokens
 │       ├── fixtures/       The sample data of the stories
 │       ├── e2e/            The Playwright screen capture
-│       └── tests/          The Vitest tests, such as the token and contrast checks
+│       └── tests/          The Vitest tests, such as the token checks and the measure of the screens
 ├── crates/
 │   ├── vvorkflow-protocol/ The protocol of the engine, and its JSON Schema
-│   ├── vvorkflow-engine/   The engine: folders, worktrees, and git status
-│   └── vvorkflow-server/   The engine process, on a local socket
+│   ├── vvorkflow-engine/   The engine: folders, worktrees, git status, and terminal sessions
+│   └── vvorkflow-server/   The engine process on a local socket, and the client of the app core
 ├── packages/               The shared packages (none yet)
 ├── docs/                   The core values, the architecture, and the conventions
 ├── Cargo.toml              The Cargo workspace
