@@ -17,3 +17,7 @@ export type {
   GitStatus,
 } from './model/explorer'
 export type { TerminalSession } from './model/terminal'
+export { CodeEditor } from './ui/editor/code-editor'
+export type { CodeEditorProps } from './ui/editor/code-editor'
+export { DiffEditor } from './ui/editor/diff-editor'
+export type { DiffEditorProps } from './ui/editor/diff-editor'

@@ -141,6 +141,42 @@ Known gaps:
   The screen reader mode of xterm.js comes with a setting.
 - Paste with Ctrl+Shift+V relies on the paste of the webview.
 
+## Editor
+
+The code editor and the diff editor are tabs of the editor area (value 5 of the [core values](../core-values.md)).\
+Both are CodeMirror 6, in `apps/desktop/src/pages/workbench/ui/editor/`.
+
+1. The theme reads only CSS variables, so the color scheme changes it with no rebuild.\
+   The syntax colors are the `--syntax-*` tokens, and each one MUST have 4.5:1 on each surface of the editor: the editor, the active line, the selection, a search match, and a changed line (`design-tokens.test.ts`).\
+   The font and the size come from `--vv-font-mono`, `--vv-editor-font-size`, and `--vv-editor-line-height`.
+2. The active line shows only while the selection is empty, so that it never hides a selection.\
+   A selection and a search match have opaque colors.
+3. A search match has a fill and an outline, and the current match has a heavier outline, so that color is not the only sign.\
+   The search panel keeps the 24 by 24 pixel targets, also its check boxes.
+4. The diff shows `original` at the left and the editable text at the right when the editor is wider than 640 CSS pixels, and one unified column when it is not.\
+   The width of the editor decides, and not the width of the window (`ResizeObserver`).\
+   A changed line has a tint and a mark in the gutter, a plus for an added line and a minus for a removed line, and a removed text has a strike.\
+   Unchanged lines far from a change collapse.\
+   `mod+Alt+U` opens the collapsed regions that show, because a region opens by a click only.
+5. The keyboard can always leave (SC 2.1.2).\
+   Tab indents, and Escape then Tab moves the focus on, as CodeMirror documents.\
+   F6 and Shift+F6 are not bound, so they reach the window.\
+   The content has the path as its accessible name, and a description that tells both ways out.\
+   A read-only content keeps a tab stop.
+6. The editor keeps the line ending of the file (LF or CRLF) in what `onSave` gets.\
+   It detects tabs or spaces and the width from the text, and uses 2 spaces when the text shows none.
+7. A new `version` replaces only the span that differs, so the cursor and the scroll position stay where they can.\
+   The replace is not in the undo history.
+8. A hidden panel is detached from the document and loses its scroll positions.\
+   The editor ignores a width of 0, and puts the scroll positions back when it has a size again.
+9. The key bindings follow the `platform` prop and not the user agent: `mod` is Command on macOS and Control elsewhere.
+
+Known gaps:
+
+- The layout switch of the diff keeps the content and the cursor, and does not keep the undo history.
+- In the wide diff, F6 lands on the original side first.
+- The editor has no auto-closing of brackets, no folding, and no autocomplete.
+
 ## Stories and screens
 
 1. Keep the stories in `apps/desktop/stories/` and their sample data in `apps/desktop/fixtures/`.\

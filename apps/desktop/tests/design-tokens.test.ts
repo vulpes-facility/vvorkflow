@@ -192,6 +192,29 @@ const surfaces = [
   'selection',
 ]
 
+/** The syntax colors of the code editor. */
+const syntaxColors = [
+  'syntax-keyword',
+  'syntax-string',
+  'syntax-number',
+  'syntax-comment',
+  'syntax-function',
+  'syntax-type',
+]
+
+/** Every surface that text of the code editor can be on. */
+const editorSurfaces = [
+  'editor',
+  'editor-active-line',
+  'editor-selection',
+  'editor-match',
+  'editor-match-current',
+  'editor-inserted',
+  'editor-inserted-text',
+  'editor-deleted',
+  'editor-deleted-text',
+]
+
 /** WCAG 2.2 SC 1.4.3: text needs 4.5:1 against each surface that it is on. */
 const textPairs: [string, string[]][] = [
   ['foreground', surfaces],
@@ -212,6 +235,10 @@ const textPairs: [string, string[]][] = [
   ['git-untracked', ['sidebar', 'editor', 'hover', 'selection']],
   ['git-conflict', ['sidebar', 'editor', 'hover', 'selection']],
   ['git-ignored', ['sidebar', 'editor', 'hover', 'selection']],
+  // The editor: the foreground and the syntax colors on each surface of the editor.
+  ['foreground', editorSurfaces],
+  ['muted-foreground', editorSurfaces],
+  ...syntaxColors.map((color): [string, string[]] => [color, editorSurfaces]),
 ]
 
 /** WCAG 2.2 SC 1.4.11: icons, focus indicators, and control boundaries need 3:1. */
@@ -228,6 +255,11 @@ const nonTextPairs: [string, string[]][] = [
   // The grip identifies the separator, a control; the hairline beside it is decoration.
   ['grip', ['editor', 'chrome', 'sidebar']],
   ['window-close-hover-foreground', ['window-close-hover']],
+  // The marks of a diff and the outline of a search match.
+  ['git-added', ['editor', 'editor-inserted', 'editor-inserted-text']],
+  ['git-deleted', ['editor', 'editor-deleted', 'editor-deleted-text']],
+  ['subtle-foreground', ['editor-match', 'editor-match-current']],
+  ['ring', ['editor-match', 'editor-match-current']],
 ]
 
 const ansiColors = [

@@ -21,6 +21,16 @@ const screens = [
   'screens-workbench--new-project-light',
   'screens-workbench--new-project-error',
   'screens-workbench--new-project-error-reflow-320',
+  'screens-editor--type-script-dark',
+  'screens-editor--type-script-light',
+  'screens-editor--markdown',
+  'screens-editor--search-open',
+  'screens-editor--read-only',
+  'screens-editor--crlf',
+  'screens-editor--reflow-320',
+  'screens-editor--diff-wide-dark',
+  'screens-editor--diff-wide-light',
+  'screens-editor--diff-narrow',
   'foundations-tokens--dark',
   'foundations-tokens--light',
 ]
@@ -30,6 +40,7 @@ const viewports: Record<string, { width: number; height: number }> = {
   'screens-workbench--zoomed-200': { width: 720, height: 450 },
   'screens-workbench--reflow-320': { width: 320, height: 256 },
   'screens-workbench--root-error-reflow-320': { width: 320, height: 256 },
+  'screens-editor--reflow-320': { width: 320, height: 256 },
   'screens-workbench--new-project-error-reflow-320': {
     width: 320,
     height: 256,
@@ -54,6 +65,21 @@ for (const id of screens) {
         .locator('visible=true')
         .first()
         .waitFor()
+    }
+
+    // The editor highlights a file after its language loads, and opens the
+    // search panel on `mod+F`.
+    if (id.startsWith('screens-editor--')) {
+      await page.locator('.cm-content').first().waitFor()
+      if (!id.includes('crlf'))
+        await page.locator('.cm-line span[class]').first().waitFor()
+      if (id === 'screens-editor--search-open') {
+        await page.locator('.cm-content').click()
+        // The editor takes its modifier from the user agent.
+        const mac = await page.evaluate(() => /Mac/.test(navigator.userAgent))
+        await page.keyboard.press(mac ? 'Meta+f' : 'Control+f')
+        await page.keyboard.type('job')
+      }
     }
 
     // The error screens show the message of the engine in its tooltip.
