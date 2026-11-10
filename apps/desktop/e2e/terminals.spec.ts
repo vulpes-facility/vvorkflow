@@ -222,3 +222,41 @@ test('Stop engine asks first, with the focus on Cancel', async ({ page }) => {
   await expect(stop).toHaveCount(0)
   await expect(page.locator('body')).not.toBeFocused()
 })
+
+test('a tab that is hidden for 5 minutes drops its terminal, and gets the screen again when it shows', async ({
+  page,
+}) => {
+  await page.clock.install()
+  await page.goto(story('terminals'))
+  const shell = page.locator('[data-terminal="shell-terminal-tabs"]')
+  const agent = page.locator('[data-terminal="agent-explorer"]')
+  await expect(shell).toContainText('git status --short')
+  // A mark on the element tells if the tab still has the same terminal: a
+  // hidden panel is out of the document, so the page cannot look at it.
+  await shell.evaluate((element) => element.setAttribute('data-probe', ''))
+  await editorTab(page, /^codex/).click()
+  await expect(agent).toContainText('~/code/vvorkflow.explorer')
+  await agent.evaluate((element) => element.setAttribute('data-probe', ''))
+
+  // Hidden for less than 5 minutes: the same terminal comes back. The
+  // editor area tells the change of a tab a moment after the click, so the
+  // clock runs that moment first.
+  await editorTab(page, /^zsh/).click()
+  await page.clock.runFor(1000)
+  await page.clock.fastForward('04:58')
+  await editorTab(page, /^codex/).click()
+  await expect(agent).toHaveAttribute('data-probe', '')
+
+  // Hidden for 5 minutes: the terminal is gone, and a new one attaches and
+  // has the screen of the session.
+  await editorTab(page, /^zsh/).click()
+  await page.clock.runFor(1000)
+  await page.clock.fastForward('05:00')
+  await editorTab(page, /^codex/).click()
+  await expect(agent).toContainText('~/code/vvorkflow.explorer')
+  await expect(agent).not.toHaveAttribute('data-probe')
+  // The shell showed in that time: it keeps its terminal.
+  await editorTab(page, /^zsh/).click()
+  await expect(shell).toHaveAttribute('data-probe', '')
+  await expect(shell).toContainText('git status --short')
+})
