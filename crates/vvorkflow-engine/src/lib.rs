@@ -220,8 +220,10 @@ impl Engine {
         self.sessions.count()
     }
 
-    /// Gives `watch` the number of sessions now, and after each change. It
-    /// MUST NOT block. A second watch takes the place of the first.
+    /// Gives `watch` the number of sessions now, and after each change, in
+    /// the order of the changes: the engine calls it under the lock of the
+    /// sessions. So it MUST NOT block, and MUST NOT call the engine. A second
+    /// watch takes the place of the first.
     pub fn watch_sessions(&self, watch: impl Fn(usize) + Send + Sync + 'static) {
         self.sessions.watch(Box::new(watch));
     }

@@ -282,7 +282,8 @@ Kill (menu) / end of the shell ──► the session ends
 
 ### Engine stop with sessions
 
-1. The engine does not stop for the idle time while a session runs.
+1. The engine does not stop for the idle time while a session runs.\
+   It counts the sessions under their lock, so the count of a session that ends never comes after the count of a session that starts.
 2. `shutdown` has the optional param `force`.\
    Without it, or with `false`, an engine with sessions refuses `shutdown` (`failedPrecondition`), tells the number of sessions, and continues to listen.\
    With `true`, the engine takes no new session, ends all sessions at the same time as `session.kill` does, with one limit of 3 seconds for all of them, and then stops.

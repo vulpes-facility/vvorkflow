@@ -10,6 +10,8 @@
 
 mod client;
 mod pty;
+#[cfg(test)]
+mod tests;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
@@ -60,13 +62,14 @@ pub(crate) struct Sessions {
     inner: Mutex<SessionsInner>,
     /// Tells a stop of the engine that a session went away.
     gone: Condvar,
-    /// Gets the number of sessions after each change.
-    watch: Mutex<Option<Watch>>,
 }
 
 #[derive(Default)]
 struct SessionsInner {
     list: Vec<Arc<Live>>,
+    /// Gets the number of sessions after each change, under the lock of the
+    /// sessions, so that the numbers come in the order of the changes.
+    watch: Option<Watch>,
     /// The sessions that start now, which count for the limit.
     starting: usize,
     /// The engine stops, and takes no new session.
@@ -129,6 +132,16 @@ fn not_found(id: &str) -> EngineError {
         ErrorCode::NotFound,
         format!("The session {id} does not exist."),
     )
+}
+
+impl SessionsInner {
+    /// Gives the watch the number of sessions after a change. The caller
+    /// holds the lock of the sessions.
+    fn changed(&self) {
+        if let Some(watch) = &self.watch {
+            watch(self.list.len());
+        }
+    }
 }
 
 impl Core {
@@ -228,7 +241,6 @@ impl Sessions {
         Sessions {
             inner: Mutex::default(),
             gone: Condvar::new(),
-            watch: Mutex::default(),
         }
     }
 
@@ -242,16 +254,12 @@ impl Sessions {
         self.inner().list.len()
     }
 
+    /// Gives `watch` the number of sessions now, and after each change, under
+    /// the lock of the sessions.
     pub(crate) fn watch(&self, watch: Watch) {
-        let count = self.count();
-        watch(count);
-        *self.watch.lock().expect("the watch lock is never poisoned") = Some(watch);
-    }
-
-    fn changed(&self, count: usize) {
-        if let Some(watch) = &*self.watch.lock().expect("the watch lock is never poisoned") {
-            watch(count);
-        }
+        let mut inner = self.inner();
+        watch(inner.list.len());
+        inner.watch = Some(watch);
     }
 
     fn find(&self, id: &str) -> Result<Arc<Live>, EngineError> {
@@ -299,8 +307,8 @@ impl Sessions {
         let closing = inner.closing;
         if !closing {
             inner.list.push(Arc::clone(&live));
+            inner.changed();
         }
-        let count = inner.list.len();
         drop(inner);
         let info = live.info();
         self.run(Arc::clone(&live), reader, writer, child);
@@ -313,7 +321,6 @@ impl Sessions {
                 "The engine stops, and starts no session.",
             ));
         }
-        self.changed(count);
         Ok(info)
     }
 
@@ -428,12 +435,11 @@ impl Sessions {
     /// state until its writer made the screen. Then closes the
     /// pseudo-terminal.
     fn end(&self, live: &Arc<Live>, exit: Exit) {
-        let count = {
+        {
             let mut inner = self.inner();
             inner.list.retain(|other| !Arc::ptr_eq(other, live));
-            inner.list.len()
-        };
-        self.changed(count);
+            inner.changed();
+        }
         self.gone.notify_all();
         let ended = SessionEnded {
             session: live.core.id.clone(),
