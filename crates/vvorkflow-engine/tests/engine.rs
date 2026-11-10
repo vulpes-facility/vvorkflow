@@ -5,8 +5,9 @@ use std::process::Command;
 
 use vvorkflow_engine::{Engine, projects_root};
 use vvorkflow_protocol::{
-    ChangedPath, DirectoryEntry, EntryKind, ErrorCode, GitStatus, Hello, ListDirectory,
-    ListProjects, OpenFolder, PROTOCOL_VERSION, Project, ReadStatus, Request, Response,
+    ChangedPath, CreateProject, DirectoryEntry, EntryKind, ErrorCode, GitStatus, Hello,
+    ListDirectory, ListProjects, OpenFolder, PROTOCOL_VERSION, Project, ReadStatus, Request,
+    Response,
 };
 
 /// Runs git in `directory` without the global or system settings of the
@@ -461,6 +462,141 @@ fn the_projects_are_the_folders_in_the_root() {
             project("Notes", false),
         ]
     );
+}
+
+#[test]
+fn a_new_project_is_an_empty_folder_in_the_root() {
+    let base = tempfile::tempdir().unwrap();
+    let root = base.path().canonicalize().unwrap();
+    let engine = Engine::new(&root).unwrap();
+    let create = |name: &str| {
+        engine.create_project(CreateProject {
+            name: name.to_owned(),
+        })
+    };
+
+    let project = create("Field notes").unwrap();
+    assert_eq!(
+        project,
+        Project {
+            name: "Field notes".to_owned(),
+            path: root.join("Field notes").to_string_lossy().into_owned(),
+            git: false,
+        }
+    );
+    assert_eq!(
+        std::fs::read_dir(root.join("Field notes")).unwrap().count(),
+        0
+    );
+    assert_eq!(engine.list_projects(ListProjects {}).unwrap(), [project]);
+
+    // The folder of the first project stays as it is.
+    write(&root.join("Field notes/todo.txt"), "one\n");
+    let again = create("Field notes").unwrap_err();
+    assert_eq!(again.code, ErrorCode::FailedPrecondition);
+    assert!(root.join("Field notes/todo.txt").is_file());
+    // A file with the name is in the root already, too.
+    write(&root.join("todo.txt"), "one\n");
+    assert_eq!(
+        create("todo.txt").unwrap_err().code,
+        ErrorCode::FailedPrecondition
+    );
+}
+
+#[test]
+fn a_project_name_is_one_name_that_each_system_accepts() {
+    let base = tempfile::tempdir().unwrap();
+    let root = base.path().canonicalize().unwrap().join("root");
+    std::fs::create_dir(&root).unwrap();
+    let engine = Engine::new(&root).unwrap();
+    let long = "a".repeat(256);
+    for name in [
+        "",
+        ".",
+        "..",
+        ".cache",
+        "../away",
+        "a/b",
+        "a\\b",
+        "/tmp/away",
+        "C:",
+        "what?",
+        "a\nb",
+        " app",
+        "app ",
+        "app.",
+        "nul",
+        "COM1.txt",
+        "COM¹",
+        "com².log",
+        "Lpt³",
+        "LPT¹.tar.gz",
+        long.as_str(),
+    ] {
+        let refused = engine
+            .create_project(CreateProject {
+                name: name.to_owned(),
+            })
+            .expect_err(name);
+        assert_eq!(refused.code, ErrorCode::InvalidArgument, "{name:?}");
+    }
+    // No refused name made a folder, in the root or next to it.
+    assert_eq!(std::fs::read_dir(&root).unwrap().count(), 0);
+    assert_eq!(
+        std::fs::read_dir(root.parent().unwrap()).unwrap().count(),
+        1
+    );
+
+    for name in [
+        "app",
+        "app.feature",
+        "my app",
+        "앱",
+        "console",
+        "a.b.c",
+        "COM⁴",
+    ] {
+        engine
+            .create_project(CreateProject {
+                name: name.to_owned(),
+            })
+            .expect(name);
+        assert!(root.join(name).is_dir(), "{name}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_root_that_moved_takes_no_new_project() {
+    let base = tempfile::tempdir().unwrap();
+    let base = base.path().canonicalize().unwrap();
+    let root = base.join("root");
+    std::fs::create_dir(&root).unwrap();
+    let engine = Engine::new(&root).unwrap();
+    // The path of the root leads to another folder now, so the path of a
+    // new project would not be the folder that the engine makes.
+    std::fs::rename(&root, base.join("moved")).unwrap();
+    std::fs::create_dir(&root).unwrap();
+
+    let refused = engine
+        .create_project(CreateProject {
+            name: "app".to_owned(),
+        })
+        .unwrap_err();
+    assert_eq!(refused.code, ErrorCode::FailedPrecondition);
+    assert!(!base.join("moved/app").exists());
+    assert!(!root.join("app").exists());
+
+    // The root at its path again takes the project, with its path.
+    std::fs::remove_dir(&root).unwrap();
+    std::fs::rename(base.join("moved"), &root).unwrap();
+    let project = engine
+        .create_project(CreateProject {
+            name: "app".to_owned(),
+        })
+        .unwrap();
+    assert!(Path::new(&project.path).is_dir());
+    assert_eq!(Path::new(&project.path), root.join("app"));
 }
 
 #[cfg(unix)]

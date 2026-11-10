@@ -93,6 +93,7 @@
   --color-subtle-foreground: var(--subtle-foreground);
   --color-hairline: var(--hairline);
   --color-grip: var(--grip);
+  --color-scrim: var(--scrim);
   --color-indicator: var(--indicator);
   --color-link: var(--link);
   --color-git-added: var(--git-added);

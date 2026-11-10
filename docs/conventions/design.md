@@ -81,7 +81,11 @@ The shell follows value 5 of the [core values](../core-values.md).
 5. Actions open from context menus, as value 5 says.\
    A menu shows only the actions that apply now, and hides the others.\
    When an action takes away the element that opened the menu, the focus goes to the element that is active after it.
-6. Do not write a description under a title, an item, or an empty state.\
+6. A question to the user, such as the name of a new project, is a modal dialog over a scrim (`--scrim`).\
+   The dialog keeps the focus and its keys: the shortcuts of the window do nothing while the focus is in a dialog (`isDialogKey`).\
+   Escape closes it, and the focus goes back to the control that opened it.\
+   A dialog starts empty each time it opens.
+7. Do not write a description under a title, an item, or an empty state.\
    The name, the icon, and the data, such as a path, are sufficient.\
    An error shows as a warning icon, with its message in a tooltip on hover and on keyboard focus, and in an alert for assistive technology.\
    The owner asked for this rule on 2026-11-09.

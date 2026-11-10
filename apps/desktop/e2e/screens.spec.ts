@@ -17,6 +17,10 @@ const screens = [
   'screens-workbench--first-run',
   'screens-workbench--root-error',
   'screens-workbench--root-error-reflow-320',
+  'screens-workbench--new-project',
+  'screens-workbench--new-project-light',
+  'screens-workbench--new-project-error',
+  'screens-workbench--new-project-error-reflow-320',
   'foundations-tokens--dark',
   'foundations-tokens--light',
 ]
@@ -26,6 +30,10 @@ const viewports: Record<string, { width: number; height: number }> = {
   'screens-workbench--zoomed-200': { width: 720, height: 450 },
   'screens-workbench--reflow-320': { width: 320, height: 256 },
   'screens-workbench--root-error-reflow-320': { width: 320, height: 256 },
+  'screens-workbench--new-project-error-reflow-320': {
+    width: 320,
+    height: 256,
+  },
 }
 
 for (const id of screens) {
@@ -57,11 +65,33 @@ for (const id of screens) {
       await page.locator('[data-slot="tooltip-content"]').waitFor()
     }
 
+    // The New project screens show the dialog with a name, and the error
+    // screens the message of the refusal in its tooltip.
+    if (id.startsWith('screens-workbench--new-project')) {
+      await page.getByRole('button', { name: 'New project…' }).click()
+      await page.getByRole('textbox', { name: 'Name' }).fill('atlas-api')
+      if (id.includes('error')) {
+        await page.keyboard.press('Enter')
+        await page.getByRole('button', { name: 'Name error' }).focus()
+        await page.keyboard.press('Shift+Tab')
+        await page.keyboard.press('Tab')
+        await page.locator('[data-slot="tooltip-content"]').waitFor()
+      }
+      // The dialog fades in, and the Create button fades to its enabled
+      // state. An animation that stops early does not end the wait.
+      await page.evaluate(() =>
+        Promise.allSettled(
+          document.getAnimations().map((animation) => animation.finished),
+        ),
+      )
+    }
+
     // WCAG 2.2 Level A and AA rules, as axe-core implements them.
-    // An open tooltip is in a portal outside the root of the story.
+    // An open tooltip or dialog is in a portal outside the root of the story.
     const results = await new AxeBuilder({ page })
       .include('#storybook-root')
       .include('[data-slot="tooltip-content"]')
+      .include('[data-slot="dialog-content"]')
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze()
     expect(
@@ -89,7 +119,7 @@ for (const id of screens) {
       ].join(', ')
       return [
         ...document.querySelectorAll<HTMLElement>(
-          `#storybook-root :is(${selector})`,
+          `:is(#storybook-root, [data-slot="dialog-content"]) :is(${selector})`,
         ),
       ]
         .filter(
@@ -114,7 +144,9 @@ for (const id of screens) {
     const overflowing = await page.evaluate(() =>
       [
         document.documentElement,
-        ...document.querySelectorAll<HTMLElement>('[role="region"]'),
+        ...document.querySelectorAll<HTMLElement>(
+          '[role="region"], [data-slot="dialog-content"]',
+        ),
       ]
         .filter((element) => element.scrollWidth > element.clientWidth + 1)
         .map(

@@ -4,18 +4,11 @@ import {
   FolderOpen,
   GitBranchPlus,
   Plus,
-  TriangleAlert,
   type LucideIcon,
 } from 'lucide-react'
 import { useLayoutEffect, useRef } from 'react'
 import type { Platform } from '@/shared/lib'
-import {
-  LogoMark,
-  Shortcut,
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/shared/ui'
+import { ErrorMark, LogoMark, Shortcut } from '@/shared/ui'
 
 /** A folder in the projects root of the engine. */
 export interface WelcomeProject {
@@ -190,7 +183,8 @@ export function Welcome({
                   Projects
                 </h2>
                 {engineError && (
-                  <EngineErrorMark
+                  <ErrorMark
+                    label="Engine error"
                     message={engineError}
                     onFocus={() => (focusedProject.current = ERROR_MARK)}
                     onBlur={leave}
@@ -265,47 +259,5 @@ function ProjectRow({
     >
       {content}
     </button>
-  )
-}
-
-/**
- * The error of an engine that did not start: a warning icon, with the
- * message in a tooltip on hover and on keyboard focus, and no text on the
- * screen. The message is also an alert for assistive technology, because it
- * can come after the tab shows (WCAG 2.2 SC 4.1.3).
- */
-function EngineErrorMark({
-  message,
-  onFocus,
-  onBlur,
-}: {
-  message: string
-  onFocus: () => void
-  onBlur: (event: React.FocusEvent<HTMLElement>) => void
-}) {
-  return (
-    <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <button
-              type="button"
-              aria-label="Engine error"
-              onFocus={onFocus}
-              onBlur={onBlur}
-              className="flex size-6 items-center justify-center rounded-md text-destructive outline-none hover:bg-hover focus-visible:ring-1 focus-visible:ring-ring"
-            />
-          }
-        >
-          <TriangleAlert className="size-icon" strokeWidth={1.75} aria-hidden />
-        </TooltipTrigger>
-        <TooltipContent side="bottom" align="start" className="wrap-anywhere">
-          {message}
-        </TooltipContent>
-      </Tooltip>
-      <p role="alert" className="sr-only">
-        {message}
-      </p>
-    </>
   )
 }

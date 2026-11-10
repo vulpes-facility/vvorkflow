@@ -1,5 +1,6 @@
 import type { DockviewApi } from 'dockview-react'
 import { useEffect, type RefObject } from 'react'
+import { isDialogKey } from './dialog-keys'
 
 /** Finds the elements of one region of the window. */
 type Region = (root: HTMLElement, editor: DockviewApi | undefined) => Element[]
@@ -47,7 +48,7 @@ function tabStop(region: Element) {
  * Moves the focus to the next region of the window on F6, and to the
  * previous one on Shift+F6. Each region gets the focus at its tab stop. It is
  * also the way out of a terminal, which takes the Tab key
- * (WCAG 2.2 SC 2.1.2).
+ * (WCAG 2.2 SC 2.1.2). A dialog keeps the focus.
  */
 export function useRegionShortcuts(
   root: RefObject<HTMLElement | null>,
@@ -57,6 +58,7 @@ export function useRegionShortcuts(
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== 'F6' || event.ctrlKey || event.metaKey || event.altKey)
         return
+      if (isDialogKey(event)) return
       const container = root.current
       if (!container) return
       const found = regions.map((region) => region(container, editor()))

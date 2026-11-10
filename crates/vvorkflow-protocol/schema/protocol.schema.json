@@ -27,6 +27,19 @@
         "status"
       ]
     },
+    "create_project": {
+      "description": "Makes a project: a new, empty folder directly in the projects root.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "The name of the folder: one name that each system accepts, which does\nnot start with a dot.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
     "directory_entry": {
       "description": "An entry of a folder.",
       "type": "object",
@@ -256,6 +269,33 @@
           ]
         },
         {
+          "description": "Makes a folder in the projects root. Answers its [`Project`].",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "project.create"
+            },
+            "params": {
+              "description": "Makes a project: a new, empty folder directly in the projects root.",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "description": "The name of the folder: one name that each system accepts, which does\nnot start with a dot.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
           "description": "Answers a [`Repository`].",
           "type": "object",
           "properties": {
@@ -390,6 +430,7 @@
     "hello",
     "welcome",
     "list_projects",
+    "create_project",
     "shutdown",
     "done",
     "project",
@@ -401,5 +442,5 @@
     "changed_path",
     "engine_error"
   ],
-  "x-protocol-version": 1
+  "x-protocol-version": 2
 }

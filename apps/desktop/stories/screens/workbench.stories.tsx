@@ -4,7 +4,9 @@ import { MacTrafficLights } from '../../fixtures/mac-traffic-lights'
 import { expandedPaths, repositories } from '../../fixtures/repositories'
 import { terminals } from '../../fixtures/terminals'
 import {
+  createProject,
   projects,
+  refuseProject,
   status,
   windowContext,
   windowControls,
@@ -28,7 +30,7 @@ const meta = {
     projects,
     context: windowContext,
     status,
-    onNewProject: fn(),
+    onCreateProject: createProject,
     onOpenFolder: fn(),
     onAddWorktree: fn(),
     onOpenProject: fn(),
@@ -90,13 +92,35 @@ export const AppStart: Story = {
     projects: [],
     context: undefined,
     status: undefined,
-    onNewProject: undefined,
+    onCreateProject: undefined,
     onOpenFolder: undefined,
     onAddWorktree: undefined,
     onOpenProject: undefined,
     onOpenSettings: undefined,
     commandPaletteShortcut: undefined,
   },
+}
+
+/**
+ * The New project dialog, which the screen capture opens from the Welcome
+ * tab, with a name in it.
+ */
+export const NewProject: Story = {}
+
+/** The same dialog in the light theme. */
+export const NewProjectLight: Story = { globals: { colorScheme: 'light' } }
+
+/**
+ * The dialog after the engine refused the name: the error is an icon next to
+ * the name, with the message in its tooltip.
+ */
+export const NewProjectError: Story = {
+  args: { onCreateProject: refuseProject },
+}
+
+/** The same error at 320 CSS pixels wide (WCAG 2.2 SC 1.4.10). */
+export const NewProjectErrorReflow320: Story = {
+  args: { onCreateProject: refuseProject },
 }
 
 /**

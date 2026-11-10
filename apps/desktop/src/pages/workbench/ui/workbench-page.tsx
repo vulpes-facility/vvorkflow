@@ -28,10 +28,12 @@ import { EditorArea } from './editor-area/editor-area'
 import { ExplorerView } from './explorer/explorer-view'
 import type { EditorTabParams } from './editor-area/editor-tab'
 import { SideBar } from './side-bar/side-bar'
+import { NewProjectDialog } from './new-project/new-project-dialog'
 import { TerminalView } from './terminal/terminal-view'
 import { StatusBar, type StatusItem } from './status-bar/status-bar'
 import { TitleBar, type WindowContext } from './title-bar/title-bar'
 import { Welcome, type WelcomeProject } from './welcome/welcome'
+import { isDialogKey } from '../model/dialog-keys'
 import { useLayout } from '../model/layout'
 import type { ExplorerRepository, ExplorerSource } from '../model/explorer'
 import type { TerminalSession } from '../model/terminal'
@@ -66,7 +68,13 @@ interface WorkbenchPageProps {
   /** The terminal sessions, such as agents. Each one opens as a tab of the editor area. */
   terminals?: TerminalSession[]
   onOpenFile?: (id: string) => void
-  onNewProject?: () => void
+  /**
+   * Makes a project with the name that the user gave. When it rejects, the
+   * dialog shows the message of the error. The signal aborts when the user
+   * closes the dialog before the answer; do not open the project then.
+   * Without this handler, the window has no New project action.
+   */
+  onCreateProject?: (name: string, signal: AbortSignal) => Promise<void>
   onOpenFolder?: () => void
   onAddWorktree?: () => void
   onOpenProject?: (project: WelcomeProject) => void
@@ -75,8 +83,13 @@ interface WorkbenchPageProps {
   commandPaletteShortcut?: string
 }
 
-/** The props of the page, for the panels of the editor area, which dockview renders. */
-const PageProps = createContext<WorkbenchPageProps | null>(null)
+/**
+ * The props of the page, and the action that opens the New project dialog,
+ * for the panels of the editor area, which dockview renders.
+ */
+const PageProps = createContext<
+  (WorkbenchPageProps & { onNewProject?: () => void }) | null
+>(null)
 
 /**
  * The window of vvorkflow: the activity bar and the side bar at full height,
@@ -89,9 +102,14 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     context,
     status,
     repositories,
+    onCreateProject,
     onOpenFolder,
     onOpenSettings,
   } = props
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const onNewProject = onCreateProject
+    ? () => setNewProjectOpen(true)
+    : undefined
   const view = useLayout((state) => state.view)
   const sideBarOpen = useLayout((state) => state.sideBarOpen)
   const showView = useLayout((state) => state.showView)
@@ -101,7 +119,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   useViewShortcuts(platform, showView, toggleSideBar)
   const narrow = useNarrowWindow(setSideBarOpen)
   useActionShortcuts(platform, {
-    onNewProject: props.onNewProject,
+    onNewProject,
     onOpenFolder: props.onOpenFolder,
     onOpenSettings,
   })
@@ -125,7 +143,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   useEffect(() => {
     if (!drawer) return
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key !== 'Escape') return
+      if (event.key !== 'Escape' || isDialogKey(event)) return
       setSideBarOpen(false)
       root.current
         ?.querySelector<HTMLElement>('nav [role="tab"][tabindex="0"]')
@@ -223,7 +241,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   )
 
   return (
-    <PageProps.Provider value={props}>
+    <PageProps.Provider value={{ ...props, onNewProject }}>
       <TooltipProvider delay={600}>
         <div
           ref={root}
@@ -327,6 +345,13 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
             </ResizablePanelGroup>
           </div>
         </div>
+        {onCreateProject && (
+          <NewProjectDialog
+            open={newProjectOpen}
+            onOpenChange={setNewProjectOpen}
+            onCreate={onCreateProject}
+          />
+        )}
       </TooltipProvider>
     </PageProps.Provider>
   )

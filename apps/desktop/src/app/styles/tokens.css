@@ -101,6 +101,8 @@
   /* At this window width and under, the side bar becomes a drawer. */
   --vv-narrow-max-w: 640px;
   --vv-hairline-w: 1px;
+  /* The least space between a dialog and each edge of the window. */
+  --vv-dialog-inset: 16px;
   --vv-radius-none: 0px;
   --vv-space-none: 0px;
   /* The Explorer tree: the inset of the first level, and the step of each level after it. */
@@ -189,6 +191,7 @@
   --scrollbar-thumb: var(--vv-gray-500);
   --grip: var(--vv-gray-500);
   --overlay-shadow: var(--vv-black-shadow-soft);
+  --scrim: var(--vv-black-shadow-soft);
   --indicator: var(--vv-indigo-600);
   --link: var(--vv-indigo-600);
   --git-added: var(--vv-green-600);
@@ -273,6 +276,7 @@
   --scrollbar-thumb: var(--vv-gray-550);
   --grip: var(--vv-gray-550);
   --overlay-shadow: var(--vv-black-shadow-strong);
+  --scrim: var(--vv-black-shadow-strong);
   --indicator: var(--vv-indigo-400);
   --link: var(--vv-indigo-300);
   --git-added: var(--vv-green-400);

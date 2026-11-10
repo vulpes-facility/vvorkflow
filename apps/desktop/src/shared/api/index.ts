@@ -1,5 +1,6 @@
 export { currentWindowControls, isTauri, type WindowControls } from './window'
 export {
+  createProject,
   EngineRequestError,
   hello,
   listDirectory,

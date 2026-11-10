@@ -16,6 +16,17 @@ export const protocol = z.object({
     .describe(
       'A path with a git status, relative to its worktree, with `/` between the\nnames. A folder that git reports as a whole, such as an ignored or an\nuntracked folder, ends with `/`.',
     ),
+  create_project: z
+    .object({
+      name: z
+        .string()
+        .describe(
+          'The name of the folder: one name that each system accepts, which does\nnot start with a dot.',
+        ),
+    })
+    .describe(
+      'Makes a project: a new, empty folder directly in the projects root.',
+    ),
   directory_entry: z
     .object({ kind: z.enum(['file', 'folder']), name: z.string() })
     .describe('An entry of a folder.'),
@@ -139,6 +150,24 @@ export const protocol = z.object({
               ),
           })
           .describe('Answers each [`Project`] in the projects root.'),
+        z
+          .object({
+            method: z.literal('project.create'),
+            params: z
+              .object({
+                name: z
+                  .string()
+                  .describe(
+                    'The name of the folder: one name that each system accepts, which does\nnot start with a dot.',
+                  ),
+              })
+              .describe(
+                'Makes a project: a new, empty folder directly in the projects root.',
+              ),
+          })
+          .describe(
+            'Makes a folder in the projects root. Answers its [`Project`].',
+          ),
         z
           .object({
             method: z.literal('folder.open'),
