@@ -53,9 +53,11 @@ pub(crate) struct Sequence {
     /// The part had more than [`MAX_PART`] bytes: it now holds only the
     /// start of its kind of sequence.
     long: bool,
-    /// The last thing that the parser did was to print a character. xterm.js
-    /// then joins a combining character at the start of the next output
-    /// with it; after a control or a sequence, it does not.
+    /// The last action that the parser finished printed a character.
+    /// xterm.js then joins a combining character at the start of the next
+    /// output with it, and REP repeats it; after a control or a sequence
+    /// that ended, it does not. A sequence that did not end yet changes
+    /// nothing.
     printed: bool,
 }
 
@@ -69,9 +71,10 @@ impl Sequence {
         }
     }
 
-    /// Whether the last thing that the parser did was to print a character.
+    /// Whether the last action that the parser finished printed a
+    /// character.
     pub(crate) fn printed(&self) -> bool {
-        self.printed && self.state == State::Ground
+        self.printed
     }
 
     /// The bytes that the screen bytes end with, so that the next output
@@ -109,6 +112,11 @@ impl Sequence {
                 // Only ESC leaves the ground state.
                 match memchr(ESC, &output[index..]) {
                     Some(offset) => {
+                        // A sequence starts: the parser does it after the
+                        // text.
+                        if let Some(printed) = printed_last(&output[index..index + offset]) {
+                            self.printed = printed;
+                        }
                         index += offset;
                     }
                     None => {
@@ -122,8 +130,6 @@ impl Sequence {
                         return;
                     }
                 }
-                // A sequence starts: the parser does it after the text.
-                self.printed = false;
             }
             let byte = output[index];
             if self.state == State::OscString && self.long && osc_text(byte) {
@@ -143,6 +149,8 @@ impl Sequence {
     fn step(&mut self, byte: u8) {
         let (next, effect) = transition(self.state, byte);
         if next == State::Ground {
+            // The sequence ended, or a control cancelled it.
+            self.printed = false;
             self.state = State::Ground;
             self.part.clear();
             self.long = false;
@@ -423,7 +431,10 @@ mod tests {
         assert!(printed(&[b"e\x7f"]));
         assert!(!printed(&[b"text\r\n"]));
         assert!(!printed(&[b"text\x1b[1m"]));
-        assert!(!printed(&[b"text\x1b[1"]));
+        // A sequence counts when it ends: a REP that ends it repeats the
+        // character.
+        assert!(printed(&[b"text\x1b[1"]));
+        assert!(printed(&[b"text\x1b"]));
         assert!(!printed(&[b""]));
         // The start of a character does not count until it is complete.
         assert!(!printed(&[b"\r\xc3"]));

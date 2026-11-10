@@ -1,0 +1,35 @@
+{
+  "columns": 20,
+  "description": "REP (CSI b) repeats the character before it, also when a screen cuts the sequence of REP.",
+  "limits": {},
+  "output": "ab\u001b[3bc\u001b[2b",
+  "positions": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "rows": 4,
+  "screens": {
+    "0": "DQoNCg0KG1sxOzFI",
+    "1": "YQ0KDQoNChtbMTsxSGE=",
+    "10": "YWJiYmJjDQoNCg0KG1sxOzZIYxtbMg==",
+    "11": "YWJiYmJjY2MNCg0KDQobWzE7OUg=",
+    "2": "YWINCg0KDQobWzE7Mkhi",
+    "3": "YWINCg0KDQobWzE7MkhiGw==",
+    "4": "YWINCg0KDQobWzE7MkhiG1s=",
+    "5": "YWINCg0KDQobWzE7MkhiG1sz",
+    "6": "YWJiYmINCg0KDQobWzE7Nkg=",
+    "7": "YWJiYmJjDQoNCg0KG1sxOzZIYw==",
+    "8": "YWJiYmJjDQoNCg0KG1sxOzZIYxs=",
+    "9": "YWJiYmJjDQoNCg0KG1sxOzZIYxtb"
+  }
+}
