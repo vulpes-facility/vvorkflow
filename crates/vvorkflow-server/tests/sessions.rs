@@ -474,8 +474,14 @@ fn engine(place: &Place, idle: Duration) -> (Arc<Engine>, JoinHandle<Result<(), 
 }
 
 async fn raw_request(place: &Place, request: Value) -> Value {
+    raw_request_to(endpoint(place), request).await
+}
+
+/// Says `hello` on a connection of its own, and returns the answer to
+/// `request`.
+async fn raw_request_to(endpoint: Endpoint, request: Value) -> Value {
     let stream = loop {
-        if let Ok(stream) = endpoint(place).connect().await {
+        if let Ok(stream) = endpoint.connect().await {
             break stream;
         }
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -710,4 +716,110 @@ async fn the_client_does_not_read_the_socket_while_the_owner_holds_the_limit() {
     assert_eq!(sends.recv().await, Some(1));
     drop(client);
     engine.await.unwrap();
+}
+
+/// A forced `shutdown` does not wait for the blocking threads of the
+/// requests, which can all be busy.
+#[test]
+fn a_forced_shutdown_does_not_wait_for_the_blocking_threads() {
+    let place = place();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .max_blocking_threads(1)
+        .enable_all()
+        .build()
+        .unwrap();
+    // A request that waits holds the only blocking thread.
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    let busy = runtime.spawn_blocking(move || {
+        let _ = released.recv();
+    });
+    let stop = json!({"id": 2, "method": "shutdown", "params": {"force": true}});
+    let answer = runtime.block_on(async {
+        let (_engine, server) = engine(&place, Duration::from_secs(60));
+        let answer = tokio::time::timeout(WAIT, raw_request(&place, stop)).await;
+        let _ = tokio::time::timeout(WAIT, server).await;
+        answer
+    });
+    release.send(()).unwrap();
+    runtime.block_on(busy).unwrap();
+    let answer = answer.expect("the engine answers in time");
+    assert_eq!(answer["result"], json!({}));
+}
+
+/// The process of the engine stops soon after `shutdown`, also while a
+/// request runs on a blocking thread: here a git that does not end.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn the_engine_process_stops_while_a_request_still_runs() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let place = place();
+    let tools = place._base.path().join("tools");
+    std::fs::create_dir(&tools).unwrap();
+    let started = place._base.path().join("git.pid");
+    let git = tools.join("git");
+    std::fs::write(
+        &git,
+        format!(
+            "#!/bin/sh\necho $$ > '{}'\nexec sleep 30\n",
+            started.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&git, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!(
+        "{}:{}",
+        tools.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let mut engine = Command::new(env!("CARGO_BIN_EXE_vvorkflow-server"))
+        .env("VVORKFLOW_ROOT", &place.root)
+        .env("XDG_RUNTIME_DIR", &place.runtime)
+        .env("PATH", path)
+        .spawn()
+        .unwrap();
+
+    // `folder.open` runs git, which does not end.
+    let folder = place.root.join("app");
+    std::fs::create_dir(&folder).unwrap();
+    let open = json!({"id": 2, "method": "folder.open", "params": {"path": folder}});
+    let opening = tokio::spawn(raw_request_to(endpoint(&place), open));
+    let deadline = std::time::Instant::now() + WAIT;
+    while !started.exists() {
+        assert!(std::time::Instant::now() < deadline, "git starts");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+
+    let stop = json!({"id": 2, "method": "shutdown", "params": {}});
+    assert_eq!(raw_request(&place, stop).await["result"], json!({}));
+    let stopped = std::time::Instant::now();
+    let deadline = stopped + WAIT;
+    let status = loop {
+        if let Some(status) = engine.try_wait().unwrap() {
+            break Some(status);
+        }
+        if std::time::Instant::now() >= deadline {
+            break None;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
+    let pid: i32 = std::fs::read_to_string(&started)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    // SAFETY: the fake git of this test still runs as that process.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    opening.abort();
+    if status.is_none() {
+        let _ = engine.kill();
+        let _ = engine.wait();
+        panic!("the engine process does not stop");
+    }
+    assert!(
+        stopped.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        stopped.elapsed()
+    );
 }

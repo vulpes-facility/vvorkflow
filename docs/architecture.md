@@ -293,7 +293,9 @@ Kill (menu) / end of the shell ──► the session ends
    It counts the sessions under their lock, so the count of a session that ends never comes after the count of a session that starts.
 2. `shutdown` has the optional param `force`.\
    Without it, or with `false`, an engine with sessions refuses `shutdown` (`failedPrecondition`), tells the number of sessions, and continues to listen.\
-   With `true`, the engine takes no new session, ends all sessions at the same time as `session.kill` does, with one limit of 3 seconds for all of them, and then stops.
+   With `true`, the engine takes no new session, ends all sessions at the same time as `session.kill` does, with one limit of 3 seconds for all of them, and then stops.\
+   It ends the sessions on a thread of its own, so that requests that fill the blocking threads do not delay the stop.\
+   After the answer to `shutdown`, the process stops within 1 second, also when a request still runs on a blocking thread, such as a git that does not end.
 3. So an app of another protocol version does not end the sessions of the engine without a question to the user.\
    The app sends `shutdown` without `force` to an engine of another version.\
    When that engine refuses, the app starts no engine, and shows the refusal; the user can then stop that engine, and the app sends `shutdown` with `force` on a new connection, before `hello`.

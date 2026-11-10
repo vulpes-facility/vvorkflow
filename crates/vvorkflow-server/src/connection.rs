@@ -206,9 +206,7 @@ impl Connection<'_> {
                 self.stopping.store(true, Ordering::Release);
                 self.shared.stop.begin().await;
                 if shutdown.force {
-                    // The sessions end in at most 3 seconds.
-                    let engine = Arc::clone(engine);
-                    let _ = tokio::task::spawn_blocking(move || engine.stop(true)).await;
+                    stop_sessions(engine).await;
                 }
                 self.answer(id, Ok(Response::Done(Done {}))).await;
                 self.close(CloseCode::Away, "The engine stops.").await;
@@ -345,6 +343,28 @@ async fn write<S>(
         }
     }
     let _ = tokio::time::timeout(CLOSE_TIME, sink.close()).await;
+}
+
+/// Ends the sessions for a forced stop, in a few seconds, on a thread of
+/// its own: the blocking threads of the requests can all be busy.
+async fn stop_sessions(engine: &Arc<Engine>) {
+    let (done, stopped) = tokio::sync::oneshot::channel();
+    let stops = Arc::clone(engine);
+    let started = std::thread::Builder::new()
+        .name("engine-stop".to_owned())
+        .spawn(move || {
+            let _ = stops.stop(true);
+            let _ = done.send(());
+        });
+    match started {
+        Ok(_) => {
+            let _ = stopped.await;
+        }
+        // Without the thread, this worker of the runtime waits.
+        Err(_) => {
+            let _ = engine.stop(true);
+        }
+    }
 }
 
 async fn answer(answers: &mpsc::Sender<Message>, id: u64, value: Result<Response, EngineError>) {

@@ -7,9 +7,14 @@
 use std::io::Write;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 
 use vvorkflow_engine::{Engine, projects_root_from_env};
 use vvorkflow_server::{Endpoint, Limits, serve};
+
+/// The time that the requests on blocking threads have to end after the
+/// engine stopped; then the process stops without them.
+const STOP_TIME: Duration = Duration::from_secs(1);
 
 fn main() -> ExitCode {
     match run() {
@@ -27,11 +32,15 @@ fn run() -> Result<(), String> {
     let engine = Engine::new(&root).map_err(|error| error.message)?;
     let endpoint = Endpoint::of_user()?;
     let limits = Limits::default();
-    tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .max_blocking_threads(limits.workers)
         .enable_all()
         .build()
-        .map_err(|error| format!("The engine cannot start its runtime: {error}."))?
-        .block_on(serve(&endpoint, Arc::new(engine), limits))
+        .map_err(|error| format!("The engine cannot start its runtime: {error}."))?;
+    let served = runtime.block_on(serve(&endpoint, Arc::new(engine), limits));
+    // A request that still runs on a blocking thread, such as a slow git,
+    // does not keep the process: it has this time to end.
+    runtime.shutdown_timeout(STOP_TIME);
+    served
 }
