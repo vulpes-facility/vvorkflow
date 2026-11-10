@@ -73,8 +73,7 @@ The events come with the terminal sessions (M4).
    An empty value is the same as no value.\
    The path of the root MUST be UTF-8, because the protocol sends paths as text.
 2. At start, the engine checks the root, and stops with a message when it is not correct.\
-   It makes `~/vvorkflow` when that folder does not exist.\
-   While the engine is in the app process, it does not stop: each request answers that message.
+   It makes `~/vvorkflow` when that folder does not exist.
 3. A project is a folder directly in the root.\
    A name that starts with `.`, or that is not UTF-8, is not a project.\
    A symbolic link that leads out of the root is not a project, because the engine reads the root through a directory handle.
@@ -102,7 +101,7 @@ The engine process stops on a root that is not correct, and the app shows its me
    Each operation on the endpoint does these checks again on the canonical path, from `/` down, and does not follow a link.\
    A folder that passes cannot change under the next one, because no other user can rename an entry in it.\
    So no other user can replace the folder or lead an operation to another folder.
-4. The folder holds `engine.lock`, `engine.log`, and the socket `engine.sock`.\
+4. The folder holds `engine.lock`, `engine.turn`, `engine.log`, and the socket `engine.sock`.\
    A client does the same checks of the folder before it connects.\
    Each side refuses the other side when it runs as another user (the peer credentials of the socket).
 5. On Windows, the folder is in the profile of the user, which other users cannot open.\
@@ -121,8 +120,13 @@ The engine process stops on a root that is not correct, and the app shows its me
 9. The desktop app finds `vvorkflow-server` next to its own executable.\
    It connects, and when no engine answers, it starts one, detached, with stderr in `engine.log`.\
    When the engine stops before it listens, the app shows the last line of `engine.log`.\
+   When the engine does not listen in 10 seconds, the app stops that process.\
    When `hello` fails because of the version, the app sends `shutdown`, and starts its own engine.\
+   Only one app at a time starts or replaces the engine: the app locks `engine.turn`, and says `hello` again before it does so.\
+   Thus an app does not stop the engine that another app started a moment before.\
+   An engine has 10 seconds to answer `hello`; after them the app shows an error, and the next request tries again.\
    The app keeps one connection while it runs, and sends each request of the web UI on it with a new `id`.\
+   It keeps at most 16 requests open; a further request waits.\
    When the engine stops, the next request opens a new connection, and starts an engine when none listens.
 10. The engine continues when the app closes, with the projects root that it started with.\
     To use another root, set `VVORKFLOW_ROOT` and start the app after the engine stops: 5 minutes after the last client leaves.

@@ -37,7 +37,8 @@ This file gives only the rules that are different from that plugin, or that it d
     The client parses each answer of the engine at run time, because a value from another process can be wrong.
 13. `apps/desktop/scripts/build-server.mjs` builds `vvorkflow-server` before `tauri dev` and `tauri build`, so that the app finds it next to its own executable.\
     `pnpm --filter @vvorkflow/desktop bundle` adds `src-tauri/tauri.bundle.json`, which puts the binary in the installer as a sidecar.\
-    The sidecar is only in that file, because `tauri-build` copies each sidecar at each build of the app, also for the lint.
+    The sidecar is only in that file, because `tauri-build` copies each sidecar at each build of the app, also for the lint.\
+    The script builds only for the host: it stops when Tauri builds for another target, and `tauri build --target` is not supported.
 14. The `lint` and `test` scripts of `apps/desktop` check the whole Cargo workspace, and `apps/desktop/turbo.json` adds `crates/**` to their inputs.
 15. Check a change of the engine in the real app.\
     Run `pnpm --filter @vvorkflow/desktop tauri build --debug --no-bundle`, then `target/debug/vvorkflow-desktop <folder>`: each folder of the command line opens at start.\

@@ -3,15 +3,17 @@
 //! another protocol version, and matches each answer to its request by id.
 
 use std::collections::HashMap;
+use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
+use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 use vvorkflow_protocol::{
     ClientMessage, EngineError, ErrorCode, Hello, MAX_OPEN_REQUESTS, PROTOCOL_VERSION, Request,
@@ -24,6 +26,14 @@ use crate::endpoint::BUSY;
 /// The time that a new engine process has to listen.
 const START: Duration = Duration::from_secs(10);
 
+/// The time that an engine has for the WebSocket handshake and its answer to
+/// `hello` or to `shutdown`.
+const ANSWER: Duration = Duration::from_secs(10);
+
+/// The time that the client waits for another app that starts or replaces
+/// the engine. It is longer than the longest start of this client.
+const TURN: Duration = Duration::from_secs(60);
+
 type Socket = tokio_tungstenite::WebSocketStream<crate::ClientStream>;
 type Pending = Arc<Mutex<Waiting>>;
 
@@ -33,7 +43,15 @@ type Pending = Arc<Mutex<Waiting>>;
 #[derive(Default)]
 struct Waiting {
     gone: bool,
-    answers: HashMap<u64, oneshot::Sender<ServerMessage<Value>>>,
+    answers: HashMap<u64, Open>,
+}
+
+/// One open request: where its answer goes, and its place in the open
+/// requests of the client, which it keeps until the answer comes or the
+/// connection ends, also when the caller no longer waits.
+struct Open {
+    answer: oneshot::Sender<ServerMessage<Value>>,
+    _place: OwnedSemaphorePermit,
 }
 
 /// A connection to the engine process that the client opens when it needs
@@ -44,15 +62,18 @@ pub struct EngineClient {
     connection: tokio::sync::Mutex<Option<Connection>>,
     /// The places of the open requests: the engine closes a connection with
     /// more than `MAX_OPEN_REQUESTS`, so a request waits here for a place.
-    open: tokio::sync::Semaphore,
+    open: Arc<Semaphore>,
+    start: Duration,
 }
 
 /// One open connection: the queue of its writer, and the requests that wait
-/// for an answer.
+/// for an answer. The connection closes when this value drops.
 struct Connection {
     outbox: mpsc::Sender<Message>,
     pending: Pending,
     next: AtomicU64,
+    reader: JoinHandle<()>,
+    writer: JoinHandle<()>,
 }
 
 /// Why a connection did not open.
@@ -77,8 +98,17 @@ impl EngineClient {
             endpoint,
             program: Box::new(program),
             connection: tokio::sync::Mutex::new(None),
-            open: tokio::sync::Semaphore::new(MAX_OPEN_REQUESTS),
+            open: Arc::new(Semaphore::new(MAX_OPEN_REQUESTS)),
+            start: START,
         }
+    }
+
+    /// The same client with another time that a new engine process has to
+    /// listen, in place of 10 seconds.
+    #[must_use]
+    pub fn start_time(mut self, time: Duration) -> EngineClient {
+        self.start = time;
+        self
     }
 
     /// Sends one request to the engine, and waits for its answer.
@@ -88,13 +118,11 @@ impl EngineClient {
     /// before it answers. A request that the engine did not answer is not
     /// sent again.
     pub async fn request(&self, request: Request) -> Result<Value, EngineError> {
-        let _place = self
-            .open
-            .acquire()
+        let place = Arc::clone(&self.open)
+            .acquire_owned()
             .await
             .map_err(|_| refused("The client is closed.".to_owned()))?;
         let stops = matches!(request, Request::Shutdown(_));
-        let (answer, wait) = oneshot::channel();
         let (outbox, pending, id) = {
             let mut slot = self.connection.lock().await;
             if slot.as_ref().is_none_or(Connection::is_gone) {
@@ -102,26 +130,30 @@ impl EngineClient {
             }
             let open = slot.as_ref().expect("the slot holds a connection");
             let id = open.next.fetch_add(1, Ordering::Relaxed);
-            let mut waiting = open
-                .pending
-                .lock()
-                .expect("the pending lock is never poisoned");
-            if waiting.gone {
-                return Err(refused("The engine stopped before it answered.".to_owned()));
-            }
-            waiting.answers.insert(id, answer);
-            drop(waiting);
             (open.outbox.clone(), Arc::clone(&open.pending), id)
         };
         let text = serde_json::to_string(&ClientMessage { id, request })
             .map_err(|error| refused(format!("The request does not serialize: {error}.")))?;
-        if outbox.send(Message::text(text)).await.is_err() {
-            pending
-                .lock()
-                .expect("the pending lock is never poisoned")
-                .answers
-                .remove(&id);
+        // The place in the queue of the writer comes first. Then nothing
+        // waits between the entry of the request and its send, so a caller
+        // that drops this future leaves no entry without a request.
+        let Ok(queued) = outbox.reserve().await else {
+            end(&pending);
+            return Err(stopped());
+        };
+        let (answer, wait) = oneshot::channel();
+        {
+            let mut waiting = pending.lock().expect("the pending lock is never poisoned");
+            if waiting.gone {
+                return Err(stopped());
+            }
+            let open = Open {
+                answer,
+                _place: place,
+            };
+            waiting.answers.insert(id, open);
         }
+        queued.send(Message::text(text));
         match wait.await {
             Ok(ServerMessage::Result { result, .. }) => {
                 // The engine closes this connection now: the next request
@@ -135,12 +167,20 @@ impl EngineClient {
                 Ok(result)
             }
             Ok(ServerMessage::Error { error, .. }) => Err(error),
-            Err(_) => Err(refused("The engine stopped before it answered.".to_owned())),
+            Err(_) => Err(stopped()),
         }
     }
 
     /// Opens a connection: to the engine that listens, or to a new one.
     async fn establish(&self) -> Result<Connection, EngineError> {
+        match self.open().await {
+            Ok(connection) => return Ok(connection),
+            Err(Refused::Failed(error)) => return Err(error),
+            Err(Refused::Absent | Refused::OtherVersion) => {}
+        }
+        // Another app can start or replace the engine while this one waits
+        // for its turn: ask again, and never stop the engine of that app.
+        let _turn = self.turn().await?;
         match self.open().await {
             Ok(connection) => return Ok(connection),
             Err(Refused::Failed(error)) => return Err(error),
@@ -157,8 +197,36 @@ impl EngineClient {
         }
     }
 
-    /// Connects, and says `hello`.
+    /// Waits for the turn of this app to start or to replace the engine.
+    async fn turn(&self) -> Result<File, EngineError> {
+        self.endpoint.prepare().map_err(refused)?;
+        let deadline = tokio::time::Instant::now() + TURN;
+        loop {
+            if let Some(turn) = self.endpoint.turn().map_err(refused)? {
+                return Ok(turn);
+            }
+            if tokio::time::Instant::now() > deadline {
+                return Err(refused(
+                    "Another app starts the engine, and does not finish.".to_owned(),
+                ));
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    /// Connects, and says `hello`. Fails when the engine does not answer in
+    /// [`ANSWER`], so that an engine that hangs does not stop each request.
     async fn open(&self) -> Result<Connection, Refused> {
+        tokio::time::timeout(ANSWER, self.greet())
+            .await
+            .unwrap_or_else(|_| {
+                Err(Refused::Failed(refused(
+                    "The engine does not answer.".to_owned(),
+                )))
+            })
+    }
+
+    async fn greet(&self) -> Result<Connection, Refused> {
         let mut socket = self.handshake().await?;
         let hello = ClientMessage {
             id: 0,
@@ -209,15 +277,18 @@ impl EngineClient {
     /// Stops an engine of another protocol version with `shutdown`, which
     /// every version understands, and waits until it no longer listens.
     async fn stop_other(&self) {
-        if let Ok(mut socket) = self.handshake().await {
-            let shutdown = ClientMessage {
-                id: 0,
-                request: Request::Shutdown(Shutdown {}),
-            };
-            if send(&mut socket, &shutdown).await.is_ok() {
-                let _ = receive(&mut socket).await;
+        let _ = tokio::time::timeout(ANSWER, async {
+            if let Ok(mut socket) = self.handshake().await {
+                let shutdown = ClientMessage {
+                    id: 0,
+                    request: Request::Shutdown(Shutdown {}),
+                };
+                if send(&mut socket, &shutdown).await.is_ok() {
+                    let _ = receive(&mut socket).await;
+                }
             }
-        }
+        })
+        .await;
         for _ in 0..100 {
             if self.endpoint.connect().await.is_err() {
                 return;
@@ -230,7 +301,9 @@ impl EngineClient {
     /// the log of the endpoint, and waits until it listens.
     ///
     /// Fails with the last line of the log when the process stops first, for
-    /// example because the projects root is not correct.
+    /// example because the projects root is not correct. When the process
+    /// does not listen in the start time, or when the caller no longer
+    /// waits, the client stops the process.
     async fn start(&self) -> Result<(), EngineError> {
         // An engine at the end of its idle time can still hold the lock for a
         // moment: then the new engine stops at once, and the client tries
@@ -267,17 +340,19 @@ impl EngineClient {
             .stdout(Stdio::null())
             .stderr(log.try_clone().map_err(lost)?);
         detach(&mut command);
-        let mut child = command
-            .spawn()
-            .map_err(|error| refused(format!("The app cannot start the engine: {error}.")))?;
-        let deadline = tokio::time::Instant::now() + START;
+        let mut process =
+            Starting(Some(command.spawn().map_err(|error| {
+                refused(format!("The app cannot start the engine: {error}."))
+            })?));
+        let deadline = tokio::time::Instant::now() + self.start;
         loop {
             if self.endpoint.connect().await.is_ok() {
                 break;
             }
-            if let Ok(Some(status)) = child.try_wait() {
-                // Another app can start an engine at the same time: when this
-                // one stops because the other listens, use the other one.
+            if let Some(status) = process.stopped() {
+                // Another engine can start at the same time, for example from
+                // a command line: when this one stops because the other
+                // listens, use the other one.
                 if self.endpoint.connect().await.is_ok() {
                     break;
                 }
@@ -299,11 +374,45 @@ impl EngineClient {
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        // Collect the exit status of the process when it stops, so that it
-        // does not stay as a zombie while the app runs.
-        std::thread::spawn(move || child.wait());
+        process.keep();
         Ok(())
     }
+}
+
+/// An engine process that does not listen yet. When this value drops, for
+/// example because the start time is over or the caller no longer waits, the
+/// process stops.
+struct Starting(Option<Child>);
+
+impl Starting {
+    /// The exit status, when the process stopped.
+    fn stopped(&mut self) -> Option<ExitStatus> {
+        let status = self.0.as_mut()?.try_wait().ok()??;
+        self.0 = None;
+        Some(status)
+    }
+
+    /// Lets the process continue after this value drops.
+    fn keep(mut self) {
+        if let Some(child) = self.0.take() {
+            collect(child);
+        }
+    }
+}
+
+impl Drop for Starting {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            collect(child);
+        }
+    }
+}
+
+/// Collects the exit status of the process when it stops, so that it does
+/// not stay as a zombie while the app runs.
+fn collect(mut child: Child) {
+    std::thread::spawn(move || child.wait());
 }
 
 impl Connection {
@@ -319,16 +428,17 @@ impl Connection {
         let (mut sink, mut source) = socket.split();
         let (outbox, mut queue) = mpsc::channel::<Message>(64);
         let pending: Pending = Arc::default();
-        tokio::spawn(async move {
+        let answers = Arc::clone(&pending);
+        let writer = tokio::spawn(async move {
             while let Some(message) = queue.recv().await {
                 if sink.send(message).await.is_err() {
                     break;
                 }
             }
+            end(&answers);
         });
         let answers = Arc::clone(&pending);
-        let closing = outbox.clone();
-        tokio::spawn(async move {
+        let reader = tokio::spawn(async move {
             while let Some(Ok(message)) = source.next().await {
                 let Message::Text(text) = message else {
                     if matches!(message, Message::Close(_)) {
@@ -342,29 +452,41 @@ impl Connection {
                 let id = match &answer {
                     ServerMessage::Result { id, .. } | ServerMessage::Error { id, .. } => *id,
                 };
-                let waiting = answers
+                let open = answers
                     .lock()
                     .expect("the pending lock is never poisoned")
                     .answers
                     .remove(&id);
-                if let Some(waiting) = waiting {
-                    let _ = waiting.send(answer);
+                if let Some(open) = open {
+                    let _ = open.answer.send(answer);
                 }
             }
-            // The engine left: each waiting request fails, and the next
-            // request opens a new connection.
-            let mut waiting = answers.lock().expect("the pending lock is never poisoned");
-            waiting.gone = true;
-            waiting.answers.clear();
-            drop(waiting);
-            drop(closing);
+            end(&answers);
         });
         Connection {
             outbox,
             pending,
             next: AtomicU64::new(1),
+            reader,
+            writer,
         }
     }
+}
+
+impl Drop for Connection {
+    fn drop(&mut self) {
+        self.reader.abort();
+        self.writer.abort();
+        end(&self.pending);
+    }
+}
+
+/// The end of a connection: each waiting request fails, and the next request
+/// opens a new connection.
+fn end(pending: &Pending) {
+    let mut waiting = pending.lock().expect("the pending lock is never poisoned");
+    waiting.gone = true;
+    waiting.answers.clear();
 }
 
 async fn send(socket: &mut Socket, message: &ClientMessage) -> io::Result<()> {
@@ -408,6 +530,10 @@ fn refused(message: String) -> EngineError {
         code: ErrorCode::FailedPrecondition,
         message,
     }
+}
+
+fn stopped() -> EngineError {
+    refused("The engine stopped before it answered.".to_owned())
 }
 
 fn lost(error: io::Error) -> EngineError {
