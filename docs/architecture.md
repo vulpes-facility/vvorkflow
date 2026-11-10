@@ -180,6 +180,7 @@ Kill (menu) / end of the shell ──► the session ends
    It uses ConPTY on Windows.
 2. `session.create` makes a session with a size in columns and rows.\
    Its folder is an open worktree, or the projects root when the request names no worktree.\
+   The shell takes a path, so just before it starts, the engine checks that the path still leads to the folder that it opened, and refuses a folder that moved (`permissionDenied` for a worktree, `failedPrecondition` for the projects root).\
    The request has no command: the program is always the shell of the user, and the user types each command (value 6).\
    When the shell does not start, the request fails (`failedPrecondition`), and no session stays.\
    When a step after the start of the shell fails, such as the start of a thread of the session, the engine ends the shell and reaps it, and the request fails the same way.

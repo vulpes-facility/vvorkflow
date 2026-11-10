@@ -721,6 +721,53 @@ mod unix {
         );
     }
 
+    /// The shell takes a path: a projects root that moved, and an opened
+    /// folder that a link replaced, start no shell in another folder.
+    #[test]
+    fn a_folder_that_moved_starts_no_shell() {
+        setup();
+        let base = tempfile::tempdir().unwrap();
+        let base = base.path().canonicalize().unwrap();
+        let root = base.join("root");
+        let main = root.join("main");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&main).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        let engine = Engine::new(&root).unwrap();
+        let path = main.to_string_lossy().into_owned();
+        engine
+            .open_folder(vvorkflow_protocol::OpenFolder { path: path.clone() })
+            .unwrap();
+        let viewer = Viewer::new(&engine);
+        let create = |worktree: Option<String>| {
+            engine.handle(
+                &viewer.client,
+                Request::CreateSession(CreateSession {
+                    worktree,
+                    columns: 80,
+                    rows: 24,
+                }),
+            )
+        };
+
+        std::fs::rename(&main, base.join("moved-main")).unwrap();
+        std::os::unix::fs::symlink(&outside, &main).unwrap();
+        let refused = create(Some(path)).unwrap_err();
+        assert_eq!(refused.code, ErrorCode::PermissionDenied);
+
+        std::fs::rename(&root, base.join("moved-root")).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        let refused = create(None).unwrap_err();
+        assert_eq!(refused.code, ErrorCode::FailedPrecondition);
+        assert_eq!(engine.session_count(), 0);
+
+        // At its path again, the projects root takes the session.
+        std::fs::remove_dir(&root).unwrap();
+        std::fs::rename(base.join("moved-root"), &root).unwrap();
+        create(None).unwrap();
+        engine.stop(true).unwrap();
+    }
+
     #[test]
     fn the_title_and_the_queries_without_a_client() {
         let place = place();

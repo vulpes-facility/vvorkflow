@@ -304,9 +304,12 @@ impl Sessions {
     }
 
     /// Starts the shell of the user in a new pseudo-terminal, in `folder`.
+    /// `check` runs just before the shell starts, and its error refuses the
+    /// session.
     pub(crate) fn create(
         self: &Arc<Self>,
         folder: &Path,
+        check: &dyn Fn() -> Result<(), EngineError>,
         columns: u16,
         rows: u16,
     ) -> Result<Session, EngineError> {
@@ -328,7 +331,7 @@ impl Sessions {
             inner.starting += 1;
         }
         let parked = self
-            .start(folder, columns, rows)
+            .start(folder, check, columns, rows)
             .and_then(|started| self.park(started));
         let mut inner = self.inner();
         inner.starting -= 1;
@@ -351,7 +354,13 @@ impl Sessions {
     }
 
     /// Starts the shell, and makes the session, which no thread runs yet.
-    fn start(&self, folder: &Path, columns: u16, rows: u16) -> Result<Started, EngineError> {
+    fn start(
+        &self,
+        folder: &Path,
+        check: &dyn Fn() -> Result<(), EngineError>,
+        columns: u16,
+        rows: u16,
+    ) -> Result<Started, EngineError> {
         let refused = |reason: String| error(ErrorCode::FailedPrecondition, reason);
         let shell: PathBuf =
             pty::shell().ok_or_else(|| refused("The engine finds no shell.".to_owned()))?;
@@ -365,6 +374,7 @@ impl Sessions {
                 break id;
             }
         };
+        check()?;
         let spawned = pty::spawn(&shell, folder, columns, rows).map_err(|error| {
             refused(format!(
                 "The shell {} does not start: {error}.",

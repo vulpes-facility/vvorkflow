@@ -55,7 +55,7 @@ fn the_watch_gets_each_count_under_the_lock_of_the_sessions() {
         seen.lock().unwrap().push((count, locked));
     }));
 
-    let session = sessions.create(base.path(), 80, 24).unwrap();
+    let session = sessions.create(base.path(), &|| Ok(()), 80, 24).unwrap();
     sessions.kill(&session.id).unwrap();
     wait_for("the end of the session", || sessions.count() == 0);
     wait_for("the count of the end", || calls.lock().unwrap().len() == 3);
@@ -74,7 +74,9 @@ fn a_start_that_fails_ends_and_reaps_the_shell() {
         let sessions = Arc::new(Sessions::new());
         FAIL.with(|fail| fail.set(Some(step)));
         SHELL.with(|shell| shell.set(None));
-        let refused = sessions.create(base.path(), 80, 24).unwrap_err();
+        let refused = sessions
+            .create(base.path(), &|| Ok(()), 80, 24)
+            .unwrap_err();
         FAIL.with(|fail| fail.set(None));
         assert_eq!(refused.code, ErrorCode::FailedPrecondition, "{step}");
         assert_eq!(sessions.count(), 0, "{step}");

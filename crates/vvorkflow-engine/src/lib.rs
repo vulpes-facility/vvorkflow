@@ -204,17 +204,49 @@ impl Engine {
     /// Returns the session. Refuses a worktree that is not open
     /// (`permissionDenied`), a size outside the limits (`invalidArgument`),
     /// one session more than [`MAX_SESSIONS`], a shell that does not start,
-    /// and an engine that stops (`failedPrecondition`).
+    /// and an engine that stops (`failedPrecondition`). Refuses also a
+    /// worktree (`permissionDenied`) or a projects root
+    /// (`failedPrecondition`) whose path no longer leads to the folder that
+    /// the engine opened.
     pub fn create_session(
         &self,
         _client: &Client,
         request: CreateSession,
     ) -> Result<vvorkflow_protocol::Session, EngineError> {
-        let folder = match &request.worktree {
-            Some(worktree) => self.root(worktree)?.path.clone(),
-            None => self.projects.path.clone(),
-        };
-        self.sessions.create(&folder, request.columns, request.rows)
+        // The shell takes a path, not the handle: just before it starts, the
+        // engine checks that the path is still the opened folder.
+        match &request.worktree {
+            Some(worktree) => {
+                let root = self.root(worktree)?;
+                let check = || {
+                    if same_folder(&root.dir, &root.path) {
+                        Ok(())
+                    } else {
+                        Err(error(
+                            ErrorCode::PermissionDenied,
+                            format!("{} is no longer the open folder.", root.path.display()),
+                        ))
+                    }
+                };
+                self.sessions
+                    .create(&root.path, &check, request.columns, request.rows)
+            }
+            None => {
+                let root = &self.projects;
+                let check = || {
+                    if same_folder(&root.dir, &root.path) {
+                        Ok(())
+                    } else {
+                        Err(error(
+                            ErrorCode::FailedPrecondition,
+                            format!("{} is no longer the projects root.", root.path.display()),
+                        ))
+                    }
+                };
+                self.sessions
+                    .create(&root.path, &check, request.columns, request.rows)
+            }
+        }
     }
 
     /// The number of sessions that run.
