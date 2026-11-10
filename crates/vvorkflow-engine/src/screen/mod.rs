@@ -24,7 +24,7 @@ use alacritty_terminal::vte::ansi::{Processor, Timeout};
 pub use sequence::MAX_PART;
 pub use terminal::{MAX_CELL_TEXT, MAX_TITLE, SCROLLBACK};
 
-use sequence::Sequence;
+use sequence::{Run, Sequence};
 use terminal::Terminal;
 
 /// The kept state of one terminal.
@@ -67,7 +67,11 @@ impl Screen {
             terminal,
             sequence,
         } = self;
-        sequence.feed(output, |bytes| parser.advance(terminal, bytes));
+        sequence.feed(output, |bytes, run| {
+            terminal.run = run;
+            parser.advance(terminal, bytes);
+            terminal.run = Run::Plain;
+        });
     }
 
     /// Changes the size. The lines of the normal screen wrap again by the

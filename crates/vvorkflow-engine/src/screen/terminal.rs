@@ -22,6 +22,8 @@ use alacritty_terminal::vte::ansi::{
 };
 use unicode_width::UnicodeWidthChar;
 
+use super::sequence::Run;
+
 /// The lines of the scrollback that a session keeps.
 pub const SCROLLBACK: usize = 5_000;
 
@@ -107,6 +109,9 @@ pub(crate) struct Terminal {
     pub(crate) answering: bool,
     /// The answers to queries, for the input of the program.
     pub(crate) answers: Vec<u8>,
+    /// What the bytes that the parser reads now do: a REP repeats the cell
+    /// of the last character, or nothing.
+    pub(crate) run: Run,
 }
 
 impl Terminal {
@@ -135,6 +140,7 @@ impl Terminal {
             synchronized: false,
             answering: true,
             answers: Vec::new(),
+            run: Run::Plain,
         }
     }
 
@@ -201,6 +207,31 @@ impl Terminal {
         // normal screen when it entered the alternate screen.
         self.term.grid_mut().saved_cursor = saved;
         Some(alternate_cursor)
+    }
+
+    /// Prints the text of the cell of the last character again, with its
+    /// combining characters, as the REP of xterm.js does. `vte` gives only
+    /// the last character, which can be a combining one.
+    fn repeat(&mut self) {
+        let grid = self.term.grid();
+        let cursor = &grid.cursor;
+        let line = &grid[cursor.point.line];
+        let mut column = if cursor.input_needs_wrap {
+            cursor.point.column.0
+        } else {
+            cursor.point.column.0.saturating_sub(1)
+        };
+        if column > 0 && line[Column(column)].flags.contains(Flags::WIDE_CHAR_SPACER) {
+            column -= 1;
+        }
+        let cell = &line[Column(column)];
+        let mut text = vec![cell.c];
+        text.extend(cell.zerowidth().unwrap_or_default());
+        self.run = Run::Plain;
+        for c in text {
+            self.input(c);
+        }
+        self.run = Run::Repeat;
     }
 
     /// Whether `line` continues on the next line: the flag WRAPLINE on its
@@ -315,6 +346,11 @@ impl Handler for Terminal {
     }
 
     fn input(&mut self, c: char) {
+        match self.run {
+            Run::Plain => {}
+            Run::Repeat => return self.repeat(),
+            Run::Silent => return,
+        }
         // A cell keeps at most 32 bytes of text, so that a program that
         // writes only combining characters cannot fill the memory.
         if c.width() == Some(0)

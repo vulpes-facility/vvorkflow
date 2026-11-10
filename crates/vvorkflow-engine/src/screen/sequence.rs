@@ -44,6 +44,22 @@ enum Effect {
     Done,
 }
 
+/// What the terminal does with the bytes that [`Sequence::feed`] gives to
+/// the parser.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Run {
+    /// The bytes as the output has them.
+    Plain,
+    /// The final byte of a REP (CSI b), right after a printed character:
+    /// as in xterm.js, it repeats the text of the cell of that character,
+    /// with its combining characters.
+    Repeat,
+    /// The final byte of a REP that xterm.js ignores, because no character
+    /// comes right before it: it prints nothing. `vte` repeats the last
+    /// character that it printed also after a control or a sequence.
+    Silent,
+}
+
 /// The part of the output that the parser did not finish.
 pub(crate) struct Sequence {
     state: State,
@@ -84,7 +100,7 @@ impl Sequence {
     }
 
     /// Follows `output`, and gives the bytes that the parser reads, in
-    /// order, to `parse`.
+    /// order, to `parse`, with what the terminal does with them ([`Run`]).
     ///
     /// The parser gets each byte, with two exceptions. The start of a
     /// character at the end of `output` waits for the next output, so that
@@ -92,7 +108,7 @@ impl Sequence {
     /// OSC string after [`MAX_PART`] bytes does not go to the parser, which
     /// would keep all of it in memory; the parser then reads the string as
     /// its first [`MAX_PART`] bytes.
-    pub(crate) fn feed(&mut self, output: &[u8], parse: impl FnMut(&[u8])) {
+    pub(crate) fn feed(&mut self, output: &[u8], parse: impl FnMut(&[u8], Run)) {
         if self.state == State::Ground && !self.part.is_empty() {
             // The start of a character, and the output that continues it.
             let mut joined = std::mem::take(&mut self.part);
@@ -103,7 +119,7 @@ impl Sequence {
         }
     }
 
-    fn follow(&mut self, output: &[u8], mut parse: impl FnMut(&[u8])) {
+    fn follow(&mut self, output: &[u8], mut parse: impl FnMut(&[u8], Run)) {
         // The start of the bytes that go to the parser next.
         let mut run = 0;
         let mut index = 0;
@@ -125,7 +141,7 @@ impl Sequence {
                         if let Some(printed) = printed_last(&output[index..end]) {
                             self.printed = printed;
                         }
-                        parse(&output[run..end]);
+                        parse(&output[run..end], Run::Plain);
                         self.part.extend_from_slice(&output[end..]);
                         return;
                     }
@@ -135,18 +151,43 @@ impl Sequence {
             if self.state == State::OscString && self.long && osc_text(byte) {
                 // The parser keeps an OSC string without a limit: it does not
                 // get more than its first part.
-                parse(&output[run..index]);
+                parse(&output[run..index], Run::Plain);
                 run = index + 1;
             } else {
+                if byte == b'b' && matches!(self.state, State::CsiEntry | State::CsiParam) {
+                    parse(&output[run..index], Run::Plain);
+                    let repeat = if self.printed {
+                        Run::Repeat
+                    } else {
+                        Run::Silent
+                    };
+                    parse(&output[index..=index], repeat);
+                    run = index + 1;
+                }
                 self.step(byte);
             }
             index += 1;
         }
-        parse(&output[run..]);
+        parse(&output[run..], Run::Plain);
     }
 
     /// Follows one byte outside the ground state, or the ESC that leaves it.
     fn step(&mut self, byte: u8) {
+        let executes = matches!(byte, 0x00..=0x17 | 0x19 | 0x1c..=0x1f)
+            && matches!(
+                self.state,
+                State::Escape
+                    | State::EscapeIntermediate
+                    | State::CsiEntry
+                    | State::CsiParam
+                    | State::CsiIntermediate
+                    | State::CsiIgnore
+            );
+        if executes {
+            // The parser does a control in the middle of an escape or a CSI
+            // sequence.
+            self.printed = false;
+        }
         let (next, effect) = transition(self.state, byte);
         if next == State::Ground {
             // The sequence ended, or a control cancelled it.
@@ -357,7 +398,7 @@ mod tests {
         let mut sequence = Sequence::new();
         let mut parsed = Vec::new();
         for chunk in chunks {
-            sequence.feed(chunk, |bytes| parsed.extend_from_slice(bytes));
+            sequence.feed(chunk, |bytes, _| parsed.extend_from_slice(bytes));
         }
         (parsed, sequence.part().to_vec())
     }
@@ -421,7 +462,7 @@ mod tests {
         let printed = |chunks: &[&[u8]]| {
             let mut sequence = Sequence::new();
             for chunk in chunks {
-                sequence.feed(chunk, |_| {});
+                sequence.feed(chunk, |_, _| {});
             }
             sequence.printed()
         };
@@ -435,6 +476,8 @@ mod tests {
         // character.
         assert!(printed(&[b"text\x1b[1"]));
         assert!(printed(&[b"text\x1b"]));
+        assert!(!printed(&[b"text\x1b[\x08"]));
+        assert!(printed(&[b"text\x1b]2;\x08"]));
         assert!(!printed(&[b""]));
         // The start of a character does not count until it is complete.
         assert!(!printed(&[b"\r\xc3"]));
