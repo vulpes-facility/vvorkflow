@@ -21,6 +21,22 @@ const screens = [
   'screens-workbench--new-project-light',
   'screens-workbench--new-project-error',
   'screens-workbench--new-project-error-reflow-320',
+  'screens-markdownpreview--document',
+  'screens-markdownpreview--document-light',
+  'screens-markdownpreview--remote-blocked',
+  'screens-markdownpreview--remote-allowed',
+  'screens-markdownpreview--hostile',
+  'screens-markdownpreview--reflow-320',
+  'screens-markdownpreview--long-lines-320',
+  'screens-markdownpreview--two-previews',
+  'screens-mediaviewer--photo',
+  'screens-mediaviewer--photo-light',
+  'screens-mediaviewer--transparent',
+  'screens-mediaviewer--transparent-light',
+  'screens-mediaviewer--failed',
+  'screens-mediaviewer--video',
+  'screens-mediaviewer--audio',
+  'screens-mediaviewer--reflow-320',
   'foundations-tokens--dark',
   'foundations-tokens--light',
 ]
@@ -34,6 +50,9 @@ const viewports: Record<string, { width: number; height: number }> = {
     width: 320,
     height: 256,
   },
+  'screens-markdownpreview--reflow-320': { width: 320, height: 640 },
+  'screens-markdownpreview--long-lines-320': { width: 320, height: 640 },
+  'screens-mediaviewer--reflow-320': { width: 320, height: 480 },
 }
 
 for (const id of screens) {
@@ -54,6 +73,30 @@ for (const id of screens) {
         .locator('visible=true')
         .first()
         .waitFor()
+    }
+
+    // The viewers show their images and media after they load.
+    if (id.startsWith('screens-markdownpreview--')) {
+      // An image under the fold is lazy and does not load: skip it.
+      await page.waitForFunction(() =>
+        [...document.images].every(
+          (image) =>
+            image.complete ||
+            image.getBoundingClientRect().top > window.innerHeight,
+        ),
+      )
+    }
+    if (id.startsWith('screens-mediaviewer--')) {
+      if (id.endsWith('--failed'))
+        await page.getByRole('button', { name: 'File error' }).waitFor()
+      else
+        await page.waitForFunction(
+          () =>
+            [
+              ...document.querySelectorAll<HTMLMediaElement>('video, audio'),
+            ].every((media) => media.readyState >= 1) &&
+            [...document.images].every((image) => image.complete),
+        )
     }
 
     // The error screens show the message of the engine in its tooltip.
@@ -115,6 +158,7 @@ for (const id of screens) {
         'textarea',
         '[role="tab"]',
         '[role="button"]',
+        '[role="link"]',
         '[data-pointer-target]',
       ].join(', ')
       return [
@@ -125,7 +169,9 @@ for (const id of screens) {
         .filter(
           (element) =>
             element.getClientRects().length > 0 &&
-            !element.matches('.xterm-helper-textarea'),
+            !element.matches('.xterm-helper-textarea') &&
+            // A link in a sentence is exempt (SC 2.5.8, inline).
+            !element.hasAttribute('data-inline-link'),
         )
         .map((element) => {
           const { width, height } = element.getBoundingClientRect()

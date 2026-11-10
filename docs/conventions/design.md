@@ -141,6 +141,50 @@ Known gaps:
   The screen reader mode of xterm.js comes with a setting.
 - Paste with Ctrl+Shift+V relies on the paste of the webview.
 
+## Markdown preview and media viewer
+
+The Markdown preview and the media viewer are components for tabs of the editor area.\
+A later change connects them to the files of the Explorer.\
+They get their data through props, and they make no request to the engine.\
+The only loads that they allow are the URLs that the host gives (`resolveImage` and `src`), and the remote images that the user allowed.
+
+1. The preview uses `react-markdown` with `remark-gfm`: tables, task lists, strikethrough, autolinks, and footnotes.\
+   The preview removes raw HTML (`skipHtml`), and MUST NOT use `rehype-raw`.
+2. A source or a target that has a scheme other than `http`, `https`, and (for a link) `mailto` is blocked, also when the scheme has a tab, capitals, a space, or percent escapes.\
+   A remote image has one canonical URL (`//host` gets `https`), and the preview loads exactly that URL.\
+   A form with two readings, such as `https:name.png` or a URL with a password, is blocked.\
+   A blocked link is plain text, and a blocked image is a placeholder.\
+   `classifyImageSource` and `classifyLinkTarget` decide this, and Vitest and `e2e/markdown-preview.spec.ts` test it.
+3. A remote image makes no request until the user allows it.\
+   Its place is a placeholder of one line with an icon and the host name.\
+   One icon button at the top allows the images of the document, and only when the document has a remote image.
+4. A link never navigates by itself: it calls `onOpenLink`.\
+   It has the role `link` and is in the tab order, but it has no `href`, so the browser has no destination to follow: a click with a modifier key, a middle click, and a drag and drop of the link or of an image cannot navigate or open a window.\
+   The destination is the data `data-href` and the tooltip of the link, and a context menu (right click, Shift+F10, or the Menu key) has "Copy link address".\
+   A decode is only a probe for the scheme and the host checks: the URL that loads keeps its path and its query as the document wrote them.\
+   A footnote link scrolls the preview and moves the focus, and does not change the URL of the window.\
+   Each preview prefixes its footnote ids, so that two previews do not share an id.
+5. A task list shows a shape (a checked or an empty square) and a name, and has no input.
+6. The preview is a focusable scroll region with a readable measure (`--vv-measure`) and selectable text.\
+   A table and a code block scroll inside themselves.
+7. The image viewer fits the view and never enlarges.\
+   Its buttons and the keys `+`, `-`, and `0` zoom, and its pixel size shows as data.\
+   A transparent image sits on a checkerboard of two surface colors (`checkerboard`).
+8. A video and an audio file use the native controls, with no autoplay and `preload="metadata"`.\
+   A tab that is not active pauses, remembers the position, and removes the source (`load()` frees the decoder).\
+   The tab that is active again restores the source and the position, paused.
+9. A file that does not decode shows the `ErrorMark`, not a broken image.\
+   The kind and the source are the identity of the player and of its error state.\
+   When the viewer had the focus, it moves to the error icon.
+10. Only a link in a run of text that has prose has `data-inline-link`, so that the target size check leaves it out (SC 2.5.8, inline).\
+    The text of other links and the space between links is not prose.\
+    A link that stands alone, a row of links, and a linked image have a target of 24 by 24 CSS pixels or more, and a linked image shrinks to the width of the preview.
+
+Known gaps:
+
+- A code block has no syntax highlighting.
+- The WebKit build of Playwright on Linux does not always report VP9 support, so the video tests skip there when `canPlayType` says no.
+
 ## Stories and screens
 
 1. Keep the stories in `apps/desktop/stories/` and their sample data in `apps/desktop/fixtures/`.\
