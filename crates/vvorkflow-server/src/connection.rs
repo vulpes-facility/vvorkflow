@@ -313,6 +313,12 @@ async fn write<S>(
                     Err(_) => continue,
                 },
                 Some(Outgoing::Frame(frame)) => Message::binary(frame),
+                // The client did not take the ends of its sessions: the
+                // engine keeps nothing more for it.
+                Some(Outgoing::Close) => Message::Close(Some(CloseFrame {
+                    code: CloseCode::Again,
+                    reason: "The client did not take the ends of its sessions.".into(),
+                })),
                 None => {
                     tokio::select! {
                         biased;

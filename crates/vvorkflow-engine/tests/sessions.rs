@@ -146,6 +146,7 @@ impl Mirror {
                 self.ended = Some(ended);
             }
             Outgoing::Event(other) => panic!("an event for no session: {other:?}"),
+            Outgoing::Close => panic!("the engine closes the connection"),
         }
     }
 

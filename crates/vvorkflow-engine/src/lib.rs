@@ -21,7 +21,9 @@ use vvorkflow_protocol::{
     ReadStatus, Repository, Request, Response, Welcome, Worktree,
 };
 
-pub use session::{Client, ClientKind, INPUT_QUEUE, MAX_SESSIONS, OUTPUT_QUEUE, Outgoing, Wake};
+pub use session::{
+    Client, ClientKind, ENDED_QUEUE, INPUT_QUEUE, MAX_SESSIONS, OUTPUT_QUEUE, Outgoing, Wake,
+};
 
 /// The environment variable that names the projects root.
 pub const ROOT_VARIABLE: &str = "VVORKFLOW_ROOT";

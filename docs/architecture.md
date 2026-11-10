@@ -274,6 +274,7 @@ Kill (menu) / end of the shell ──► the session ends
    Then the engine removes the session, so that `session.list` does not show it, and `session.attach` answers `notFound`.\
    After that, each attached client gets the event `session.ended` once, with the exit code (a number from 0 to 4,294,967,295, or none) and the signal that ended the shell (a number, or none; always none on Windows), and no frame of that session after it.\
    A screen that a client waits for, and the output that is left, come before that event: the engine keeps the state until the writer made that screen, or until the connection ends.\
+   A client keeps at most 64 ended sessions whose end it did not take yet; at one more, the engine drops all its queues and closes its connection, and the web UI attaches again on a new one.\
    Then the engine closes the pseudo-terminal.
 9. `session.kill` does what the close of a terminal window does: the engine sends SIGHUP to the shell and to the foreground job, and closes the pseudo-terminal when the shell ends.\
    After 3 seconds, it sends SIGKILL to the shell and to the foreground job that still run.\
@@ -453,6 +454,7 @@ A setting changes each one.
 | Session screen | The engine keeps the screen and the scrollback of each session. Its title, and the part of an escape sequence that is not complete, have a limit too. | 5,000 lines; 1,024 bytes; 4 KiB |
 | Screen frame | The engine leaves the oldest lines of the scrollback out of a screen frame that would be larger than the limit. A cell keeps a limited number of bytes of text. | 32 MiB; 32 bytes |
 | Engine output | The engine sends output only for attached sessions. Each client has an output queue for each session, with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | 1 MiB |
+| Ended sessions | A client keeps the ended sessions whose end it did not take yet, with their state, up to a limit. For one more, the engine closes the connection of that client. | 64 sessions |
 | Session input | The input of a session waits in a queue with a limit. The engine refuses a write to a full queue. | 1 MiB |
 | App terminal output | The app core stops to read the connection when the bytes that the terminal of the web UI did not take yet reach the limit. One frame can go above it. | 1 MiB |
 | App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |

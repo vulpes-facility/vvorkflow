@@ -23,6 +23,11 @@ pub const OUTPUT_QUEUE: usize = 1 << 20;
 /// the queue: more than its text.
 const EVENT_SIZE: usize = 128;
 
+/// The ended sessions whose end a client did not take yet, which the engine
+/// keeps for it at most, each with its state. At one more, the engine drops
+/// the queues of the client, and its connection closes.
+pub const ENDED_QUEUE: usize = super::MAX_SESSIONS;
+
 /// The most output bytes in one output frame: the writer joins the queued
 /// output of a session up to this size.
 const FRAME_OUTPUT: usize = 64 * 1024;
@@ -49,6 +54,9 @@ pub enum Outgoing {
     Event(Event),
     /// A binary frame.
     Frame(Vec<u8>),
+    /// The client did not take the ends of [`ENDED_QUEUE`] sessions: the
+    /// engine keeps nothing more for it, and its connection closes.
+    Close,
 }
 
 /// The context of the requests of one connection: its kind, and the queues
@@ -70,6 +78,10 @@ struct Outbox {
     /// The slot that the writer reads first next time, so that each session
     /// gets its turn.
     turn: usize,
+    /// The slots with an end that the client did not take yet.
+    ended: usize,
+    /// The client lost its queues, and its connection closes.
+    lost: bool,
 }
 
 /// The screen of a session that a client waits for. While it is not `None`,
@@ -136,6 +148,9 @@ impl Client {
     pub fn next(&self) -> Option<Outgoing> {
         loop {
             let mut outbox = self.0.outbox();
+            if outbox.lost {
+                return Some(Outgoing::Close);
+            }
             let count = outbox.slots.len();
             let found = (0..count)
                 .map(|offset| (outbox.turn + offset) % count)
@@ -188,6 +203,9 @@ impl Client {
     /// the lock of the session.
     pub(super) fn attach(&self, session: &Arc<Core>) {
         let mut outbox = self.0.outbox();
+        if outbox.lost {
+            return;
+        }
         match outbox
             .slots
             .iter_mut()
@@ -255,6 +273,7 @@ fn take_queued(outbox: &mut MutexGuard<'_, Outbox>, index: usize) -> Outgoing {
         Item::Ended(ended) => {
             outbox.slots.remove(index);
             outbox.turn = 0;
+            outbox.ended -= 1;
             Outgoing::Event(Event::SessionEnded(ended))
         }
     }
@@ -314,14 +333,30 @@ impl Inner {
     }
 
     /// Queues the end of a session, after its output and after the screen
-    /// that the client waits for. The caller holds the lock of the session.
+    /// that the client waits for. A client that did not take the ends of
+    /// [`ENDED_QUEUE`] sessions loses all its queues, so that the engine
+    /// keeps no state of ended sessions for it without a limit. The caller
+    /// holds the lock of the session.
     pub(super) fn ended(&self, session: &Core, ended: SessionEnded) {
         let mut outbox = self.outbox();
         let Some(index) = Self::slot(&mut outbox, session) else {
             return;
         };
-        outbox.slots[index].queue.push_back(Item::Ended(ended));
-        drop(outbox);
+        if outbox.ended >= ENDED_QUEUE {
+            // The caller holds a copy of this session, so the drop of the
+            // slots drops only the states of other ended sessions, which
+            // takes no lock.
+            let slots = std::mem::take(&mut outbox.slots);
+            outbox.lost = true;
+            outbox.ended = 0;
+            outbox.turn = 0;
+            drop(outbox);
+            drop(slots);
+        } else {
+            outbox.ended += 1;
+            outbox.slots[index].queue.push_back(Item::Ended(ended));
+            drop(outbox);
+        }
         (self.wake)();
     }
 }
@@ -413,5 +448,47 @@ mod tests {
             after * EVENT_SIZE <= OUTPUT_QUEUE,
             "{after} events after the screen"
         );
+    }
+
+    /// A client that does not take the ends of its sessions keeps at most
+    /// [`ENDED_QUEUE`] of them; at one more, it keeps no state, and its
+    /// connection closes.
+    #[test]
+    fn a_client_keeps_a_limited_number_of_ended_sessions() {
+        let sessions: Vec<_> = (0..=ENDED_QUEUE)
+            .map(|number| core(&format!("{number:016x}")))
+            .collect();
+        let client = Client::new(ClientKind::Local, Arc::new(|| {}));
+        for session in &sessions {
+            let _state = session.state();
+            client.attach(session);
+        }
+        client.answered();
+        for (number, session) in sessions.iter().enumerate() {
+            let _state = session.state();
+            let ended = SessionEnded {
+                session: session.id.clone(),
+                exit_code: Some(0),
+                signal: None,
+            };
+            client.0.ended(session, ended);
+            let lost = client.0.outbox().lost;
+            assert_eq!(lost, number == ENDED_QUEUE, "after {} ends", number + 1);
+        }
+        assert_eq!(client.next(), Some(Outgoing::Close));
+        assert!(client.0.outbox().slots.is_empty());
+        assert!(
+            sessions
+                .iter()
+                .all(|session| Arc::strong_count(session) == 1),
+            "the client keeps no state"
+        );
+        // The client attaches to nothing more.
+        let late = core("ffffffffffffffff");
+        {
+            let _state = late.state();
+            client.attach(&late);
+        }
+        assert!(client.0.outbox().slots.is_empty());
     }
 }

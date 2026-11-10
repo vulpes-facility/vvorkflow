@@ -24,7 +24,7 @@ use vvorkflow_protocol::{
     EngineError, ErrorCode, MAX_COLUMNS, MAX_ROWS, MIN_COLUMNS, MIN_ROWS, Session, SessionEnded,
 };
 
-pub use client::{Client, ClientKind, OUTPUT_QUEUE, Outgoing, Wake};
+pub use client::{Client, ClientKind, ENDED_QUEUE, OUTPUT_QUEUE, Outgoing, Wake};
 
 use crate::screen::Screen;
 use pty::{Exit, Foreground, Process, Reader, Writer};
