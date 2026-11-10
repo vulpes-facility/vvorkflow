@@ -18,6 +18,7 @@ import {
   Prec,
   RangeSetBuilder,
   type Extension,
+  type StateEffect,
 } from '@codemirror/state'
 import {
   Decoration,
@@ -34,7 +35,13 @@ import {
   type ViewUpdate,
 } from '@codemirror/view'
 import type { Platform } from '@/shared/lib'
-import { indentUnitText, tabSize, type Indent } from '../../model/editor-text'
+import {
+  indentUnitText,
+  tabSize,
+  withSeparator,
+  type Indent,
+  type LineSeparator,
+} from '../../model/editor-text'
 import { editorTheme } from './editor-theme'
 import { createSearchPanel } from './search-panel'
 
@@ -44,6 +51,12 @@ export interface Kit {
   indent: Compartment
   access: Compartment
   scheme: Compartment
+  /** The line separator of the state. */
+  separator: Compartment
+  /** The key bindings, which follow the platform of the app. */
+  keys: Compartment
+  /** The search, with its panel. */
+  search: Compartment
 }
 
 /** Makes the compartments of one editor, or of both sides of a diff. */
@@ -53,6 +66,9 @@ export function createKit(): Kit {
     indent: new Compartment(),
     access: new Compartment(),
     scheme: new Compartment(),
+    separator: new Compartment(),
+    keys: new Compartment(),
+    search: new Compartment(),
   }
 }
 
@@ -180,38 +196,36 @@ export function expandUnchanged(view: EditorView): boolean {
   return regions.length > 0
 }
 
+/** What differs between the editors that use the kit. */
+export interface KitOptions {
+  /** The editor is a side of a diff: it has the key that opens the collapsed regions. */
+  diff?: boolean
+  /** The line separator of the text. The default is LF. */
+  separator?: LineSeparator
+}
+
 /**
- * The extensions that both the code editor and the diff editor use.
- * Tab indents; Escape then Tab leaves the editor (WCAG 2.2 SC 2.1.2, built
- * into CodeMirror), and F6 is not bound, so that it reaches the window.
+ * The line separator of the state, and the paste: a pasted text gets the
+ * line breaks of the document, so that a pasted `\n` does not stay inside a
+ * line of a CRLF file, and a pasted `\r` is not a character of an LF file.
  */
-export function editorExtensions(
-  kit: Kit,
+export function separatorExtension(separator: LineSeparator): Extension {
+  return [
+    EditorState.lineSeparator.of(separator),
+    EditorView.clipboardInputFilter.of((text, state) =>
+      withSeparator(text, state.lineBreak as LineSeparator),
+    ),
+  ]
+}
+
+/** The key bindings of the platform of the app: save, and the keymaps of CodeMirror. */
+function keysExtension(
   platform: Platform,
   hooks: EditorHooks,
-  options: { diff?: boolean } = {},
-): Extension[] {
+  options: KitOptions,
+): Extension {
   const save = platform === 'macos' ? 'Meta-s' : 'Ctrl-s'
   return [
-    lineNumbers(),
-    highlightActiveLineGutter(),
-    highlightSpecialChars(),
-    history(),
-    drawSelection(),
-    EditorState.allowMultipleSelections.of(true),
-    indentOnInput(),
-    bracketMatching(),
-    rectangularSelection(),
-    activeLine,
-    search({ top: true, createPanel: createSearchPanel(platform) }),
-    kit.language.of([]),
-    kit.indent.of([]),
-    kit.access.of([]),
-    kit.scheme.of(schemeExtension()),
-    editorTheme,
-    EditorView.updateListener.of((update) => {
-      if (update.docChanged) hooks.changed(update)
-    }),
     Prec.highest(
       keymap.of([
         {
@@ -230,11 +244,68 @@ export function editorExtensions(
           : []),
       ]),
     ),
-    keymap.of([
-      ...platformKeymap(
+    keymap.of(
+      platformKeymap(
         [...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab],
         platform,
       ),
-    ]),
+    ),
+  ]
+}
+
+/**
+ * The effects that make the keys and the search follow the platform of the
+ * app. Dispatch them to each view of the kit when the platform changes: the
+ * content, the selection, and the history stay.
+ */
+export function platformEffects(
+  kit: Kit,
+  platform: Platform,
+  hooks: EditorHooks,
+  options: KitOptions = {},
+): StateEffect<unknown>[] {
+  return [
+    kit.keys.reconfigure(keysExtension(platform, hooks, options)),
+    kit.search.reconfigure(
+      search({ top: true, createPanel: createSearchPanel(platform) }),
+    ),
+  ]
+}
+
+/**
+ * The extensions that both the code editor and the diff editor use.
+ * Tab indents; Escape then Tab leaves the editor (WCAG 2.2 SC 2.1.2, built
+ * into CodeMirror), and F6 is not bound, so that it reaches the window.
+ */
+export function editorExtensions(
+  kit: Kit,
+  platform: Platform,
+  hooks: EditorHooks,
+  options: KitOptions = {},
+): Extension[] {
+  return [
+    lineNumbers(),
+    highlightActiveLineGutter(),
+    highlightSpecialChars(),
+    history(),
+    drawSelection(),
+    EditorState.allowMultipleSelections.of(true),
+    indentOnInput(),
+    bracketMatching(),
+    rectangularSelection(),
+    activeLine,
+    kit.search.of(
+      search({ top: true, createPanel: createSearchPanel(platform) }),
+    ),
+    kit.keys.of(keysExtension(platform, hooks, options)),
+    kit.separator.of(separatorExtension(options.separator ?? '\n')),
+    kit.language.of([]),
+    kit.indent.of([]),
+    kit.access.of([]),
+    kit.scheme.of(schemeExtension()),
+    editorTheme,
+    EditorView.updateListener.of((update) => {
+      if (update.docChanged) hooks.changed(update)
+    }),
   ]
 }

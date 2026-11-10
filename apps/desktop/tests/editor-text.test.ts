@@ -1,38 +1,43 @@
 import { describe, expect, it } from 'vitest'
 import {
-  applyLineEnding,
   changedSpan,
   defaultIndent,
   detectIndent,
-  detectLineEnding,
+  detectLineSeparator,
+  documentForm,
   indentUnitText,
-  normalizeLineEndings,
   tabSize,
+  withSeparator,
 } from '../src/pages/workbench/model/editor-text.ts'
 
-describe('line endings', () => {
-  it('detects CRLF and LF', () => {
-    expect(detectLineEnding('a\r\nb\r\nc')).toBe('\r\n')
-    expect(detectLineEnding('a\nb\nc')).toBe('\n')
+describe('line separator', () => {
+  it('uses CRLF for a text that has only CRLF', () => {
+    expect(detectLineSeparator('a\r\nb\r\nc')).toBe('\r\n')
+    expect(detectLineSeparator('a\r\nb\r\n')).toBe('\r\n')
   })
 
-  it('takes LF for a text with no line break, and for a tie', () => {
-    expect(detectLineEnding('abc')).toBe('\n')
-    expect(detectLineEnding('')).toBe('\n')
-    expect(detectLineEnding('a\r\nb\nc')).toBe('\n')
+  it('uses LF for LF, for no line break, and for an empty text', () => {
+    expect(detectLineSeparator('a\nb\nc')).toBe('\n')
+    expect(detectLineSeparator('abc')).toBe('\n')
+    expect(detectLineSeparator('')).toBe('\n')
   })
 
-  it('takes the most common ending of a mixed text', () => {
-    expect(detectLineEnding('a\r\nb\r\nc\nd')).toBe('\r\n')
+  it('uses LF for any mix, so that no ending changes', () => {
+    expect(detectLineSeparator('a\r\nb\nc')).toBe('\n')
+    expect(detectLineSeparator('a\r\nb\r\nc\nd')).toBe('\n')
+    expect(detectLineSeparator('a\rb')).toBe('\n')
+    expect(detectLineSeparator('a\r\nb\rc')).toBe('\n')
   })
 
-  it('round-trips a CRLF text', () => {
-    const text = 'a\r\n\r\nb\r\n'
-    expect(applyLineEnding(normalizeLineEndings(text), '\r\n')).toBe(text)
+  it('gives the form of the document: a CRLF break is one break', () => {
+    expect(documentForm('a\r\nb\r\n', '\r\n')).toBe('a\nb\n')
+    expect(documentForm('a\r\nb\nc', '\n')).toBe('a\r\nb\nc')
+    expect(documentForm('a\r\nb', '\r\n').split('\n')).toEqual(['a', 'b'])
   })
 
-  it('normalizes a lone CR', () => {
-    expect(normalizeLineEndings('a\rb\r\nc\nd')).toBe('a\nb\nc\nd')
+  it('gives each line ending of an outside text the separator', () => {
+    expect(withSeparator('a\r\nb\nc\rd', '\r\n')).toBe('a\r\nb\r\nc\r\nd')
+    expect(withSeparator('a\r\nb\nc\rd', '\n')).toBe('a\nb\nc\nd')
   })
 })
 

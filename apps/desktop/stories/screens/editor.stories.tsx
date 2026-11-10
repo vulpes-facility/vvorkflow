@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { StrictMode } from 'react'
 import { fn } from 'storybook/test'
 import { EditorHarness } from '../../fixtures/editor-harness'
 import { CodeEditor, DiffEditor } from '../../src/pages/workbench'
@@ -110,5 +111,17 @@ export const DiffHarness: Story = {
       platform={args.platform}
       original={typeScriptOriginal}
     />
+  ),
+}
+
+/** The harness in React's strict mode, which mounts, unmounts, and mounts again in development. */
+export const StrictHarness: Story = {
+  render: (args) => (
+    <StrictMode>
+      <EditorHarness
+        file={{ path: args.path, text: args.text }}
+        platform={args.platform}
+      />
+    </StrictMode>
   ),
 }

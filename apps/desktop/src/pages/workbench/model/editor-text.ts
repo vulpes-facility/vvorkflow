@@ -1,30 +1,43 @@
-/** A line ending of a text file. */
-export type LineEnding = '\n' | '\r\n'
+/** The separator of the lines of a text file: LF or CRLF. */
+export type LineSeparator = '\n' | '\r\n'
 
 /**
- * Finds the line ending of a text.
+ * Finds the line separator for a text. The editor splits a text into lines
+ * with this separator, and gives the text back with it, so that a save is
+ * byte for byte the same as the text.
  *
- * @returns `\r\n` when CRLF is the most common ending, and `\n` in all other cases, also for a text with no line break.
+ * - A text that has only CRLF line endings uses `\r\n`.
+ * - A text that has only LF line endings, no line ending, or a mix of endings uses `\n`.
+ *   In a mix, each `\r` stays in the document as a character at the end of its line, so that no ending changes.
  */
-export function detectLineEnding(text: string): LineEnding {
+export function detectLineSeparator(text: string): LineSeparator {
   let crlf = 0
   let lf = 0
-  for (let index = text.indexOf('\n'); index !== -1;) {
-    if (text[index - 1] === '\r') crlf++
-    else lf++
-    index = text.indexOf('\n', index + 1)
+  let cr = 0
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index)
+    if (code === 10) lf++
+    else if (code === 13) {
+      if (text.charCodeAt(index + 1) === 10) {
+        crlf++
+        index++
+      } else cr++
+    }
   }
-  return crlf > lf ? '\r\n' : '\n'
+  return crlf > 0 && lf === 0 && cr === 0 ? '\r\n' : '\n'
 }
 
-/** Changes each CRLF and each lone CR of a text to LF, as CodeMirror keeps its lines. */
-export function normalizeLineEndings(text: string): string {
-  return text.replace(/\r\n?/g, '\n')
+/**
+ * Gives the text in the form of the document: one `\n` for each line break.
+ * A CRLF break is two characters in the text and one position in the document.
+ */
+export function documentForm(text: string, separator: LineSeparator): string {
+  return separator === '\r\n' ? text.replaceAll('\r\n', '\n') : text
 }
 
-/** Changes each LF of a text to the line ending. */
-export function applyLineEnding(text: string, ending: LineEnding): string {
-  return ending === '\n' ? text : text.replaceAll('\n', ending)
+/** Changes each line ending of a text, also a lone CR, to the separator. Use it for a text that comes from outside, such as a paste. */
+export function withSeparator(text: string, separator: LineSeparator): string {
+  return text.replace(/\r\n?|\n/g, separator)
 }
 
 /** The indentation of a file: a tab, or a number of spaces. */

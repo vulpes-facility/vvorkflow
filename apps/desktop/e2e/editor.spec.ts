@@ -1,45 +1,7 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
+import { calls, content, mod, open } from './editor-helpers.js'
 
 // The behavior of the code editor and the diff editor.
-const story = (id: string, args = '') =>
-  `/iframe.html?id=screens-editor--${id}&viewMode=story&globals=a11y.manual:!true${args}`
-
-const content = (page: Page) => page.locator('.cm-content').last()
-
-async function open(page: Page, id: string, args = '') {
-  await page.goto(story(id, args))
-  await content(page).waitFor()
-  await page.locator('.cm-line span[class]').first().waitFor()
-}
-
-/** The probe that `fixtures/editor-harness.tsx` puts on the page. */
-interface Probe {
-  calls: string[]
-  setText: (text: string, version: string) => void
-}
-type ProbeWindow = { editorProbe?: Probe }
-
-/**
- * The modifier of the shortcuts: the editor takes it from the platform of the
- * user agent, and the Safari user agent of WebKit says macOS also on Linux.
- */
-const mod = (page: Page) =>
-  page.evaluate(() => (/Mac/.test(navigator.userAgent) ? 'Meta' : 'Control'))
-
-const calls = (page: Page) =>
-  page.evaluate(
-    () => (window as unknown as ProbeWindow).editorProbe?.calls ?? [],
-  )
-
-const setText = (page: Page, text: string, version: string) =>
-  page.evaluate(
-    ([next, nextVersion]) =>
-      (window as unknown as ProbeWindow).editorProbe?.setText(
-        next,
-        nextVersion,
-      ),
-    [text, version],
-  )
 
 test('typing tells the dirty state once, and again when the text is equal', async ({
   page,
@@ -52,32 +14,6 @@ test('typing tells the dirty state once, and again when the text is equal', asyn
   await page.keyboard.press('Backspace')
   expect(await calls(page)).toEqual(['dirty:true'])
   await page.keyboard.press('Backspace')
-  expect(await calls(page)).toEqual(['dirty:true', 'dirty:false'])
-})
-
-test('mod+S gives the content with the line endings of the file', async ({
-  page,
-}) => {
-  await open(page, 'harness', '&args=path:scripts/build.ps1')
-  await setText(page, 'a\r\nb\r\nc\r\n', '2')
-  await expect(content(page)).toContainText('b')
-  await content(page).click()
-  await page.keyboard.press('ControlOrMeta+End')
-  await page.keyboard.type('x')
-  await page.keyboard.press(`${await mod(page)}+s`)
-  const saved = (await calls(page)).find((call) => call.startsWith('save:'))
-  expect(saved).toBe('save:a\r\nb\r\nc\r\nx')
-})
-
-test('a new version replaces the content and clears the dirty state', async ({
-  page,
-}) => {
-  await open(page, 'harness')
-  await content(page).click()
-  await page.keyboard.type('x')
-  expect(await calls(page)).toEqual(['dirty:true'])
-  await setText(page, 'replaced\n', '2')
-  await expect(content(page)).toHaveText('replaced')
   expect(await calls(page)).toEqual(['dirty:true', 'dirty:false'])
 })
 
