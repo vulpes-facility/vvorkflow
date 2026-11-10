@@ -527,6 +527,10 @@ fn a_project_name_is_one_name_that_each_system_accepts() {
         "app.",
         "nul",
         "COM1.txt",
+        "COM¹",
+        "com².log",
+        "Lpt³",
+        "LPT¹.tar.gz",
         long.as_str(),
     ] {
         let refused = engine
@@ -543,7 +547,15 @@ fn a_project_name_is_one_name_that_each_system_accepts() {
         1
     );
 
-    for name in ["app", "app.feature", "my app", "앱", "console", "a.b.c"] {
+    for name in [
+        "app",
+        "app.feature",
+        "my app",
+        "앱",
+        "console",
+        "a.b.c",
+        "COM⁴",
+    ] {
         engine
             .create_project(CreateProject {
                 name: name.to_owned(),
@@ -555,23 +567,36 @@ fn a_project_name_is_one_name_that_each_system_accepts() {
 
 #[cfg(unix)]
 #[test]
-fn a_new_project_stays_in_the_root_that_the_engine_opened() {
+fn a_root_that_moved_takes_no_new_project() {
     let base = tempfile::tempdir().unwrap();
     let base = base.path().canonicalize().unwrap();
     let root = base.join("root");
     std::fs::create_dir(&root).unwrap();
     let engine = Engine::new(&root).unwrap();
-    // The path of the root leads to another folder now.
+    // The path of the root leads to another folder now, so the path of a
+    // new project would not be the folder that the engine makes.
     std::fs::rename(&root, base.join("moved")).unwrap();
     std::fs::create_dir(&root).unwrap();
 
-    engine
+    let refused = engine
+        .create_project(CreateProject {
+            name: "app".to_owned(),
+        })
+        .unwrap_err();
+    assert_eq!(refused.code, ErrorCode::FailedPrecondition);
+    assert!(!base.join("moved/app").exists());
+    assert!(!root.join("app").exists());
+
+    // The root at its path again takes the project, with its path.
+    std::fs::remove_dir(&root).unwrap();
+    std::fs::rename(base.join("moved"), &root).unwrap();
+    let project = engine
         .create_project(CreateProject {
             name: "app".to_owned(),
         })
         .unwrap();
-    assert!(base.join("moved/app").is_dir());
-    assert!(!root.join("app").exists());
+    assert!(Path::new(&project.path).is_dir());
+    assert_eq!(Path::new(&project.path), root.join("app"));
 }
 
 #[cfg(unix)]

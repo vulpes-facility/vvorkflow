@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 // The New project dialog of the Welcome tab.
 const story = (id: string) =>
@@ -95,4 +95,113 @@ test('a refused name stays in the dialog, with the error as an icon and an alert
   await name.fill('atlas-api-2')
   await expect(dialog.getByRole('alert')).toHaveCount(0)
   await expect(name).not.toHaveAttribute('aria-invalid')
+})
+
+/**
+ * Gives the story an engine that answers only when the test tells it to:
+ * `finish()` makes the project, and `refuse()` refuses the name.
+ */
+async function withSlowEngine(page: Page) {
+  await page.goto(story('macos-dark'))
+  await page.getByRole('button', { name: 'New project…' }).waitFor()
+  await page.evaluate(() => {
+    const state = window as unknown as {
+      requests: {
+        name: string
+        aborted: () => boolean
+        finish: () => void
+        refuse: () => void
+      }[]
+      __STORYBOOK_PREVIEW__: {
+        channel: { emit: (event: string, data: unknown) => void }
+      }
+    }
+    state.requests = []
+    state.__STORYBOOK_PREVIEW__.channel.emit('updateStoryArgs', {
+      storyId: 'screens-workbench--macos-dark',
+      updatedArgs: {
+        onCreateProject: (name: string, signal: AbortSignal) =>
+          new Promise<void>((resolve, reject) => {
+            state.requests.push({
+              name,
+              aborted: () => signal.aborted,
+              finish: resolve,
+              refuse: () =>
+                reject(new Error(`${name} is in the projects root already.`)),
+            })
+          }),
+      },
+    })
+  })
+}
+
+type Requests = {
+  requests: {
+    name: string
+    aborted: () => boolean
+    finish: () => void
+    refuse: () => void
+  }[]
+}
+
+test('an answer that comes after the dialog closed does not close the next dialog', async ({
+  page,
+}) => {
+  await withSlowEngine(page)
+  const action = page.getByRole('button', { name: 'New project…' })
+  const dialog = page.getByRole('dialog', { name: 'New project' })
+  const name = dialog.getByRole('textbox', { name: 'Name' })
+  await action.click()
+  await name.fill('first')
+  await page.keyboard.press('Enter')
+  await expect(dialog.getByRole('button', { name: 'Create' })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+
+  await action.click()
+  await name.fill('second')
+  const first = await page.evaluate(() => {
+    const [request] = (window as unknown as Requests).requests
+    const told = { name: request.name, aborted: request.aborted() }
+    request.finish()
+    return told
+  })
+  // The app knows that the user closed the dialog of the first project.
+  expect(first).toEqual({ name: 'first', aborted: true })
+  await page.waitForTimeout(200)
+  await expect(dialog).toBeVisible()
+  await expect(name).toHaveValue('second')
+  await expect(dialog.getByRole('button', { name: 'Create' })).toBeEnabled()
+})
+
+test('the name cannot change while the engine works, so a refusal is about the name on the screen', async ({
+  page,
+}) => {
+  await withSlowEngine(page)
+  await page.getByRole('button', { name: 'New project…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'New project' })
+  const name = dialog.getByRole('textbox', { name: 'Name' })
+  await name.fill('existing')
+  await page.keyboard.press('Enter')
+
+  // The field keeps the focus, and takes no key.
+  await expect(name).toBeFocused()
+  await expect(name).toHaveAttribute('readonly')
+  await page.keyboard.type('-2')
+  await page.keyboard.press('Enter')
+  await expect(name).toHaveValue('existing')
+  expect(
+    await page.evaluate(() => (window as unknown as Requests).requests.length),
+  ).toBe(1)
+
+  await page.evaluate(() =>
+    (window as unknown as Requests).requests[0].refuse(),
+  )
+  await expect(dialog.getByRole('alert')).toHaveText(
+    'existing is in the projects root already.',
+  )
+  await expect(name).toBeFocused()
+  await expect(name).not.toHaveAttribute('readonly')
+  await page.keyboard.type('-2')
+  await expect(name).toHaveValue('existing-2')
 })

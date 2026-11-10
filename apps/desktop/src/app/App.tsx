@@ -30,7 +30,12 @@ export function App() {
       onOpenProject={(project) => openPath(project.id)}
       onCreateProject={
         createProject &&
-        (async (name) => openPath((await createProject(name)).path))
+        (async (name, signal) => {
+          const project = await createProject(name)
+          // The user closed the dialog before the answer: the project is in
+          // the list, and does not open.
+          if (!signal.aborted) openPath(project.path)
+        })
       }
       repositories={repositories}
       explorer={explorer}

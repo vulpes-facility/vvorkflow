@@ -6,8 +6,9 @@ These rules keep each request of the protocol inside the folders that the user o
 1. A request can reach only a root: a folder that the user opened, or a worktree of its repository.\
    A path in a request is absolute for a root, and relative to the root for a folder in it.\
    A relative path MUST hold plain names only, with no `..`, no `.`, and no root.
-2. The engine also reads the projects root, only to list its projects.\
-   It opens the projects root as a directory handle when it starts.\
+2. The engine also reaches the projects root, only to list its projects and to make a new, empty project folder in it.\
+   It opens the projects root as a directory handle when it starts, and does both through that handle.\
+   The name of a new project is one plain name, so it cannot lead out of the root, and the engine never changes a folder that exists.\
    [`architecture.md`](../architecture.md#projects-root) gives the rules of the projects root.
 3. The engine opens each root as a directory handle (`cap-std`), and reads the folders through it.\
    So a path that turns into a symbolic link later cannot lead a read out of the root.\

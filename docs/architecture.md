@@ -79,6 +79,7 @@ The events come with the terminal sessions (M4).
    A name that starts with `.`, or that is not UTF-8, is not a project.\
    A symbolic link that leads out of the root is not a project, because the engine reads the root through a directory handle.
 4. `project.create` makes a project: a new, empty folder in the root, through the same handle.\
+   The engine refuses it when the path of the root no longer leads to that handle, because the answer gives the path of the project.\
    Its name is one name that Linux, macOS, and Windows accept as a file name, and it does not start with `.`.\
    The engine refuses a name that is in the root already, and does not change that folder.\
    The engine does not run `git init`: the user does that in a terminal.
@@ -181,7 +182,7 @@ A setting changes each one.
 | --- | --- | --- |
 | Access | Remote access is off by default. When it is on, the engine listens only on 127.0.0.1 and requires a token. A remote client comes through an SSH tunnel. | Planned (M6) |
 | Paths | A request can reach only the folders that the user opened, and the worktrees of their repositories. The engine reads the folders through directory handles, and runs git only with the git directory that it found when the folder opened. | Done |
-| Projects root | The engine also lists the [projects root](#projects-root), through a directory handle. A remote client can open only the projects in it. | Done for the root; planned (M6) for remote clients |
+| Projects root | The engine also lists the [projects root](#projects-root) and makes new projects in it, through a directory handle. A remote client can open only the projects in it. | Done for the root; planned (M6) for remote clients |
 | Installs | The app does not run installs for the user. | Done |
 | Commands | The app types a command in the terminal, and the user presses Enter. | Planned (M4) |
 | Previews | The Markdown preview removes HTML and scripts from the document. It blocks remote images by default, and the user can allow them for each document. | Planned (M5) |

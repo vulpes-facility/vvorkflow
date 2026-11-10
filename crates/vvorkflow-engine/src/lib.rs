@@ -212,12 +212,22 @@ impl Engine {
     /// name that is not one plain name, that starts with a dot, or that a
     /// system does not accept as a file name (`invalidArgument`), and a name
     /// that is in the root already (`failedPrecondition`). Fails when the
-    /// engine cannot write in the root (`failedPrecondition`).
+    /// path of the root no longer leads to the folder that the engine opened,
+    /// or when the engine cannot write in the root (`failedPrecondition`).
     pub fn create_project(&self, request: CreateProject) -> Result<Project, EngineError> {
         let name = project_name(&request.name)?;
         let root = &self.projects;
+        // The answer gives the path of the project, which `folder.open`
+        // takes: it is the new folder only while the path of the root leads
+        // to the handle.
+        if !same_folder(&root.dir, &root.path) {
+            return Err(error(
+                ErrorCode::FailedPrecondition,
+                format!("{} is no longer the projects root.", root.path.display()),
+            ));
+        }
         // The handle makes the folder in the root that the engine opened at
-        // start, also when its path leads to another folder now.
+        // start, also when its path changes in this moment.
         match root.dir.create_dir(name) {
             Ok(()) => {}
             Err(made) if made.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -391,7 +401,7 @@ impl Engine {
         };
         // Git takes a path, not the handle: check that the path is still the
         // opened folder just before git runs.
-        if !same_folder(&root) {
+        if !same_folder(&root.dir, &root.path) {
             return Err(error(
                 ErrorCode::PermissionDenied,
                 format!("{} is no longer the open folder.", root.path.display()),
@@ -418,14 +428,14 @@ fn open_dir(path: &Path) -> Result<Dir, EngineError> {
         .map_err(|error| io_error(error, &path.display().to_string()))
 }
 
-/// Whether the path of a root still leads to the folder of its handle.
-fn same_folder(root: &Root) -> bool {
-    let Ok(handle) = root.dir.try_clone() else {
+/// Whether a path still leads to the folder of the handle that it opened.
+fn same_folder(dir: &Dir, path: &Path) -> bool {
+    let Ok(handle) = dir.try_clone() else {
         return false;
     };
     let (Ok(opened), Ok(now)) = (
         same_file::Handle::from_file(handle.into_std_file()),
-        same_file::Handle::from_path(&root.path),
+        same_file::Handle::from_path(path),
     ) else {
         return false;
     };
@@ -460,10 +470,12 @@ fn plain_relative(relative: &str) -> Result<&Path, EngineError> {
     }
 }
 
-/// The names that Windows keeps for devices, with each extension.
-const DEVICE_NAMES: [&str; 22] = [
+/// The names that Windows keeps for devices, with each extension. The digits
+/// of a port are also the superscript digits one to three.
+const DEVICE_NAMES: [&str; 28] = [
     "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
-    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "COM9", "COM¹", "COM²", "COM³", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8",
+    "LPT9", "LPT¹", "LPT²", "LPT³",
 ];
 
 /// The name of a new project: one name that Linux, macOS, and Windows accept

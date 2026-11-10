@@ -70,10 +70,11 @@ interface WorkbenchPageProps {
   onOpenFile?: (id: string) => void
   /**
    * Makes a project with the name that the user gave. When it rejects, the
-   * dialog shows the message of the error. Without it, the window has no New
-   * project action.
+   * dialog shows the message of the error. The signal aborts when the user
+   * closes the dialog before the answer; do not open the project then.
+   * Without this handler, the window has no New project action.
    */
-  onCreateProject?: (name: string) => Promise<void>
+  onCreateProject?: (name: string, signal: AbortSignal) => Promise<void>
   onOpenFolder?: () => void
   onAddWorktree?: () => void
   onOpenProject?: (project: WelcomeProject) => void

@@ -17,10 +17,12 @@ export const projects: WelcomeProject[] = [
 ]
 
 /** Makes each project, as the engine does for a new name. */
-export const createProject = fn(async (_name: string) => {})
+export const createProject = fn(
+  async (_name: string, _signal: AbortSignal) => {},
+)
 
 /** Refuses each project, as the engine does for a name that the root has already. */
-export const refuseProject = fn((name: string) =>
+export const refuseProject = fn((name: string, _signal: AbortSignal) =>
   Promise.reject<void>(new Error(`${name} is in the projects root already.`)),
 )
 

@@ -101,6 +101,8 @@
   /* At this window width and under, the side bar becomes a drawer. */
   --vv-narrow-max-w: 640px;
   --vv-hairline-w: 1px;
+  /* The least space between a dialog and each edge of the window. */
+  --vv-dialog-inset: 16px;
   --vv-radius-none: 0px;
   --vv-space-none: 0px;
   /* The Explorer tree: the inset of the first level, and the step of each level after it. */
