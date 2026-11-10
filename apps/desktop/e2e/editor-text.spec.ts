@@ -489,3 +489,39 @@ test('the history stays when the saved text comes back, and the same text comes 
     .toEqual(['dirty:true', `save:${saved}`, 'dirty:false', 'dirty:true'])
   expect(await save(page)).toBe('a\nb\n')
 })
+
+test('a join of two lines of a CRLF file is undone after the saved text comes twice', async ({
+  page,
+}) => {
+  await open(page, 'harness')
+  await setText(page, 'a\r\nb', '2')
+  await content(page).click()
+  await page.keyboard.press('ControlOrMeta+Home')
+  await page.keyboard.press('End')
+  await page.keyboard.press('Delete')
+  expect(await save(page)).toBe('ab')
+  // The answer of the save, and the same text once more.
+  await setText(page, 'ab', '3')
+  await setText(page, 'ab', '4')
+  await expect.poll(() => calls(page)).toContain('dirty:false')
+  await page.keyboard.press(`${await mod(page)}+z`)
+  expect(await save(page)).toBe('a\r\nb')
+})
+
+test('a clean text with no line break keeps the separator of the document', async ({
+  page,
+}) => {
+  await open(page, 'harness')
+  await setText(page, 'a\r\nb', '2')
+  await expect(content(page)).toHaveText('ab')
+  await setText(page, 'xyz', '3')
+  await expect(content(page)).toHaveText('xyz')
+  await content(page).click()
+  await page.keyboard.press('ControlOrMeta+Home')
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('Enter')
+  // The language can indent the new line, so the line break is what counts.
+  const saved = (await save(page)) ?? ''
+  expect(saved).toMatch(/^x\r\n\s*yz$/)
+  expect(saved).not.toMatch(/(?<!\r)\n/)
+})

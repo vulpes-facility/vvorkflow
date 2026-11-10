@@ -16,10 +16,13 @@ describe('line separator', () => {
     expect(detectLineSeparator('a\r\nb\r\n')).toBe('\r\n')
   })
 
-  it('uses LF for LF, for no line break, and for an empty text', () => {
+  it('uses LF for LF', () => {
     expect(detectLineSeparator('a\nb\nc')).toBe('\n')
-    expect(detectLineSeparator('abc')).toBe('\n')
-    expect(detectLineSeparator('')).toBe('\n')
+  })
+
+  it('shows nothing for a text with no line break', () => {
+    expect(detectLineSeparator('abc')).toBeUndefined()
+    expect(detectLineSeparator('')).toBeUndefined()
   })
 
   it('uses LF for any mix, so that no ending changes', () => {

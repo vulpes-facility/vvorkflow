@@ -397,6 +397,95 @@ describe('the history and a disk text that equals the content', () => {
   })
 })
 
+describe('a disk text that equals the content', () => {
+  it('keeps the CRLF separator and the history when the saved text has no line break', () => {
+    // Join the two lines with Delete, save, process the answer, and send the same text once more.
+    const editor = makeEditor('a\r\nb')
+    editor.view.dispatch({ changes: { from: 1, to: 2 } })
+    expect(editor.saved()).toBe('ab')
+    editor.session.applyDisk(editor.editor, 'ab')
+    editor.session.applyDisk(editor.editor, 'ab')
+    expect(editor.view.state.lineBreak).toBe('\r\n')
+    expect(editor.heard().dirty).toBe('dirty:false')
+    // The undo brings the line break back, with its CRLF.
+    expect(editor.undo()).toBe(true)
+    expect(editor.saved()).toBe('a\r\nb')
+    expect(editor.heard().dirty).toBe('dirty:true')
+    expect(editor.redo()).toBe(true)
+    expect(editor.saved()).toBe('ab')
+    expect(editor.heard().dirty).toBe('dirty:false')
+  })
+
+  it('does not change the document, the separator, or the history for an equal text that shows another separator', () => {
+    // A mixed text, edited into bytes that are a pure CRLF text. The document
+    // has a `\r` at the end of a line, and the LF separator.
+    const editor = makeEditor('a\r\nb\nc')
+    editor.view.dispatch({ changes: { from: 4, to: 6 } })
+    const saved = editor.saved()
+    expect(saved).toBe('a\r\nb')
+    editor.session.applyDisk(editor.editor, saved)
+    editor.session.applyDisk(editor.editor, saved)
+    expect(editor.view.state.lineBreak).toBe('\n')
+    expect(editor.heard().dirty).toBe('dirty:false')
+    expect(editor.undo()).toBe(true)
+    expect(editor.saved()).toBe('a\r\nb\nc')
+    expect(editor.redo()).toBe(true)
+    expect(editor.saved()).toBe('a\r\nb')
+  })
+})
+
+describe('the separator of the document', () => {
+  it('is LF for a new document with no line break, and a typed break is LF', () => {
+    const editor = makeEditor('abc')
+    expect(editor.view.state.lineBreak).toBe('\n')
+    editor.type(1, editor.view.state.lineBreak)
+    expect(editor.saved()).toBe('a\nbc')
+  })
+
+  it('is kept when a clean text with no line break replaces the content', () => {
+    const editor = makeEditor('a\r\nb')
+    editor.session.applyDisk(editor.editor, 'xyz')
+    expect(editor.saved()).toBe('xyz')
+    expect(editor.view.state.lineBreak).toBe('\r\n')
+    editor.type(1, editor.view.state.lineBreak)
+    expect(editor.saved()).toBe('x\r\nyz')
+  })
+
+  it('is set by a clean text that has line breaks', () => {
+    const editor = makeEditor('a\r\nb')
+    editor.session.applyDisk(editor.editor, 'x\ny')
+    expect(editor.view.state.lineBreak).toBe('\n')
+    editor.session.applyDisk(editor.editor, 'x\r\ny')
+    expect(editor.view.state.lineBreak).toBe('\r\n')
+  })
+
+  it('is kept by a revert to a text with no line break, and set by a revert to one with breaks', () => {
+    const editor = makeEditor('a\r\nb')
+    editor.type('end', 'x')
+    editor.session.applyDisk(editor.editor, 'q')
+    editor.session.revert(editor.editor)
+    expect(editor.saved()).toBe('q')
+    expect(editor.view.state.lineBreak).toBe('\r\n')
+
+    editor.type('end', 'z')
+    editor.session.applyDisk(editor.editor, 'p\nr')
+    editor.session.revert(editor.editor)
+    expect(editor.saved()).toBe('p\nr')
+    expect(editor.view.state.lineBreak).toBe('\n')
+    // The undo of the revert brings the old separator back, with the text.
+    editor.undo()
+    expect(editor.saved()).toBe('qz')
+    expect(editor.view.state.lineBreak).toBe('\r\n')
+  })
+
+  it('is not changed by a text that is only compared with the content', () => {
+    const editor = makeEditor('a\r\nb')
+    editor.type('end', '!')
+    editor.session.applyDisk(editor.editor, editor.saved())
+    expect(editor.view.state.lineBreak).toBe('\r\n')
+  })
+})
+
 describe('the commands that move text, in a mixed text', () => {
   /** Puts the cursor at the start of a line of the document (from 1), and runs a command. */
   function run(
@@ -440,8 +529,13 @@ describe('the commands that move text, in a mixed text', () => {
 describe('the invariants against a model, in a long random sequence', () => {
   type Separator = '\n' | '\r\n'
 
-  /** The line separator that an editor must use for a text, as a plain rule. */
-  function separatorOf(text: string): Separator {
+  /**
+   * The line separator that a text shows, as a plain rule: CRLF for a text
+   * with only CRLF, LF for any other text with a line break, and nothing for a
+   * text with no line break, which is no evidence.
+   */
+  function separatorOf(text: string): Separator | undefined {
+    if (!/[\r\n]/.test(text)) return undefined
     const allCrlf = /\r\n/.test(text) && !/(?<!\r)\n|\r(?!\n)/.test(text)
     return allCrlf ? '\r\n' : '\n'
   }
@@ -467,7 +561,7 @@ describe('the invariants against a model, in a long random sequence', () => {
     constructor(text: string) {
       this.content = text
       this.disk = text
-      this.separator = separatorOf(text)
+      this.separator = separatorOf(text) ?? '\n'
     }
 
     get dirty() {
@@ -494,25 +588,27 @@ describe('the invariants against a model, in a long random sequence', () => {
 
     version(text: string, composing: boolean) {
       const hadEdits = this.dirty || composing
+      const equal = text === this.content
       this.disk = text
-      if (!hadEdits) {
-        // The new text replaces the content, and the change is not in the
-        // history. A text that equals the content changes nothing, so the
-        // history stays; otherwise the editor clears it.
-        const separator = separatorOf(text)
-        const same = text === this.content && separator === this.separator
-        this.content = text
-        this.separator = separator
-        if (!same) {
+      // A text that equals the content is only compared: the content, the
+      // separator, and the history stay, whatever separator the text shows.
+      if (!equal) {
+        if (hadEdits) this.conflict = true
+        else {
+          // The text replaces the content, with the separator that it shows, or
+          // the one that the document has when it shows none. The editor then
+          // clears the history, which belongs to the old content.
+          this.content = text
+          this.separator = separatorOf(text) ?? this.separator
           this.undoStack = []
           this.redoStack = []
         }
-      } else if (this.content !== text) this.conflict = true
+      }
       this.settle()
     }
 
     revert() {
-      const separator = separatorOf(this.disk)
+      const separator = separatorOf(this.disk) ?? this.separator
       if (this.content === this.disk && this.separator === separator) return
       this.edit(this.disk, separator)
     }
@@ -577,7 +673,7 @@ describe('the invariants against a model, in a long random sequence', () => {
     ['indent', indentMore],
   ]
 
-  for (let seed = 1; seed <= 60; seed++) {
+  for (let seed = 1; seed <= 150; seed++) {
     it(`holds on sequence ${seed}`, () => {
       const next = random(seed)
       const pick = <T>(list: readonly T[]) =>
@@ -595,6 +691,8 @@ describe('the invariants against a model, in a long random sequence', () => {
         'version',
         'version',
         'save-version',
+        'save-twice',
+        'save-twice',
         'revert',
         'undo',
         'redo',
@@ -627,6 +725,12 @@ describe('the invariants against a model, in a long random sequence', () => {
             userEvent: 'input.type',
           })
           model.edit(content.slice(0, at) + insert + content.slice(at))
+        } else if (operation === 'save-twice') {
+          // The answer of a save, and the same text once more.
+          for (const text of [model.content, model.content]) {
+            editor.session.applyDisk(editor.editor, text)
+            model.version(text, composing)
+          }
         } else if (operation === 'version' || operation === 'save-version') {
           const text = operation === 'version' ? pick(diskTexts) : model.content
           editor.session.applyDisk(editor.editor, text)
@@ -699,8 +803,16 @@ describe('the invariants against a model, in a long random sequence', () => {
             selection: { anchor: editor.view.state.doc.line(index + 1).from },
           })
           command(editor.editor)
-          const content = result.join(model.separator)
-          if (content !== model.content) model.edit(content)
+          // A command that acts is one event of the history, also when its
+          // result has the same bytes, as a move of two equal lines has.
+          const acts =
+            (name === 'move-up' && index > 0) ||
+            (name === 'move-down' && index < lines.length - 1) ||
+            name === 'copy-up' ||
+            name === 'copy-down' ||
+            (name === 'delete' && !(lines.length === 1 && lines[0] === '')) ||
+            name === 'indent'
+          if (acts) model.edit(result.join(model.separator))
         } else {
           composing = !composing
           editor.view.compositionStarted = composing

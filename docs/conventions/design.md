@@ -187,6 +187,12 @@ Both are CodeMirror 6, in `apps/desktop/src/pages/workbench/ui/editor/`.
    - In a document with the `\r\n` separator (a file with only CRLF), a line never holds a `\r` or a `\n`.\
      A guard on each transaction (`separatorGuard`) turns, in the inserted text, each `\r\n` pair, each lone `\n`, and each lone `\r` into one real line break of the document, so that a replacement of the search cannot put a raw `\n` in a line.\
      The text of the disk (`fromDisk`), and an undo or a redo, pass as they are.
+   - The line separator belongs to the document that the user edits.\
+     A text sets it only when it replaces the content: the first text, a clean disk text that differs, and `revert()`.\
+     A text that is only compared with the content, because its bytes equal the content, changes neither the document, nor the separator, nor the undo history, whatever separator it shows.
+   - A text with no line break shows no separator, because it is no evidence.\
+     A new document from such a text is an LF document, so a break that the user types gives `\n`.\
+     A document that has a separator keeps it when such a text replaces its content, so a break that the user types still gives the separator of the document.
    - A text with no final line break keeps none.\
      The editor detects tabs or spaces and the width from the text, and uses 2 spaces when the text shows none.
 8. A new `version` never discards unsaved edits.

@@ -2,15 +2,18 @@
 export type LineSeparator = '\n' | '\r\n'
 
 /**
- * Finds the line separator for a text. The editor splits a text into lines
- * with this separator, and gives the text back with it, so that a save is
- * byte for byte the same as the text.
+ * Finds the line separator that a text shows. The editor splits a text into
+ * lines with this separator, and gives the text back with it, so that a save
+ * is byte for byte the same as the text.
  *
- * - A text that has only CRLF line endings uses `\r\n`.
- * - A text that has only LF line endings, no line ending, or a mix of endings uses `\n`.
+ * - A text that has only CRLF line endings shows `\r\n`.
+ * - A text that has only LF line endings, or a mix of endings, shows `\n`.
  *   In a mix, each `\r` stays in the document as a character at the end of its line, so that no ending changes.
+ * - A text with no line break at all shows nothing: it is no evidence for a separator.
+ *
+ * @returns The separator, or undefined when the text has no line break.
  */
-export function detectLineSeparator(text: string): LineSeparator {
+export function detectLineSeparator(text: string): LineSeparator | undefined {
   let crlf = 0
   let lf = 0
   let cr = 0
@@ -24,6 +27,7 @@ export function detectLineSeparator(text: string): LineSeparator {
       } else cr++
     }
   }
+  if (crlf + lf + cr === 0) return undefined
   return crlf > 0 && lf === 0 && cr === 0 ? '\r\n' : '\n'
 }
 

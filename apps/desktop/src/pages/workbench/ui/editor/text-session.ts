@@ -22,7 +22,8 @@ const external = Transaction.addToHistory.of(false)
 /**
  * The text that an editor was given, and how the content differs from it.
  *
- * - The document keeps the line breaks of the text: `separator` is the line separator of the state, and a lone `\r` of a mixed text is a character of its line. So `state.sliceDoc()` is the text, byte for byte.
+ * - The document keeps the line breaks of the text, and a lone `\r` of a mixed text is a character of its line. So `state.sliceDoc()` is the text, byte for byte.
+ * - The line separator of the state belongs to the document that the user edits. A text sets it only when it replaces the content: the first text (LF when the text has no line break), a clean text that differs, and a revert. A text that has no line break shows no separator, and the state keeps its own. A text that is only compared with the content, because it is equal to it, changes neither the document, nor the separator, nor the history.
  * - The content is dirty when it differs from the text.
  * - A new text from the disk replaces the content only while the content has no unsaved edits and no open composition. Otherwise the editor keeps the edits, takes the new text as the text of the disk, and tells the owner about the conflict until the content is equal to the text again, or the owner reverts.
  */
@@ -31,9 +32,7 @@ export class TextSession {
   callbacks: TextCallbacks = {}
   /** The last text of the disk, as the owner gave it. */
   disk = ''
-  /** The last text of the disk, in the form of the document. */
-  baseline = ''
-  /** The line separator of the last text of the disk. */
+  /** The line separator for the first document: the one that the first text shows, or LF. */
   separator: LineSeparator = '\n'
   /**
    * Clears the undo history of the view. The owner of the session sets it,
@@ -47,21 +46,16 @@ export class TextSession {
 
   /** Takes the first text. It tells the owner nothing. */
   init(text: string) {
-    this.take(text)
+    this.disk = text
+    this.separator = detectLineSeparator(text) ?? '\n'
     this.dirty = false
     this.conflict = false
     this.told = false
   }
 
-  private take(text: string) {
-    this.disk = text
-    this.separator = detectLineSeparator(text)
-    this.baseline = documentForm(text, this.separator)
-  }
-
-  /** The document of the text, for a new state. */
+  /** The document of the first text, for a new state. */
   document(): Text {
-    return Text.of(this.baseline.split('\n'))
+    return Text.of(documentForm(this.disk, this.separator).split('\n'))
   }
 
   /**
@@ -118,11 +112,16 @@ export class TextSession {
   applyDisk(view: EditorView, text: string) {
     const hadEdits =
       view.state.sliceDoc() !== this.disk || view.compositionStarted
-    this.take(text)
-    // A text that replaced the content has no use for the history of the old one.
-    if (!hadEdits) {
-      if (this.replaceContent(view, false)) this.resetHistory(view)
-    } else if (view.state.sliceDoc() !== text) this.conflict = true
+    const equal = view.state.sliceDoc() === text
+    this.disk = text
+    // A text that equals the content is only compared: the document, its
+    // separator, and the history stay, whatever separator the text shows.
+    // A conflict, if there is one, ends in `check`.
+    if (!equal) {
+      if (hadEdits) this.conflict = true
+      // A text that replaced the content has no use for the history of the old one.
+      else if (this.replaceContent(view, false)) this.resetHistory(view)
+    }
     this.check(view)
   }
 
@@ -136,13 +135,21 @@ export class TextSession {
     this.check(view)
   }
 
-  /** @returns Whether the content or its separator changed. */
+  /**
+   * Puts the text of the disk in the document, with the separator that the
+   * text shows, or the one of the state when the text shows none.
+   *
+   * @returns Whether the content or its separator changed.
+   */
   private replaceContent(view: EditorView, history: boolean): boolean {
+    const separator: LineSeparator =
+      detectLineSeparator(this.disk) ?? (view.state.lineBreak as LineSeparator)
     const effects =
-      view.state.lineBreak === this.separator
-        ? []
-        : [changeSeparator.of(this.separator)]
-    const span = changedSpan(view.state.doc.toString(), this.baseline)
+      view.state.lineBreak === separator ? [] : [changeSeparator.of(separator)]
+    const span = changedSpan(
+      view.state.doc.toString(),
+      documentForm(this.disk, separator),
+    )
     // The separator of the old state would split a string, so give a Text.
     const changes = span && {
       from: span.from,
