@@ -2,8 +2,9 @@
 //! frames that the client of the app core gives to its owner, the limit of
 //! the frames that the owner did not take, the stop of an engine with
 //! sessions, the replacement of an engine of another version that has
-//! sessions, the idle time while a session runs, a frame of the largest
-//! size, and the events that the owner keeps.
+//! sessions, the check for an engine of another version, the idle time
+//! while a session runs, a frame of the largest size, and the events that
+//! the owner keeps.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -426,6 +427,33 @@ async fn an_engine_of_another_version_with_sessions_is_not_replaced() {
     older.await.unwrap();
     let welcome = client.request(hello()).await.unwrap();
     assert_eq!(welcome["protocol"], PROTOCOL_VERSION);
+    client
+        .request(Request::Shutdown(Shutdown { force: false }))
+        .await
+        .unwrap();
+}
+
+/// The app shows the action that stops the engine only for an engine of
+/// another version: the client tells it apart from no engine and from an
+/// engine of this version, and changes none of them.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_tells_when_an_engine_of_another_version_listens() {
+    let place = place();
+    let (client, _deliveries) = client(&place);
+    assert!(!client.other_version_listens().await);
+    // It started no engine.
+    assert!(endpoint(&place).connect().await.is_err());
+
+    let older = older_engine_with_sessions(&place);
+    assert!(client.other_version_listens().await);
+    assert!(!older.is_finished());
+    force_stop(&client).await;
+    older.await.unwrap();
+
+    client.request(hello()).await.unwrap();
+    assert!(!client.other_version_listens().await);
+    // The engine of this version still serves the requests of the client.
+    client.request(hello()).await.unwrap();
     client
         .request(Request::Shutdown(Shutdown { force: false }))
         .await

@@ -456,6 +456,35 @@ impl EngineClient {
         Ok(())
     }
 
+    /// Whether an engine of another protocol version listens: an engine
+    /// answers on the endpoint, and its `hello` refuses the version of this
+    /// client. Such an engine refuses `shutdown` without `force` while it has
+    /// sessions, so the app then offers [`EngineClient::force_stop`].
+    ///
+    /// False when no engine listens, when the engine speaks this version,
+    /// and on each error, also when the engine does not answer in
+    /// [`ANSWER`]. The client says `hello` on a connection of its own, and
+    /// does not take the turn, start an engine, or stop one.
+    pub async fn other_version_listens(&self) -> bool {
+        let answer = tokio::time::timeout(ANSWER, async {
+            let mut socket = self.handshake().await.ok()?;
+            let hello = ClientMessage {
+                id: 0,
+                request: Request::Hello(Hello {
+                    protocol: PROTOCOL_VERSION,
+                }),
+            };
+            send(&mut socket, &hello).await.ok()?;
+            receive(&mut socket).await
+        })
+        .await;
+        matches!(
+            answer,
+            Ok(Some(ServerMessage::Error { error, .. }))
+                if error.code == ErrorCode::FailedPrecondition
+        )
+    }
+
     /// Stops the engine that listens, also when it has sessions: they end,
     /// as `session.kill` ends them. The client sends `shutdown` with
     /// `force` on a connection of its own, before `hello`, and waits until
