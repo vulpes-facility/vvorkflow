@@ -118,10 +118,16 @@ export function DiffEditor({
     const parts = kit.current
     const current = session.current
     const first = latest.current
+    // The text that the owner edits is the main view. Save from either side
+    // saves it, and a change of the original side is not an edit.
     const hooks = {
-      save: (target: EditorView) =>
-        !latest.current.readOnly && current.save(target),
-      changed: (update: { view: EditorView }) => current.check(update.view),
+      save: () =>
+        !latest.current.readOnly &&
+        handle.current !== null &&
+        current.save(handle.current.main),
+      changed: (update: { view: EditorView }) => {
+        if (update.view === handle.current?.main) current.check(update.view)
+      },
     }
     applied.current = first.version
     const kept = carry.current?.path === first.path ? carry.current : null
@@ -139,15 +145,7 @@ export function DiffEditor({
         parent: element,
         a: {
           doc: originalDoc,
-          extensions: [
-            sideExtensions(true),
-            EditorState.readOnly.of(true),
-            EditorView.contentAttributes.of({
-              'aria-label': `${first.path} (original, read-only)`,
-              'aria-describedby': hint,
-              tabindex: '0',
-            }),
-          ],
+          extensions: sideExtensions(true),
         },
         b: {
           doc,
@@ -232,6 +230,16 @@ export function DiffEditor({
     made.main.dispatch({
       effects: kit.current.access.reconfigure(
         accessExtension({ readOnly, label: path, describedBy: hint }),
+      ),
+    })
+    // The original side is always read-only, and its name follows the path.
+    made.original?.dispatch({
+      effects: kit.current.access.reconfigure(
+        accessExtension({
+          readOnly: true,
+          label: `${path} (original, read-only)`,
+          describedBy: hint,
+        }),
       ),
     })
   }, [path, readOnly, hint, layout, platform])

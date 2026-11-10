@@ -207,3 +207,54 @@ test('an editor that was detached and attached again keeps its scroll position',
   await page.keyboard.type('x')
   expect(await calls(page)).toEqual(['dirty:true'])
 })
+
+test('mod+S in the original side saves the editable text, and a new original is not an edit', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 700 })
+  await open(page, 'diff-harness')
+  await page.evaluate(() =>
+    (
+      window as unknown as { editorProbe: { setOriginal: (t: string) => void } }
+    ).editorProbe.setOriginal('only the original\n'),
+  )
+  await expect(page.locator('.cm-content').first()).toContainText(
+    'only the original',
+  )
+  expect(await calls(page)).toEqual([])
+
+  await page.locator('.cm-content').first().click()
+  await page.keyboard.press(`${await mod(page)}+s`)
+  const saved = (await calls(page)).find((call) => call.startsWith('save:'))
+  expect(saved).toContain('export class JobQueue')
+  expect(saved).not.toContain('only the original')
+})
+
+test('mod+Alt+U opens the collapsed regions of a diff', async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 700 })
+  await open(page, 'diff-harness')
+  const regions = page.locator('.cm-collapsedLines')
+  await expect(regions.first()).toBeVisible()
+  await content(page).focus()
+  await page.keyboard.press(`${await mod(page)}+Alt+u`)
+  await expect(regions).toHaveCount(0)
+})
+
+for (const width of [1200, 500]) {
+  test(`a selection shows over a changed line (${width} px)`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await open(page, 'diff-harness')
+    const line = page.locator('.cm-merge-b .cm-changedLine').first()
+    await line.click()
+    await page.keyboard.press('Home')
+    await page.keyboard.press('Shift+End')
+    const selection = await line.evaluate((element) => {
+      const color = (value: string) => value
+      return color(getComputedStyle(element, '::selection').backgroundColor)
+    })
+    // The selection is the opaque color of the token: not transparent.
+    expect(selection).toBe('oklch(0.31 0.011 265)')
+  })
+}

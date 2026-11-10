@@ -9,6 +9,8 @@ export interface EditorProbe {
   calls: string[]
   /** Gives the editor a new text and a new version, as a read from the disk does. */
   setText: (text: string, version: string) => void
+  /** Gives the diff editor a new original text. */
+  setOriginal: (text: string) => void
 }
 
 declare global {
@@ -37,6 +39,7 @@ export function EditorHarness({
 }: EditorHarnessProps) {
   const [text, setText] = useState(file.text)
   const [version, setVersion] = useState('1')
+  const [compared, setCompared] = useState(original)
   const [calls] = useState<string[]>([])
 
   useEffect(() => {
@@ -46,6 +49,7 @@ export function EditorHarness({
         setText(next)
         setVersion(nextVersion)
       },
+      setOriginal: setCompared,
     }
     return () => {
       delete window.editorProbe
@@ -72,10 +76,10 @@ export function EditorHarness({
       }}
     >
       <div style={{ flex: 1, minHeight: 0 }}>
-        {original === undefined ? (
+        {compared === undefined ? (
           <CodeEditor {...shared} />
         ) : (
-          <DiffEditor {...shared} original={original} />
+          <DiffEditor {...shared} original={compared} />
         )}
       </div>
       <button type="button" style={{ height: 24, color: 'var(--foreground)' }}>

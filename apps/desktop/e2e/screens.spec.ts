@@ -31,6 +31,8 @@ const screens = [
   'screens-editor--diff-wide-dark',
   'screens-editor--diff-wide-light',
   'screens-editor--diff-narrow',
+  'screens-editor--harness',
+  'screens-editor--diff-harness',
   'foundations-tokens--dark',
   'foundations-tokens--light',
 ]

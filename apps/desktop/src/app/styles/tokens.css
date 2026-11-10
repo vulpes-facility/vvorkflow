@@ -83,6 +83,14 @@
   --vv-terminal-line-height: 1.2;
   --vv-editor-font-size: 13px;
   --vv-editor-line-height: 20px;
+  /* The spacing of the editor, and the width of its search field and of a focus ring. */
+  --vv-space-1: 4px;
+  --vv-space-1h: 6px;
+  --vv-space-2: 8px;
+  --vv-space-3: 12px;
+  --vv-space-9: 36px;
+  --vv-focus-w: 2px;
+  --vv-editor-search-field-w: 192px;
   --vv-text-2xs: 11px;
   --vv-text-xs: 12px;
   --vv-text-ui: 13px;

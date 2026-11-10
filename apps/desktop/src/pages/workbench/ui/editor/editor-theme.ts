@@ -18,8 +18,8 @@ const base = EditorView.theme({
   },
   // The keyboard focus: an inset ring of the opaque ring color.
   '&.cm-focused': {
-    outline: '2px solid var(--ring)',
-    outlineOffset: '-2px',
+    outline: 'var(--vv-focus-w) solid var(--ring)',
+    outlineOffset: 'calc(var(--vv-focus-w) * -1)',
   },
   '.cm-scroller': {
     fontFamily: 'var(--vv-font-mono)',
@@ -27,12 +27,12 @@ const base = EditorView.theme({
   },
   '.cm-content': {
     caretColor: 'var(--foreground)',
-    padding: '4px 0',
+    padding: 'var(--vv-space-1) 0',
   },
-  '.cm-line': { padding: '0 12px 0 8px' },
+  '.cm-line': { padding: '0 var(--vv-space-3) 0 var(--vv-space-2)' },
   '.cm-cursor, .cm-dropCursor': {
     borderLeftColor: 'var(--foreground)',
-    borderLeftWidth: '2px',
+    borderLeftWidth: 'var(--vv-focus-w)',
   },
   '.cm-gutters': {
     backgroundColor: 'var(--editor)',
@@ -41,7 +41,7 @@ const base = EditorView.theme({
   },
   '.cm-lineNumbers .cm-gutterElement': {
     minWidth: '3ch',
-    padding: '0 8px 0 12px',
+    padding: '0 var(--vv-space-2) 0 var(--vv-space-3)',
   },
   '.cm-activeLineGutter': {
     backgroundColor: 'transparent',
@@ -58,8 +58,8 @@ const base = EditorView.theme({
   },
   '.cm-matchingBracket, .cm-nonmatchingBracket': {
     backgroundColor: 'transparent',
-    outline: '1px solid var(--subtle-foreground)',
-    outlineOffset: '-1px',
+    outline: 'var(--vv-hairline-w) solid var(--subtle-foreground)',
+    outlineOffset: 'calc(var(--vv-hairline-w) * -1)',
     fontWeight: '700',
   },
   '.cm-nonmatchingBracket': {
@@ -72,26 +72,29 @@ const base = EditorView.theme({
   // heavier outline, so that color is not the only sign.
   '.cm-searchMatch': {
     backgroundColor: 'var(--editor-match)',
-    outline: '1px solid var(--subtle-foreground)',
-    outlineOffset: '-1px',
+    outline: 'var(--vv-hairline-w) solid var(--subtle-foreground)',
+    outlineOffset: 'calc(var(--vv-hairline-w) * -1)',
   },
   '.cm-searchMatch.cm-searchMatch-selected': {
     backgroundColor: 'var(--editor-match-current)',
-    outline: '2px solid var(--ring)',
-    outlineOffset: '-1px',
+    outline: 'var(--vv-focus-w) solid var(--ring)',
+    outlineOffset: 'calc(var(--vv-hairline-w) * -1)',
     fontWeight: '700',
   },
   '.cm-panels': {
     backgroundColor: 'var(--chrome)',
     color: 'var(--chrome-foreground)',
   },
-  '.cm-panels-top': { borderBottom: '1px solid var(--hairline)' },
+  '.cm-panels-top': {
+    borderBottom: 'var(--vv-hairline-w) solid var(--hairline)',
+  },
   '.cm-panel.cm-search': {
     display: 'flex',
     flexWrap: 'wrap',
     alignItems: 'center',
-    gap: '4px',
-    padding: '4px 36px 4px 8px',
+    gap: 'var(--vv-space-1)',
+    padding:
+      'var(--vv-space-1) var(--vv-space-9) var(--vv-space-1) var(--vv-space-2)',
     fontFamily: 'var(--vv-font-sans)',
     fontSize: 'var(--vv-text-ui)',
     '& br': { display: 'none' },
@@ -99,7 +102,7 @@ const base = EditorView.theme({
     '& label': {
       display: 'inline-flex',
       alignItems: 'center',
-      gap: '4px',
+      gap: 'var(--vv-space-1)',
       minHeight: hitArea,
       fontSize: 'var(--vv-text-ui)',
       whiteSpace: 'nowrap',
@@ -108,13 +111,13 @@ const base = EditorView.theme({
   '.cm-panel.cm-search .cm-textfield': {
     boxSizing: 'border-box',
     minWidth: '0',
-    width: '12rem',
+    width: 'var(--vv-editor-search-field-w)',
     maxWidth: '100%',
     height: hitArea,
-    padding: '0 6px',
+    padding: '0 var(--vv-space-1h)',
     color: 'var(--foreground)',
     backgroundColor: 'var(--editor)',
-    border: '1px solid var(--input)',
+    border: 'var(--vv-hairline-w) solid var(--input)',
     borderRadius: 'var(--radius-md)',
     font: 'inherit',
   },
@@ -122,11 +125,11 @@ const base = EditorView.theme({
     boxSizing: 'border-box',
     minWidth: hitArea,
     height: hitArea,
-    padding: '0 8px',
+    padding: '0 var(--vv-space-2)',
     color: 'var(--secondary-foreground)',
     backgroundColor: 'var(--secondary)',
     backgroundImage: 'none',
-    border: '1px solid var(--input)',
+    border: 'var(--vv-hairline-w) solid var(--input)',
     borderRadius: 'var(--radius-md)',
     font: 'inherit',
     cursor: 'pointer',
@@ -137,8 +140,8 @@ const base = EditorView.theme({
   },
   '.cm-panel.cm-search [name=close]': {
     position: 'absolute',
-    top: '4px',
-    right: '6px',
+    top: 'var(--vv-space-1)',
+    right: 'var(--vv-space-1h)',
     width: hitArea,
     minWidth: hitArea,
     height: hitArea,
@@ -159,7 +162,7 @@ const base = EditorView.theme({
     placeContent: 'center',
     width: hitArea,
     height: hitArea,
-    border: '1px solid var(--input)',
+    border: 'var(--vv-hairline-w) solid var(--input)',
     borderRadius: 'var(--radius-md)',
     backgroundColor: 'var(--editor)',
     color: 'var(--foreground)',
@@ -174,8 +177,8 @@ const base = EditorView.theme({
     backgroundColor: 'var(--selection)',
   },
   '.cm-panel.cm-search :focus-visible': {
-    outline: '2px solid var(--ring)',
-    outlineOffset: '1px',
+    outline: 'var(--vv-focus-w) solid var(--ring)',
+    outlineOffset: 'var(--vv-hairline-w)',
   },
 
   // The diff: tinted lines with a mark in the gutter, and the text that changed.
@@ -193,8 +196,14 @@ const base = EditorView.theme({
       background: 'var(--editor-deleted-text)',
       textDecoration: 'line-through',
     },
-  '.cm-deletedChunk': { paddingLeft: '8px' },
-  '.cm-changeGutter': { width: '1.5ch', padding: '0 4px 0 8px' },
+  // A removed line has a strike, so that the lines of a removed block, which share one mark, are not told by color alone.
+  '.cm-deletedChunk .cm-deletedLine': { textDecoration: 'line-through' },
+  '.cm-deletedChunk': { paddingLeft: 'var(--vv-space-2)' },
+  '.cm-changeGutter': {
+    width: 'auto',
+    minWidth: '2ch',
+    padding: '0 var(--vv-space-1) 0 var(--vv-space-2)',
+  },
   '.cm-changeGutter .cm-gutterElement': {
     textAlign: 'center',
     fontWeight: '700',
@@ -215,7 +224,7 @@ const base = EditorView.theme({
   '.cm-collapsedLines': {
     background: 'var(--hover)',
     color: 'var(--muted-foreground)',
-    padding: '2px 12px',
+    padding: 'var(--vv-focus-w) var(--vv-space-3)',
     fontFamily: 'var(--vv-font-sans)',
     fontSize: 'var(--vv-text-ui)',
     lineHeight: 'var(--vv-leading-ui)',
@@ -224,7 +233,7 @@ const base = EditorView.theme({
   '.cm-mergeView': { height: '100%' },
   '.cm-mergeViewEditors': { minHeight: '100%' },
   '.cm-mergeViewEditor + .cm-mergeViewEditor': {
-    borderLeft: '1px solid var(--hairline)',
+    borderLeft: 'var(--vv-hairline-w) solid var(--hairline)',
   },
 })
 
@@ -235,7 +244,8 @@ const base = EditorView.theme({
  */
 const nativeSelection = Prec.highest(
   EditorView.theme({
-    '.cm-line': {
+    // More specific than the rule of CodeMirror that hides the native selection.
+    '&.cm-editor .cm-line': {
       '& ::selection, &::selection': {
         backgroundColor: 'var(--editor-selection) !important',
       },
@@ -289,7 +299,7 @@ const highlightStyle = HighlightStyle.define([
   { tag: tags.strikethrough, textDecoration: 'line-through' },
   {
     tag: [tags.link, tags.url],
-    color: 'var(--link)',
+    color: 'var(--syntax-keyword)',
     textDecoration: 'underline',
   },
   {
