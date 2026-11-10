@@ -155,7 +155,7 @@ A setting changes each one.
 | Part | Rule | Default |
 | --- | --- | --- |
 | Engine process | The engine process stops when no client is connected for a time. From M4, it also waits for the end of each session. | 5 minutes |
-| Requests | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message has at most 1 MiB. | - |
+| Requests | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message to the engine has at most 1 MiB. | - |
 | Session screen | The engine keeps the screen and the scrollback of each session. | 5,000 lines |
 | Engine output | The engine sends output only for attached sessions. Each client has an output queue with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | Proposal in M4 |
 | App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |

@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
 use vvorkflow_engine::Engine;
 use vvorkflow_protocol::{MAX_OPEN_REQUESTS, PROTOCOL_VERSION};
 use vvorkflow_server::{ClientStream, Endpoint, Limits, serve};
@@ -559,6 +560,10 @@ async fn a_client_with_too_many_open_requests_is_closed() {
             break;
         }
     }
-    let closed = tokio::time::timeout(Duration::from_secs(5), receive(&mut socket)).await;
-    assert_eq!(closed, Ok(None));
+    // No worker is free, so the first frame from the engine is the close.
+    let closed = tokio::time::timeout(Duration::from_secs(5), socket.next()).await;
+    let Ok(Some(Ok(Message::Close(Some(frame))))) = closed else {
+        panic!("The engine did not close the connection: {closed:?}");
+    };
+    assert_eq!(frame.code, CloseCode::Policy);
 }
