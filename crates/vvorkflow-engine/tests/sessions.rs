@@ -13,10 +13,10 @@ use std::time::{Duration, Instant};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use vvorkflow_engine::screen::Screen;
-use vvorkflow_engine::{Client, ClientKind, Engine, OUTPUT_QUEUE, Outgoing};
+use vvorkflow_engine::{Client, ClientKind, Engine, Outgoing};
 use vvorkflow_protocol::{
-    AttachSession, CreateSession, ErrorCode, Event, Frame, KillSession, ListSessions, Request,
-    ResizeSession, Response, Session, SessionEnded, WriteSession,
+    AttachSession, CreateSession, ErrorCode, Event, Frame, ListSessions, Request, ResizeSession,
+    Response, Session, SessionEnded, WriteSession,
 };
 
 /// The time that a test waits for a condition at most.
@@ -154,7 +154,11 @@ impl Mirror {
         let extra = self.recent.len().saturating_sub(256);
         self.recent.drain(..extra);
     }
+}
 
+/// The checks of the tests that run only with `/bin/sh`.
+#[cfg(unix)]
+impl Mirror {
     /// Whether the last bytes that the terminal got hold `text`.
     fn recently(&self, text: &str) -> bool {
         self.recent
@@ -238,6 +242,7 @@ fn write(engine: &Engine, client: &Client, session: &str, input: &str) {
 }
 
 /// Takes the messages of a viewer into a mirror until `done` holds.
+#[cfg(unix)]
 fn follow_until(viewer: &Viewer, mirror: &mut Mirror, mut done: impl FnMut(&mut Mirror) -> bool) {
     let deadline = Instant::now() + WAIT;
     while !done(mirror) {
@@ -410,6 +415,8 @@ fn the_requests_check_their_arguments() {
 #[cfg(unix)]
 mod unix {
     use super::*;
+    use vvorkflow_engine::OUTPUT_QUEUE;
+    use vvorkflow_protocol::KillSession;
 
     fn seq_output(text: &str) -> Vec<u64> {
         text.lines()

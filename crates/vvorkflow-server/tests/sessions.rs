@@ -4,24 +4,18 @@
 //! sessions, the replacement of an engine of another version that has
 //! sessions, and the idle time while a session runs.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 use vvorkflow_engine::Engine;
-use vvorkflow_engine::screen::Screen;
-use vvorkflow_protocol::{
-    AttachSession, CreateSession, ErrorCode, FRAME_SCREEN, Frame, Hello, PROTOCOL_VERSION, Request,
-    ResizeSession, Shutdown, WriteSession,
-};
-use vvorkflow_server::{Deliveries, Delivery, Endpoint, EngineClient, Limits, serve};
+use vvorkflow_protocol::{CreateSession, ErrorCode, Hello, PROTOCOL_VERSION, Request, Shutdown};
+use vvorkflow_server::{Deliveries, Endpoint, EngineClient, Limits, serve};
 
 const WAIT: Duration = Duration::from_secs(30);
 
@@ -84,242 +78,254 @@ async fn create(client: &EngineClient) -> String {
     session["id"].as_str().unwrap().to_owned()
 }
 
-async fn write(client: &EngineClient, session: &str, input: &str) {
-    client
-        .request(Request::WriteSession(WriteSession {
-            session: session.to_owned(),
-            data: STANDARD.encode(input),
-        }))
-        .await
-        .unwrap();
-}
-
-/// A terminal that follows the deliveries of one session, as the web UI
-/// does, and gives back the bytes of each frame that it took.
-#[derive(Default)]
-struct Mirror {
-    screen: Option<Screen>,
-    screens: usize,
-    events: Vec<Value>,
-    closed: bool,
-    /// The last bytes that the terminal got, for a quick look at the end
-    /// of the output.
-    recent: Vec<u8>,
-}
-
-/// The bytes that [`Mirror::recent`] keeps.
-const RECENT: usize = 256;
-
-impl Mirror {
-    fn take(&mut self, deliveries: &Deliveries, delivery: Delivery) {
-        match delivery {
-            Delivery::Frame(bytes) => {
-                match Frame::parse(&bytes).expect("a valid frame") {
-                    Frame::Screen {
-                        columns,
-                        rows,
-                        screen,
-                        ..
-                    } => {
-                        let mut fresh = Screen::new(columns, rows);
-                        fresh.feed(screen);
-                        self.screen = Some(fresh);
-                        self.screens += 1;
-                        self.remember(screen);
-                    }
-                    Frame::Output { output, .. } => {
-                        self.screen.as_mut().expect("a screen first").feed(output);
-                        self.remember(output);
-                    }
-                }
-                deliveries.budget().release(bytes.len());
-            }
-            Delivery::Event(event) => {
-                if event["event"] == "session.resized" {
-                    let screen = self.screen.as_mut().expect("a screen first");
-                    let size = &event["params"];
-                    screen.resize(
-                        u16::try_from(size["columns"].as_u64().unwrap()).unwrap(),
-                        u16::try_from(size["rows"].as_u64().unwrap()).unwrap(),
-                    );
-                }
-                self.events.push(event);
-            }
-            Delivery::Closed => self.closed = true,
-        }
-    }
-
-    fn remember(&mut self, bytes: &[u8]) {
-        self.recent.extend_from_slice(bytes);
-        let extra = self.recent.len().saturating_sub(RECENT);
-        self.recent.drain(..extra);
-    }
-
-    /// Whether the last bytes that the terminal got hold `text`.
-    fn recently(&self, text: &str) -> bool {
-        self.recent
-            .windows(text.len())
-            .any(|window| window == text.as_bytes())
-    }
-
-    fn text(&mut self) -> String {
-        self.screen
-            .as_mut()
-            .map(Screen::describe)
-            .unwrap_or_default()
-            .lines()
-            .filter_map(|line| {
-                let start = line.find('"')?;
-                let end = line.rfind('"')?;
-                (end > start).then(|| line[start + 1..end].to_owned())
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-}
-
-/// Takes deliveries until `done` holds.
-async fn follow(
-    deliveries: &mut Deliveries,
-    mirror: &mut Mirror,
-    mut done: impl FnMut(&mut Mirror) -> bool,
-) {
-    tokio::time::timeout(WAIT, async {
-        while !done(mirror) {
-            let delivery = deliveries.next().await.expect("the client lives");
-            mirror.take(deliveries, delivery);
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("the condition does not come: {}", mirror.text()));
-}
-
 async fn force_stop(client: &EngineClient) {
     client.force_stop().await.unwrap();
 }
 
+/// The tests that run only with `/bin/sh`.
 #[cfg(unix)]
-#[tokio::test(flavor = "multi_thread")]
-async fn the_owner_gets_the_frames_and_the_events_of_a_session() {
-    let place = place();
-    let (client, mut deliveries) = client(&place);
-    client.request(hello()).await.unwrap();
-    let session = create(&client).await;
-    let attached = client
-        .request(Request::AttachSession(AttachSession {
-            session: session.clone(),
-        }))
-        .await
-        .unwrap();
-    assert_eq!(attached["id"], session.as_str());
-    let mut mirror = Mirror::default();
-    let first = deliveries.next().await.unwrap();
-    assert!(matches!(&first, Delivery::Frame(bytes) if bytes[0] == FRAME_SCREEN));
-    mirror.take(&deliveries, first);
+mod unix {
+    use std::path::Path;
 
-    write(&client, &session, "printf 'out%s\\n' put\r").await;
-    follow(&mut deliveries, &mut mirror, |mirror| {
-        mirror.recently("output")
-    })
-    .await;
-    client
-        .request(Request::ResizeSession(ResizeSession {
-            session: session.clone(),
-            columns: 100,
-            rows: 30,
-        }))
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+    use vvorkflow_engine::screen::Screen;
+    use vvorkflow_protocol::{AttachSession, FRAME_SCREEN, Frame, ResizeSession, WriteSession};
+    use vvorkflow_server::Delivery;
+
+    use super::*;
+
+    async fn write(client: &EngineClient, session: &str, input: &str) {
+        client
+            .request(Request::WriteSession(WriteSession {
+                session: session.to_owned(),
+                data: STANDARD.encode(input),
+            }))
+            .await
+            .unwrap();
+    }
+
+    /// A terminal that follows the deliveries of one session, as the web UI
+    /// does, and gives back the bytes of each frame that it took.
+    #[derive(Default)]
+    struct Mirror {
+        screen: Option<Screen>,
+        screens: usize,
+        events: Vec<Value>,
+        closed: bool,
+        /// The last bytes that the terminal got, for a quick look at the end
+        /// of the output.
+        recent: Vec<u8>,
+    }
+
+    /// The bytes that [`Mirror::recent`] keeps.
+    const RECENT: usize = 256;
+
+    impl Mirror {
+        fn take(&mut self, deliveries: &Deliveries, delivery: Delivery) {
+            match delivery {
+                Delivery::Frame(bytes) => {
+                    match Frame::parse(&bytes).expect("a valid frame") {
+                        Frame::Screen {
+                            columns,
+                            rows,
+                            screen,
+                            ..
+                        } => {
+                            let mut fresh = Screen::new(columns, rows);
+                            fresh.feed(screen);
+                            self.screen = Some(fresh);
+                            self.screens += 1;
+                            self.remember(screen);
+                        }
+                        Frame::Output { output, .. } => {
+                            self.screen.as_mut().expect("a screen first").feed(output);
+                            self.remember(output);
+                        }
+                    }
+                    deliveries.budget().release(bytes.len());
+                }
+                Delivery::Event(event) => {
+                    if event["event"] == "session.resized" {
+                        let screen = self.screen.as_mut().expect("a screen first");
+                        let size = &event["params"];
+                        screen.resize(
+                            u16::try_from(size["columns"].as_u64().unwrap()).unwrap(),
+                            u16::try_from(size["rows"].as_u64().unwrap()).unwrap(),
+                        );
+                    }
+                    self.events.push(event);
+                }
+                Delivery::Closed => self.closed = true,
+            }
+        }
+
+        fn remember(&mut self, bytes: &[u8]) {
+            self.recent.extend_from_slice(bytes);
+            let extra = self.recent.len().saturating_sub(RECENT);
+            self.recent.drain(..extra);
+        }
+
+        /// Whether the last bytes that the terminal got hold `text`.
+        fn recently(&self, text: &str) -> bool {
+            self.recent
+                .windows(text.len())
+                .any(|window| window == text.as_bytes())
+        }
+
+        fn text(&mut self) -> String {
+            self.screen
+                .as_mut()
+                .map(Screen::describe)
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|line| {
+                    let start = line.find('"')?;
+                    let end = line.rfind('"')?;
+                    (end > start).then(|| line[start + 1..end].to_owned())
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+    }
+
+    /// Takes deliveries until `done` holds.
+    async fn follow(
+        deliveries: &mut Deliveries,
+        mirror: &mut Mirror,
+        mut done: impl FnMut(&mut Mirror) -> bool,
+    ) {
+        tokio::time::timeout(WAIT, async {
+            while !done(mirror) {
+                let delivery = deliveries.next().await.expect("the client lives");
+                mirror.take(deliveries, delivery);
+            }
+        })
         .await
-        .unwrap();
-    write(&client, &session, "stty size; exit 3\r").await;
-    follow(&mut deliveries, &mut mirror, |mirror| {
-        mirror
+        .unwrap_or_else(|_| panic!("the condition does not come: {}", mirror.text()));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_owner_gets_the_frames_and_the_events_of_a_session() {
+        let place = place();
+        let (client, mut deliveries) = client(&place);
+        client.request(hello()).await.unwrap();
+        let session = create(&client).await;
+        let attached = client
+            .request(Request::AttachSession(AttachSession {
+                session: session.clone(),
+            }))
+            .await
+            .unwrap();
+        assert_eq!(attached["id"], session.as_str());
+        let mut mirror = Mirror::default();
+        let first = deliveries.next().await.unwrap();
+        assert!(matches!(&first, Delivery::Frame(bytes) if bytes[0] == FRAME_SCREEN));
+        mirror.take(&deliveries, first);
+
+        write(&client, &session, "printf 'out%s\\n' put\r").await;
+        follow(&mut deliveries, &mut mirror, |mirror| {
+            mirror.recently("output")
+        })
+        .await;
+        client
+            .request(Request::ResizeSession(ResizeSession {
+                session: session.clone(),
+                columns: 100,
+                rows: 30,
+            }))
+            .await
+            .unwrap();
+        write(&client, &session, "stty size; exit 3\r").await;
+        follow(&mut deliveries, &mut mirror, |mirror| {
+            mirror
+                .events
+                .iter()
+                .any(|event| event["event"] == "session.ended")
+        })
+        .await;
+        assert!(mirror.text().contains("30 100"));
+        let resized = mirror
             .events
             .iter()
-            .any(|event| event["event"] == "session.ended")
-    })
-    .await;
-    assert!(mirror.text().contains("30 100"));
-    let resized = mirror
-        .events
-        .iter()
-        .find(|event| event["event"] == "session.resized")
-        .unwrap();
-    assert_eq!(
-        resized["params"],
-        json!({"session": session, "columns": 100, "rows": 30})
-    );
-    assert_eq!(
-        mirror.events.last().unwrap()["params"],
-        json!({"session": session, "exitCode": 3, "signal": null})
-    );
+            .find(|event| event["event"] == "session.resized")
+            .unwrap();
+        assert_eq!(
+            resized["params"],
+            json!({"session": session, "columns": 100, "rows": 30})
+        );
+        assert_eq!(
+            mirror.events.last().unwrap()["params"],
+            json!({"session": session, "exitCode": 3, "signal": null})
+        );
 
-    // The end of the connection comes after its last item.
-    force_stop(&client).await;
-    follow(&mut deliveries, &mut mirror, |mirror| mirror.closed).await;
-}
-
-/// The owner takes nothing for a while: the client stops to read, the queue
-/// of the engine overflows, and a screen brings the client back in sync.
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread")]
-async fn an_owner_that_does_not_take_the_frames_stops_the_read() {
-    let place = place();
-    let (client, mut deliveries) = client(&place);
-    client.request(hello()).await.unwrap();
-    let session = create(&client).await;
-    client
-        .request(Request::AttachSession(AttachSession {
-            session: session.clone(),
-        }))
-        .await
-        .unwrap();
-    // About 3.3 MiB of output, while the owner takes nothing: more than
-    // what the owner holds, the sockets, and the queue of the engine take.
-    write(
-        &client,
-        &session,
-        "seq 1 500000; printf 'do%s\\n' ne; read x; exit\r",
-    )
-    .await;
-    // Another client sees the end of the output: the engine did not wait.
-    let (witness, mut seen) = client_only(&place);
-    witness.request(hello()).await.unwrap();
-    witness
-        .request(Request::AttachSession(AttachSession {
-            session: session.clone(),
-        }))
-        .await
-        .unwrap();
-    let mut witnessed = Mirror::default();
-    follow(&mut seen, &mut witnessed, |mirror| mirror.recently("done")).await;
-
-    let mut mirror = Mirror::default();
-    follow(&mut deliveries, &mut mirror, |mirror| {
-        mirror.recently("done")
-    })
-    .await;
-    // The queue of the engine overflowed while the client did not read, so
-    // a second screen came.
-    assert!(mirror.screens >= 2, "{} screens", mirror.screens);
-    let numbers: Vec<u64> = mirror
-        .text()
-        .lines()
-        .filter_map(|line| line.trim().parse().ok())
-        .collect();
-    assert_eq!(numbers.last(), Some(&500_000));
-    for pair in numbers.windows(2) {
-        assert_eq!(pair[1], pair[0] + 1, "a line is lost or comes twice");
+        // The end of the connection comes after its last item.
+        force_stop(&client).await;
+        follow(&mut deliveries, &mut mirror, |mirror| mirror.closed).await;
     }
-    write(&client, &session, "\r").await;
-    force_stop(&client).await;
-}
 
-/// A client of the engine that `place` started, which starts none itself.
-fn client_only(place: &Place) -> (EngineClient, Deliveries) {
-    EngineClient::new(endpoint(place), || {
-        Command::new(Path::new("missing").join("vvorkflow-server"))
-    })
-    .with_deliveries()
+    /// The owner takes nothing for a while: the client stops to read, the queue
+    /// of the engine overflows, and a screen brings the client back in sync.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn an_owner_that_does_not_take_the_frames_stops_the_read() {
+        let place = place();
+        let (client, mut deliveries) = client(&place);
+        client.request(hello()).await.unwrap();
+        let session = create(&client).await;
+        client
+            .request(Request::AttachSession(AttachSession {
+                session: session.clone(),
+            }))
+            .await
+            .unwrap();
+        // About 3.3 MiB of output, while the owner takes nothing: more than
+        // what the owner holds, the sockets, and the queue of the engine take.
+        write(
+            &client,
+            &session,
+            "seq 1 500000; printf 'do%s\\n' ne; read x; exit\r",
+        )
+        .await;
+        // Another client sees the end of the output: the engine did not wait.
+        let (witness, mut seen) = client_only(&place);
+        witness.request(hello()).await.unwrap();
+        witness
+            .request(Request::AttachSession(AttachSession {
+                session: session.clone(),
+            }))
+            .await
+            .unwrap();
+        let mut witnessed = Mirror::default();
+        follow(&mut seen, &mut witnessed, |mirror| mirror.recently("done")).await;
+
+        let mut mirror = Mirror::default();
+        follow(&mut deliveries, &mut mirror, |mirror| {
+            mirror.recently("done")
+        })
+        .await;
+        // The queue of the engine overflowed while the client did not read, so
+        // a second screen came.
+        assert!(mirror.screens >= 2, "{} screens", mirror.screens);
+        let numbers: Vec<u64> = mirror
+            .text()
+            .lines()
+            .filter_map(|line| line.trim().parse().ok())
+            .collect();
+        assert_eq!(numbers.last(), Some(&500_000));
+        for pair in numbers.windows(2) {
+            assert_eq!(pair[1], pair[0] + 1, "a line is lost or comes twice");
+        }
+        write(&client, &session, "\r").await;
+        force_stop(&client).await;
+    }
+
+    /// A client of the engine that `place` started, which starts none itself.
+    fn client_only(place: &Place) -> (EngineClient, Deliveries) {
+        EngineClient::new(endpoint(place), || {
+            Command::new(Path::new("missing").join("vvorkflow-server"))
+        })
+        .with_deliveries()
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]

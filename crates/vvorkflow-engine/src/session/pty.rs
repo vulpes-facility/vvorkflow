@@ -86,12 +86,17 @@ pub(crate) fn spawn(shell: &Path, folder: &Path, columns: u16, rows: u16) -> io:
         .openpty(size)
         .map_err(io::Error::other)?;
     let mut command = command(shell);
+    #[cfg(unix)]
     command.cwd(folder);
+    #[cfg(windows)]
+    command.cwd(current_folder(folder));
     command.env_clear();
     for (name, value) in std::env::vars_os() {
         command.env(name, value);
     }
-    // `portable-pty` gives the shell a `SHELL`; it names the shell that runs.
+    // `portable-pty` gives the shell a `SHELL` on Linux and macOS; it names
+    // the shell that runs.
+    #[cfg(unix)]
     command.env("SHELL", shell);
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
@@ -132,6 +137,29 @@ pub(crate) fn spawn(shell: &Path, folder: &Path, columns: u16, rows: u16) -> io:
                 killer: Mutex::new(killer),
             })),
         })
+    }
+}
+
+/// The folder in the form that Windows takes for the current folder of a
+/// process. A canonical path starts with `\\?\`, which the current folder
+/// does not support, so the engine removes it when the path names the same
+/// folder without it.
+#[cfg(windows)]
+fn current_folder(folder: &Path) -> PathBuf {
+    let Some(text) = folder.to_str() else {
+        return folder.to_owned();
+    };
+    let plain = if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{rest}"))
+    } else if let Some(rest) = text.strip_prefix(r"\\?\") {
+        PathBuf::from(rest)
+    } else {
+        return folder.to_owned();
+    };
+    if plain.canonicalize().is_ok_and(|same| same == folder) {
+        plain
+    } else {
+        folder.to_owned()
     }
 }
 
@@ -501,5 +529,19 @@ mod unix {
                 return;
             }
         }
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_current_folder_has_no_verbatim_prefix() {
+        let folder = std::env::temp_dir().canonicalize().unwrap();
+        assert!(folder.to_str().unwrap().starts_with(r"\\?\"));
+        let plain = current_folder(&folder);
+        assert!(!plain.to_str().unwrap().starts_with(r"\\?\"), "{plain:?}");
+        assert_eq!(plain.canonicalize().unwrap(), folder);
     }
 }
