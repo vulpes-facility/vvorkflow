@@ -2,9 +2,10 @@
 //! frames that the client of the app core gives to its owner, the limit of
 //! the frames that the owner did not take, the stop of an engine with
 //! sessions, the replacement of an engine of another version that has
-//! sessions, and the idle time while a session runs.
+//! sessions, the idle time while a session runs, and a frame of the
+//! largest size.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,8 +15,11 @@ use serde_json::{Value, json};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
 use vvorkflow_engine::Engine;
-use vvorkflow_protocol::{CreateSession, ErrorCode, Hello, PROTOCOL_VERSION, Request, Shutdown};
-use vvorkflow_server::{Deliveries, Endpoint, EngineClient, Limits, serve};
+use vvorkflow_protocol::{
+    CreateSession, ErrorCode, Frame, Hello, MAX_COLUMNS, MAX_FRAME, MAX_ROWS, MAX_SCREEN,
+    PROTOCOL_VERSION, Request, Shutdown,
+};
+use vvorkflow_server::{Deliveries, Delivery, Endpoint, EngineClient, Limits, serve};
 
 const WAIT: Duration = Duration::from_secs(30);
 
@@ -60,6 +64,14 @@ fn client(place: &Place) -> (EngineClient, Deliveries) {
     .with_deliveries()
 }
 
+/// A client of the engine that `place` started, which starts none itself.
+fn client_only(place: &Place) -> (EngineClient, Deliveries) {
+    EngineClient::new(endpoint(place), || {
+        Command::new(Path::new("missing").join("vvorkflow-server"))
+    })
+    .with_deliveries()
+}
+
 fn hello() -> Request {
     Request::Hello(Hello {
         protocol: PROTOCOL_VERSION,
@@ -85,13 +97,10 @@ async fn force_stop(client: &EngineClient) {
 /// The tests that run only with `/bin/sh`.
 #[cfg(unix)]
 mod unix {
-    use std::path::Path;
-
     use base64::Engine as _;
     use base64::engine::general_purpose::STANDARD;
     use vvorkflow_engine::screen::Screen;
-    use vvorkflow_protocol::{AttachSession, FRAME_SCREEN, Frame, ResizeSession, WriteSession};
-    use vvorkflow_server::Delivery;
+    use vvorkflow_protocol::{AttachSession, FRAME_SCREEN, ResizeSession, WriteSession};
 
     use super::*;
 
@@ -318,14 +327,6 @@ mod unix {
         write(&client, &session, "\r").await;
         force_stop(&client).await;
     }
-
-    /// A client of the engine that `place` started, which starts none itself.
-    fn client_only(place: &Place) -> (EngineClient, Deliveries) {
-        EngineClient::new(endpoint(place), || {
-            Command::new(Path::new("missing").join("vvorkflow-server"))
-        })
-        .with_deliveries()
-    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -495,4 +496,85 @@ async fn the_engine_does_not_stop_for_the_idle_time_while_a_session_runs() {
         .unwrap()
         .unwrap();
     assert_eq!(engine.session_count(), 0);
+}
+
+/// The next delivery, within [`WAIT`].
+async fn delivery(deliveries: &mut Deliveries) -> Delivery {
+    tokio::time::timeout(WAIT, deliveries.next())
+        .await
+        .expect("a delivery comes")
+        .expect("the client lives")
+}
+
+/// An engine that welcomes the client, and then sends a screen frame of the
+/// largest size, and then a frame that is one byte larger.
+fn engine_with_large_frames(place: &Place) -> JoinHandle<()> {
+    let endpoint = endpoint(place);
+    endpoint.prepare().unwrap();
+    let lock = endpoint.lock().unwrap();
+    let mut listener = endpoint.bind().unwrap();
+    tokio::spawn(async move {
+        let _lock = lock;
+        // A probe of the client closes at once.
+        let (mut socket, mut text) = loop {
+            let stream = listener.accept().await.unwrap();
+            let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
+                continue;
+            };
+            if let Some(Ok(Message::Text(text))) = socket.next().await {
+                break (socket, text);
+            }
+        };
+        // The `hello` of the client, and then the request of the test.
+        for answered in [false, true] {
+            let id = serde_json::from_str::<Value>(&text).unwrap()["id"].clone();
+            let welcome = json!({"id": id, "result": {"protocol": PROTOCOL_VERSION, "root": "/"}});
+            socket
+                .send(Message::text(welcome.to_string()))
+                .await
+                .unwrap();
+            if answered {
+                break;
+            }
+            let Some(Ok(Message::Text(next))) = socket.next().await else {
+                return;
+            };
+            text = next;
+        }
+        let screen = vec![b'x'; MAX_SCREEN];
+        let largest = Frame::Screen {
+            session: "0123456789abcdef",
+            columns: MAX_COLUMNS,
+            rows: MAX_ROWS,
+            screen: &screen,
+        }
+        .encode();
+        assert_eq!(largest.len(), MAX_FRAME);
+        socket.send(Message::binary(largest)).await.unwrap();
+        let _ = socket.send(Message::binary(vec![0; MAX_FRAME + 1])).await;
+        // The client ends the connection.
+        while let Some(Ok(_)) = socket.next().await {}
+    })
+}
+
+/// A frame of the largest size passes the WebSocket of the client, whose
+/// default limit is 16 MiB; a larger one ends the connection.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_takes_a_frame_of_the_largest_size() {
+    let place = place();
+    let engine = engine_with_large_frames(&place);
+    let (client, mut deliveries) = client_only(&place);
+    client.request(hello()).await.unwrap();
+    let Delivery::Frame(frame) = delivery(&mut deliveries).await else {
+        panic!("the frame comes first");
+    };
+    assert_eq!(frame.len(), MAX_FRAME);
+    assert!(matches!(
+        Frame::parse(&frame),
+        Some(Frame::Screen { screen, .. }) if screen.len() == MAX_SCREEN
+    ));
+    // The owner gives the bytes back, so that the client reads again.
+    deliveries.budget().release(frame.len());
+    assert!(matches!(delivery(&mut deliveries).await, Delivery::Closed));
+    engine.await.unwrap();
 }

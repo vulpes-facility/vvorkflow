@@ -433,6 +433,36 @@ mod unix {
         }
     }
 
+    /// Takes the messages of both viewers until their terminals show the
+    /// same state. The last bytes of a program can come in a later read of
+    /// the engine than the text that a test waits for.
+    fn follow_until_same(viewers: [(&Viewer, &mut Mirror); 2]) {
+        let [(first, one), (second, other)] = viewers;
+        let deadline = Instant::now() + WAIT;
+        loop {
+            while let Some(item) = first.client.next() {
+                one.take(item);
+            }
+            while let Some(item) = second.client.next() {
+                other.take(item);
+            }
+            let (left, right) = (one.describe(), other.describe());
+            if left == right {
+                return;
+            }
+            let differs = left
+                .lines()
+                .zip(right.lines())
+                .find(|(left, right)| left != right);
+            assert!(Instant::now() < deadline, "the states differ: {differs:?}");
+            for (viewer, mirror) in [(first, &mut *one), (second, &mut *other)] {
+                if let Some(item) = viewer.next(Instant::now() + Duration::from_millis(10)) {
+                    mirror.take(item);
+                }
+            }
+        }
+    }
+
     #[test]
     fn an_attach_while_output_flows_gives_each_line_once() {
         let place = place();
@@ -462,20 +492,16 @@ mod unix {
             }
             assert!(Instant::now() < deadline, "the output ends");
         }
-        // Drain what is left; the program now waits for input.
-        for (viewer, mirror) in [(&first, &mut from_start), (&second, &mut late)] {
-            while let Some(item) = viewer.next(Instant::now() + Duration::from_millis(200)) {
-                mirror.take(item);
-            }
-        }
+        // The program now waits for input.
+        follow_until_same([(&first, &mut from_start), (&second, &mut late)]);
         assert_consecutive(&seq_output(&late.text()), 200_000);
-        assert_eq!(late.describe(), from_start.describe());
         // A third client gets the state of the engine.
         let third = Viewer::new(&place.engine);
         attach(&place.engine, &third, &session.id);
         let mut engine_state = Mirror::default();
         engine_state.take(third.next(Instant::now() + WAIT).unwrap());
-        assert_eq!(engine_state.describe(), late.describe());
+        follow_until_same([(&second, &mut late), (&third, &mut engine_state)]);
+        assert_eq!(engine_state.screens, 1);
 
         write(&place.engine, &first.client, &session.id, "\r");
         assert_eq!(
@@ -492,6 +518,9 @@ mod unix {
         let session = create(&place.engine, &fast.client, 80, 24);
         attach(&place.engine, &slow, &session.id);
         attach(&place.engine, &fast, &session.id);
+        // The slow client takes the screen of its attach, and then nothing.
+        let mut slow_mirror = Mirror::default();
+        follow_until(&slow, &mut slow_mirror, |mirror| mirror.screen.is_some());
         let mut fast_mirror = Mirror::default();
         // About 1.3 MiB of output, more than the queue of the slow client.
         write(
@@ -503,28 +532,20 @@ mod unix {
         // The program ends its output although the slow client reads
         // nothing: the reader never waits for a client.
         follow_until(&fast, &mut fast_mirror, |mirror| mirror.recently("done"));
-        while let Some(item) = fast.next(Instant::now() + Duration::from_millis(200)) {
-            fast_mirror.take(item);
-        }
 
-        let mut slow_mirror = Mirror::default();
-        let mut first = true;
-        while let Some(item) = slow.next(Instant::now() + Duration::from_millis(200)) {
-            if first {
-                // The queue overflowed: the next frame is a screen.
-                assert!(
-                    matches!(&item, Outgoing::Frame(bytes) if bytes[0] == vvorkflow_protocol::FRAME_SCREEN)
-                );
-                first = false;
-            }
-            slow_mirror.take(item);
-        }
+        // The queue overflowed: the next frame is a screen.
+        let item = slow.next(Instant::now() + WAIT).expect("a frame");
+        assert!(
+            matches!(&item, Outgoing::Frame(bytes) if bytes[0] == vvorkflow_protocol::FRAME_SCREEN)
+        );
+        slow_mirror.take(item);
+        follow_until_same([(&fast, &mut fast_mirror), (&slow, &mut slow_mirror)]);
+        assert_eq!(slow_mirror.screens, 2);
         assert!(
             slow_mirror.output <= OUTPUT_QUEUE,
             "{} bytes after the screen",
             slow_mirror.output
         );
-        assert_eq!(slow_mirror.describe(), fast_mirror.describe());
         assert_consecutive(&seq_output(&slow_mirror.text()), 200_000);
 
         write(&place.engine, &fast.client, &session.id, "\r");
@@ -600,22 +621,18 @@ mod unix {
     }
 
     /// Takes the messages of both viewers until each one got `text`, and
-    /// then the rest of that output.
+    /// then until both show the same state.
     fn follow_both(viewers: [(&Viewer, &mut Mirror); 2], text: &str) {
-        for (viewer, mirror) in viewers {
-            follow_until(viewer, mirror, |mirror| mirror.recently(text));
-            // A program can write its last bytes after the text, in a
-            // second read of the engine.
-            while let Some(item) = viewer.next(Instant::now() + Duration::from_millis(200)) {
-                mirror.take(item);
-            }
-        }
+        let [(first, one), (second, other)] = viewers;
+        follow_until(first, one, |mirror| mirror.recently(text));
+        follow_until(second, other, |mirror| mirror.recently(text));
+        follow_until_same([(first, one), (second, other)]);
     }
 
-    /// A shell with colors and wide and combining characters, `less` on the
-    /// alternate screen, a resize, and `less` again: a client that attaches
-    /// while `less` shows, and a client that attaches at the end, get the
-    /// state of the client that saw all the output.
+    /// A shell with colors and wide and combining characters, then `less`
+    /// on the alternate screen, with a resize in the middle: a client that
+    /// attaches while `less` shows, and a client that attaches at the end,
+    /// get the state of the client that saw all the output.
     #[test]
     fn a_real_program_and_a_resize_give_each_client_the_same_screen() {
         if !installed("less") {
@@ -640,22 +657,18 @@ mod unix {
         follow_until(&first, &mut from_start, |mirror| mirror.screen.is_some());
         // The prompt of `less` is the last output of each of its pictures:
         // the file name and the number of the bottom line, which are not in
-        // the typed text.
+        // the typed text. Neither is the colored word `red`.
         write(
             &place.engine,
             &first.client,
             &session.id,
-            "v() { LESSCHARSET=utf-8 LESSHISTFILE=- less -R -Ps'[%f %lb]' sample.txt; }; \
-             printf '\\033[1;31mred\\033[0m \\346\\274\\242\\345\\255\\227 e\\314\\201\\n'; \
-             v; printf 'pa%s\\n' used; read x; v; printf 'fin%s\\n' ished; read x; exit\r",
+            "printf '\\033[1;31mr\\145d\\033[0m \\346\\274\\242\\345\\255\\227 e\\314\\201\\n'; \
+             LESSCHARSET=utf-8 LESSHISTFILE=- less -R -Ps'[%f %lb]' sample.txt; \
+             printf 'fin%s\\n' ished; read x; exit\r",
         );
         follow_until(&first, &mut from_start, |mirror| {
             mirror.recently("[sample.txt 23]")
         });
-        // `less` can miss a resize, or lose a key, while it handles a
-        // resize: the resize comes while the shell waits in `read`.
-        write(&place.engine, &first.client, &session.id, "q");
-        follow_until(&first, &mut from_start, |mirror| mirror.recently("paused"));
         request(
             &place.engine,
             &first.client,
@@ -665,7 +678,9 @@ mod unix {
                 rows: 30,
             }),
         );
-        write(&place.engine, &first.client, &session.id, "\r");
+        // `less` can miss a resize that comes just before it waits for a
+        // key, until the next key: `r` draws the screen again in any case.
+        write(&place.engine, &first.client, &session.id, "r");
         follow_until(&first, &mut from_start, |mirror| {
             mirror.recently("[sample.txt 29]")
         });
@@ -683,7 +698,6 @@ mod unix {
             "[sample.txt 30]",
         );
         assert!(from_start.describe().contains("alternate"));
-        assert_eq!(late_mirror.describe(), from_start.describe());
 
         // Back on the normal screen, with the output of the shell under it.
         write(&place.engine, &first.client, &session.id, "q");
@@ -692,12 +706,12 @@ mod unix {
             "finished",
         );
         assert!(from_start.text().contains("red"));
-        assert_eq!(late_mirror.describe(), from_start.describe());
         let end = Viewer::new(&place.engine);
         attach(&place.engine, &end, &session.id);
         let mut end_mirror = Mirror::default();
         end_mirror.take(end.next(Instant::now() + WAIT).expect("a screen"));
-        assert_eq!(end_mirror.describe(), from_start.describe());
+        follow_until_same([(&first, &mut from_start), (&end, &mut end_mirror)]);
+        assert_eq!(end_mirror.screens, 1);
 
         write(&place.engine, &first.client, &session.id, "\r");
         assert_eq!(
