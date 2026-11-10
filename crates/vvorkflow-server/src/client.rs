@@ -1,6 +1,8 @@
 //! The client of the engine process, for the app core: it connects to the
 //! engine of an endpoint, starts one when none listens, replaces an engine of
 //! another protocol version, and matches each answer to its request by id.
+//! It gives the events and the binary frames of the engine to its owner, and
+//! stops to read the connection while the owner did not take them.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -12,12 +14,13 @@ use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use vvorkflow_protocol::{
-    ClientMessage, EngineError, ErrorCode, Hello, MAX_OPEN_REQUESTS, PROTOCOL_VERSION, Request,
-    ServerMessage, Shutdown,
+    ClientMessage, EngineError, ErrorCode, Event, Frame, Hello, MAX_FRAME, MAX_OPEN_REQUESTS,
+    PROTOCOL_VERSION, Request, ServerMessage, Shutdown,
 };
 
 use crate::Endpoint;
@@ -34,8 +37,105 @@ const ANSWER: Duration = Duration::from_secs(10);
 /// the engine. It is longer than the longest start of this client.
 const TURN: Duration = Duration::from_secs(60);
 
+/// The bytes of the frames that the owner did not give back yet, at which
+/// the client stops to read the connection (`docs/architecture.md`,
+/// Protocol, rule 12). One frame can take the count above it.
+pub const DELIVERY_LIMIT: usize = 1 << 20;
+
 type Socket = tokio_tungstenite::WebSocketStream<crate::ClientStream>;
 type Pending = Arc<Mutex<Waiting>>;
+
+/// An event or a binary frame of the engine, in the order of the
+/// connection.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Delivery {
+    /// An event, as the JSON that the engine sent.
+    Event(Value),
+    /// A binary frame of terminal output, as the engine sent it.
+    Frame(Vec<u8>),
+    /// The connection to the engine ended: after the last item of that
+    /// connection, and before the first item of the next one. The
+    /// attachments of that connection are gone.
+    Closed,
+}
+
+/// The events and the frames of the engine, for the owner of a client. The
+/// client stops to read the connection while the frames that the owner
+/// did not give back with [`Budget::release`] have [`DELIVERY_LIMIT`]
+/// bytes or more, so that the limits of the engine apply.
+pub struct Deliveries {
+    receiver: mpsc::UnboundedReceiver<(Delivery, usize)>,
+    budget: Budget,
+}
+
+impl Deliveries {
+    /// The next item, or None when the client is gone. The bytes of an
+    /// event come back at once; the owner gives back the bytes of a frame.
+    pub async fn next(&mut self) -> Option<Delivery> {
+        let (delivery, size) = self.receiver.recv().await?;
+        if !matches!(delivery, Delivery::Frame(_)) {
+            self.budget.release(size);
+        }
+        Some(delivery)
+    }
+
+    /// The budget, for the owner part that tells which frames the terminal
+    /// took.
+    pub fn budget(&self) -> Budget {
+        self.budget.clone()
+    }
+}
+
+/// The bytes of the items that the owner did not take or give back yet.
+#[derive(Clone, Default)]
+pub struct Budget(Arc<Bytes>);
+
+#[derive(Default)]
+struct Bytes {
+    held: Mutex<usize>,
+    released: Notify,
+}
+
+impl Budget {
+    /// Gives back the bytes of a frame: when the terminal took it, or when
+    /// the owner dropped it.
+    pub fn release(&self, bytes: usize) {
+        let mut held = self
+            .0
+            .held
+            .lock()
+            .expect("the budget lock is never poisoned");
+        *held = held.saturating_sub(bytes);
+        drop(held);
+        self.0.released.notify_one();
+    }
+
+    /// Waits until the held bytes are below [`DELIVERY_LIMIT`], and then
+    /// holds `bytes` more.
+    async fn hold(&self, bytes: usize) {
+        loop {
+            {
+                let mut held = self
+                    .0
+                    .held
+                    .lock()
+                    .expect("the budget lock is never poisoned");
+                if *held < DELIVERY_LIMIT {
+                    *held += bytes;
+                    return;
+                }
+            }
+            self.0.released.notified().await;
+        }
+    }
+}
+
+/// Where the reader of a connection puts the events and the frames.
+#[derive(Clone)]
+struct Owner {
+    sender: mpsc::UnboundedSender<(Delivery, usize)>,
+    budget: Budget,
+}
 
 /// The requests of a connection that wait for an answer, and whether the
 /// connection is gone. A gone connection takes no new request, so that no
@@ -59,11 +159,21 @@ struct Open {
 pub struct EngineClient {
     endpoint: Endpoint,
     program: Box<dyn Fn() -> Command + Send + Sync>,
-    connection: tokio::sync::Mutex<Option<Connection>>,
+    connection: tokio::sync::Mutex<Slot>,
+    owner: Option<Owner>,
     /// The places of the open requests: the engine closes a connection with
     /// more than `MAX_OPEN_REQUESTS`, so a request waits here for a place.
     open: Arc<Semaphore>,
     start: Duration,
+}
+
+/// The connection of the requests, and the reader of the connection before
+/// it, which the next connection waits for, so that the `Closed` of the old
+/// connection comes before the first item of the new one.
+#[derive(Default)]
+struct Slot {
+    connection: Option<Connection>,
+    ending: Option<JoinHandle<()>>,
 }
 
 /// One open connection: the queue of its writer, and the requests that wait
@@ -72,7 +182,7 @@ struct Connection {
     outbox: mpsc::Sender<Message>,
     pending: Pending,
     next: AtomicU64,
-    reader: JoinHandle<()>,
+    reader: Option<JoinHandle<()>>,
     writer: JoinHandle<()>,
 }
 
@@ -97,10 +207,23 @@ impl EngineClient {
         EngineClient {
             endpoint,
             program: Box::new(program),
-            connection: tokio::sync::Mutex::new(None),
+            connection: tokio::sync::Mutex::default(),
+            owner: None,
             open: Arc::new(Semaphore::new(MAX_OPEN_REQUESTS)),
             start: START,
         }
+    }
+
+    /// The same client, which gives the events and the binary frames of the
+    /// engine to an owner. Without it, the client drops them.
+    pub fn with_deliveries(mut self) -> (EngineClient, Deliveries) {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        let budget = Budget::default();
+        self.owner = Some(Owner {
+            sender,
+            budget: budget.clone(),
+        });
+        (self, Deliveries { receiver, budget })
     }
 
     /// The same client with another time that a new engine process has to
@@ -125,10 +248,22 @@ impl EngineClient {
         let stops = matches!(request, Request::Shutdown(_));
         let (outbox, pending, id) = {
             let mut slot = self.connection.lock().await;
-            if slot.as_ref().is_none_or(Connection::is_gone) {
-                *slot = Some(self.establish().await?);
+            if slot.connection.as_ref().is_none_or(Connection::is_gone) {
+                if let Some(old) = slot.connection.take() {
+                    slot.ending = old.end();
+                }
+                // The old reader sends `Closed` when it ends. This wait
+                // stays in the slot when the caller stops to wait.
+                if let Some(ending) = &mut slot.ending {
+                    let _ = ending.await;
+                    slot.ending = None;
+                }
+                slot.connection = Some(self.establish().await?);
             }
-            let open = slot.as_ref().expect("the slot holds a connection");
+            let open = slot
+                .connection
+                .as_ref()
+                .expect("the slot holds a connection");
             let id = open.next.fetch_add(1, Ordering::Relaxed);
             (open.outbox.clone(), Arc::clone(&open.pending), id)
         };
@@ -185,7 +320,9 @@ impl EngineClient {
             Ok(connection) => return Ok(connection),
             Err(Refused::Failed(error)) => return Err(error),
             Err(Refused::Absent) => {}
-            Err(Refused::OtherVersion) => self.stop_other().await,
+            // An engine with sessions refuses: the request fails with its
+            // message, and no second engine starts.
+            Err(Refused::OtherVersion) => self.stop_other(false).await?,
         }
         self.start().await?;
         match self.open().await {
@@ -250,7 +387,7 @@ impl EngineClient {
             // The engine left while the connection opened.
             None => return Err(Refused::Absent),
         }
-        Ok(Connection::run(socket))
+        Ok(Connection::run(socket, self.owner.clone()))
     }
 
     async fn handshake(&self) -> Result<Socket, Refused> {
@@ -268,33 +405,63 @@ impl EngineClient {
                 | io::ErrorKind::UnexpectedEof => Refused::Absent,
                 _ => Refused::Failed(lost(error)),
             })?;
-        tokio_tungstenite::client_async("ws://localhost/", stream)
+        // A screen frame can have 32 MiB and 21 bytes.
+        let config = WebSocketConfig::default()
+            .max_message_size(Some(MAX_FRAME))
+            .max_frame_size(Some(MAX_FRAME));
+        tokio_tungstenite::client_async_with_config("ws://localhost/", stream, Some(config))
             .await
             .map(|(socket, _)| socket)
             .map_err(|_| Refused::Absent)
     }
 
-    /// Stops an engine of another protocol version with `shutdown`, which
-    /// every version understands, and waits until it no longer listens.
-    async fn stop_other(&self) {
-        let _ = tokio::time::timeout(ANSWER, async {
-            if let Ok(mut socket) = self.handshake().await {
-                let shutdown = ClientMessage {
-                    id: 0,
-                    request: Request::Shutdown(Shutdown { force: false }),
-                };
-                if send(&mut socket, &shutdown).await.is_ok() {
-                    let _ = receive(&mut socket).await;
-                }
-            }
+    /// Stops the engine that listens, on a connection of its own, before
+    /// `hello`, with `shutdown`, which each version understands, and waits
+    /// until it no longer listens. Without `force`, an engine with sessions
+    /// refuses: then this returns the refusal of that engine.
+    async fn stop_other(&self, force: bool) -> Result<(), EngineError> {
+        let answer = tokio::time::timeout(ANSWER, async {
+            let mut socket = self.handshake().await.ok()?;
+            let shutdown = ClientMessage {
+                id: 0,
+                request: Request::Shutdown(Shutdown { force }),
+            };
+            send(&mut socket, &shutdown).await.ok()?;
+            receive(&mut socket).await
         })
         .await;
+        if let Ok(Some(ServerMessage::Error { error, .. })) = answer {
+            return Err(error);
+        }
         for _ in 0..100 {
             if self.endpoint.connect().await.is_err() {
-                return;
+                return Ok(());
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+        Ok(())
+    }
+
+    /// Stops the engine that listens, also when it has sessions: they end,
+    /// as `session.kill` ends them. The client sends `shutdown` with
+    /// `force` on a connection of its own, before `hello`, and waits until
+    /// the engine no longer listens. The next request starts a new engine.
+    ///
+    /// Returns the error of the engine, or `failedPrecondition` when the turn
+    /// to replace the engine does not come.
+    pub async fn force_stop(&self) -> Result<(), EngineError> {
+        {
+            let _turn = self.turn().await?;
+            self.stop_other(true).await?;
+        }
+        // The engine closed the connection of the requests too: the next
+        // request opens a new one at once. A request that opens a connection
+        // holds the slot while it waits for the turn, so the turn is free
+        // first.
+        if let Some(connection) = &self.connection.lock().await.connection {
+            end(&connection.pending);
+        }
+        Ok(())
     }
 
     /// Starts an engine process, detached from the app, with its stderr in
@@ -423,8 +590,10 @@ impl Connection {
             .gone
     }
 
-    /// Starts the writer and the reader of an open socket.
-    fn run(socket: Socket) -> Connection {
+    /// Starts the writer and the reader of an open socket. The reader gives
+    /// each event and each binary frame to the `owner`, and `Closed` at its
+    /// end, also when it stops because the connection drops.
+    fn run(socket: Socket, owner: Option<Owner>) -> Connection {
         let (mut sink, mut source) = socket.split();
         let (outbox, mut queue) = mpsc::channel::<Message>(64);
         let pending: Pending = Arc::default();
@@ -442,47 +611,102 @@ impl Connection {
         // too, so that the socket closes, and the engine has its place again.
         let write = writer.abort_handle();
         let reader = tokio::spawn(async move {
+            let closed = Closed(owner.as_ref().map(|owner| owner.sender.clone()));
             while let Some(Ok(message)) = source.next().await {
-                let Message::Text(text) = message else {
-                    if matches!(message, Message::Close(_)) {
-                        break;
+                let delivery = match message {
+                    Message::Text(text) => {
+                        // An engine that sends something else than an answer or
+                        // an event does not speak the protocol: its connection
+                        // ends, so that no request waits for an answer that
+                        // cannot come.
+                        match serde_json::from_str::<ServerMessage<Value>>(&text) {
+                            Ok(answer) => {
+                                answered(&answers, answer);
+                                continue;
+                            }
+                            // The engine never sends `connection.closed`.
+                            Err(_) => match serde_json::from_str::<Event>(&text) {
+                                Ok(Event::ConnectionClosed(_)) | Err(_) => break,
+                                Ok(_) => match serde_json::from_str::<Value>(&text) {
+                                    Ok(event) => (Delivery::Event(event), text.len()),
+                                    Err(_) => break,
+                                },
+                            },
+                        }
                     }
-                    continue;
+                    Message::Binary(bytes) => {
+                        if Frame::parse(&bytes).is_none() {
+                            break;
+                        }
+                        let size = bytes.len();
+                        (Delivery::Frame(bytes.into()), size)
+                    }
+                    Message::Close(_) => break,
+                    _ => continue,
                 };
-                // An engine that sends something else than an answer does not
-                // speak the protocol: its connection ends, so that no request
-                // waits for an answer that cannot come.
-                let Ok(answer) = serde_json::from_str::<ServerMessage<Value>>(&text) else {
-                    break;
-                };
-                let id = match &answer {
-                    ServerMessage::Result { id, .. } | ServerMessage::Error { id, .. } => *id,
-                };
-                let open = answers
-                    .lock()
-                    .expect("the pending lock is never poisoned")
-                    .answers
-                    .remove(&id);
-                if let Some(open) = open {
-                    let _ = open.answer.send(answer);
+                if let Some(owner) = &owner {
+                    // The owner did not take enough: wait, and so stop to
+                    // read the connection.
+                    owner.budget.hold(delivery.1).await;
+                    let _ = owner.sender.send(delivery);
                 }
             }
             end(&answers);
             write.abort();
+            drop(closed);
         });
         Connection {
             outbox,
             pending,
             next: AtomicU64::new(1),
-            reader,
+            reader: Some(reader),
             writer,
+        }
+    }
+
+    /// Ends the connection, and returns its reader, which ends soon after,
+    /// and sends `Closed` then.
+    fn end(mut self) -> Option<JoinHandle<()>> {
+        let reader = self.reader.take();
+        if let Some(reader) = &reader {
+            reader.abort();
+        }
+        reader
+    }
+}
+
+/// Gives an answer to the request that waits for it.
+fn answered(pending: &Pending, answer: ServerMessage<Value>) {
+    let id = match &answer {
+        ServerMessage::Result { id, .. } | ServerMessage::Error { id, .. } => *id,
+    };
+    let open = pending
+        .lock()
+        .expect("the pending lock is never poisoned")
+        .answers
+        .remove(&id);
+    if let Some(open) = open {
+        let _ = open.answer.send(answer);
+    }
+}
+
+/// Sends `Closed` to the owner when the reader of a connection ends, also
+/// when its task stops.
+struct Closed(Option<mpsc::UnboundedSender<(Delivery, usize)>>);
+
+impl Drop for Closed {
+    fn drop(&mut self) {
+        if let Some(sender) = &self.0 {
+            let _ = sender.send((Delivery::Closed, 0));
         }
     }
 }
 
 impl Drop for Connection {
     fn drop(&mut self) {
-        self.reader.abort();
+        if let Some(reader) = &self.reader {
+            reader.abort();
+        }
         self.writer.abort();
         end(&self.pending);
     }

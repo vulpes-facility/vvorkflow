@@ -100,6 +100,9 @@ impl Viewer {
 struct Mirror {
     screen: Option<Screen>,
     ended: Option<SessionEnded>,
+    /// The last bytes that the terminal got, for a quick look at the end
+    /// of the output.
+    recent: Vec<u8>,
     /// The bytes of the output frames after the last screen frame.
     output: usize,
     screens: usize,
@@ -120,6 +123,7 @@ impl Mirror {
                     self.screen = Some(fresh);
                     self.output = 0;
                     self.screens += 1;
+                    self.remember(screen);
                 }
                 Frame::Output { output, .. } => {
                     self.output += output.len();
@@ -127,6 +131,7 @@ impl Mirror {
                         .as_mut()
                         .expect("a screen comes before the output")
                         .feed(output);
+                    self.remember(output);
                 }
             },
             Outgoing::Event(Event::SessionResized(resized)) => {
@@ -142,6 +147,28 @@ impl Mirror {
             }
             Outgoing::Event(other) => panic!("an event for no session: {other:?}"),
         }
+    }
+
+    fn remember(&mut self, bytes: &[u8]) {
+        self.recent.extend_from_slice(bytes);
+        let extra = self.recent.len().saturating_sub(256);
+        self.recent.drain(..extra);
+    }
+
+    /// Whether the last bytes that the terminal got hold `text`.
+    fn recently(&self, text: &str) -> bool {
+        self.recent
+            .windows(text.len())
+            .any(|window| window == text.as_bytes())
+    }
+
+    /// The last number of a counting program in the last bytes.
+    fn last_number(&self) -> u64 {
+        String::from_utf8_lossy(&self.recent)
+            .lines()
+            .filter_map(|line| line.trim().parse().ok())
+            .next_back()
+            .unwrap_or(0)
     }
 
     /// The state of the screen; empty before the first screen frame.
@@ -414,13 +441,13 @@ mod unix {
         );
         // Attach a second client while the numbers flow.
         follow_until(&first, &mut from_start, |mirror| {
-            seq_output(&mirror.text()).last().copied().unwrap_or(0) > 1_000
+            mirror.last_number() > 1_000
         });
         let second = Viewer::new(&place.engine);
         attach(&place.engine, &second, &session.id);
         let mut late = Mirror::default();
         let deadline = Instant::now() + WAIT;
-        while !(from_start.text().contains("done") && late.text().contains("done")) {
+        while !(from_start.recently("done") && late.recently("done")) {
             for (viewer, mirror) in [(&first, &mut from_start), (&second, &mut late)] {
                 if let Some(item) = viewer.next(Instant::now() + Duration::from_millis(5)) {
                     mirror.take(item);
@@ -468,9 +495,7 @@ mod unix {
         );
         // The program ends its output although the slow client reads
         // nothing: the reader never waits for a client.
-        follow_until(&fast, &mut fast_mirror, |mirror| {
-            mirror.text().contains("done")
-        });
+        follow_until(&fast, &mut fast_mirror, |mirror| mirror.recently("done"));
         while let Some(item) = fast.next(Instant::now() + Duration::from_millis(200)) {
             fast_mirror.take(item);
         }
@@ -522,9 +547,7 @@ mod unix {
         // The output flows, as another client sees, but nothing goes to the
         // client before the answer.
         let mut seen = Mirror::default();
-        follow_until(&witness, &mut seen, |mirror| {
-            mirror.text().contains("output")
-        });
+        follow_until(&witness, &mut seen, |mirror| mirror.recently("output"));
         assert!(viewer.client.next().is_none());
         viewer.client.answered();
         let mut mirror = Mirror::default();
@@ -555,9 +578,7 @@ mod unix {
             }),
         );
         write(&place.engine, &viewer.client, &session.id, "stty size\r");
-        follow_until(&viewer, &mut mirror, |mirror| {
-            mirror.text().contains("\n30 100")
-        });
+        follow_until(&viewer, &mut mirror, |mirror| mirror.recently("30 100"));
         let screen = mirror.screen.as_ref().unwrap();
         assert_eq!((screen.columns(), screen.rows()), (100, 30));
         assert_eq!(list(&place.engine, &viewer.client)[0].columns, 100);
@@ -585,9 +606,7 @@ mod unix {
         }
         attach(&place.engine, &viewer, &session.id);
         let mut mirror = Mirror::default();
-        follow_until(&viewer, &mut mirror, |mirror| {
-            mirror.text().contains("[?1;2c")
-        });
+        follow_until(&viewer, &mut mirror, |mirror| mirror.recently("[?1;2c"));
         place.engine.stop(true).unwrap();
     }
 
@@ -604,9 +623,7 @@ mod unix {
             &session.id,
             "printf 're%s\\n' ady; sleep 1000\r",
         );
-        follow_until(&viewer, &mut mirror, |mirror| {
-            mirror.text().contains("ready")
-        });
+        follow_until(&viewer, &mut mirror, |mirror| mirror.recently("ready"));
         let kill = || {
             request(
                 &place.engine,
@@ -630,9 +647,7 @@ mod unix {
             &session.id,
             "trap '' HUP; printf 're%s\\n' ady\r",
         );
-        follow_until(&viewer, &mut mirror, |mirror| {
-            mirror.text().contains("ready")
-        });
+        follow_until(&viewer, &mut mirror, |mirror| mirror.recently("ready"));
         let start = Instant::now();
         request(
             &place.engine,
