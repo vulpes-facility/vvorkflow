@@ -36,6 +36,16 @@ export async function open(page: Page, id: string, args = '') {
 export const mod = (page: Page) =>
   page.evaluate(() => (/Mac/.test(navigator.userAgent) ? 'Meta' : 'Control'))
 
+/**
+ * The key that redoes. CodeMirror binds `mod+Y`, and `mod+Shift+Z` on macOS;
+ * `Ctrl+Shift+Z` is bound only on Linux, and the user agent of the test
+ * browsers says Windows or macOS.
+ */
+export const redoKey = (page: Page) =>
+  page.evaluate(() =>
+    /Mac/.test(navigator.userAgent) ? 'Meta+Shift+z' : 'Control+y',
+  )
+
 /** The calls of the callbacks, in order. */
 export const calls = (page: Page) =>
   page.evaluate(

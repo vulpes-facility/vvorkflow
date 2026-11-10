@@ -38,10 +38,10 @@ import type { Platform } from '@/shared/lib'
 import {
   indentUnitText,
   tabSize,
-  withSeparator,
   type Indent,
   type LineSeparator,
 } from '../../model/editor-text'
+import { separatorExtension, separatorHistory } from './editor-separator'
 import { editorTheme } from './editor-theme'
 import { createSearchPanel } from './search-panel'
 
@@ -238,20 +238,6 @@ export interface KitOptions {
   separator?: LineSeparator
 }
 
-/**
- * The line separator of the state, and the paste: a pasted text gets the
- * line breaks of the document, so that a pasted `\n` does not stay inside a
- * line of a CRLF file, and a pasted `\r` is not a character of an LF file.
- */
-export function separatorExtension(separator: LineSeparator): Extension {
-  return [
-    EditorState.lineSeparator.of(separator),
-    EditorView.clipboardInputFilter.of((text, state) =>
-      withSeparator(text, state.lineBreak as LineSeparator),
-    ),
-  ]
-}
-
 /** The key bindings of the platform of the app: save, and the keymaps of CodeMirror. */
 function keysExtension(
   platform: Platform,
@@ -339,8 +325,15 @@ export function editorExtensions(
     kit.access.of([]),
     kit.scheme.of(schemeExtension()),
     editorTheme,
+    separatorHistory(kit.separator),
+    // A change of the document, or of its separator alone, as an undo of a
+    // revert makes, can change the dirty state.
     EditorView.updateListener.of((update) => {
-      if (update.docChanged) hooks.changed(update)
+      if (
+        update.docChanged ||
+        update.startState.lineBreak !== update.state.lineBreak
+      )
+        hooks.changed(update)
     }),
   ]
 }

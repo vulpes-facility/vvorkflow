@@ -87,7 +87,7 @@ export function CodeEditor({
   const hint = useId()
   const view = useRef<EditorView | null>(null)
   const [parts] = useState(createKit)
-  const [textSession] = useState(() => new TextSession(parts))
+  const [textSession] = useState(() => new TextSession())
   const kit = useRef<Kit>(parts)
   const session = useRef(textSession)
   const applied = useRef(version)

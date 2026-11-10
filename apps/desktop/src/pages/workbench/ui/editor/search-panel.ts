@@ -1,4 +1,4 @@
-import { setSearchQuery } from '@codemirror/search'
+import { openSearchPanel, setSearchQuery } from '@codemirror/search'
 import type { EditorView, Panel } from '@codemirror/view'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
@@ -6,6 +6,22 @@ import { createRoot } from 'react-dom/client'
 import type { Platform } from '@/shared/lib'
 import { MatchCounter } from './search-count'
 import { SearchPanelView } from './search-panel-view'
+
+/** The views that open their search panel without the focus. */
+const quiet = new WeakSet<EditorView>()
+
+/**
+ * Opens the search panel and does not give it the focus, for a panel that
+ * comes back after a rebuild of the view, when the focus was elsewhere.
+ */
+export function openSearchPanelQuietly(view: EditorView) {
+  quiet.add(view)
+  try {
+    openSearchPanel(view)
+  } finally {
+    quiet.delete(view)
+  }
+}
 
 /**
  * Makes the search panel of the editor: icon buttons and a count instead of
@@ -39,6 +55,7 @@ export function createSearchPanel(platform: Platform) {
       dom,
       top: true,
       mount() {
+        if (quiet.has(view)) return
         const field = dom.querySelector<HTMLInputElement>('[main-field]')
         field?.focus()
         field?.select()

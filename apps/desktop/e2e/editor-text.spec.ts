@@ -5,6 +5,7 @@ import {
   mod,
   open,
   probe,
+  redoKey,
   save,
   setText,
 } from './editor-helpers.js'
@@ -197,18 +198,80 @@ test('revert() replaces the content with the last text, and ends the conflict', 
   await page.keyboard.type('mine ')
   await setText(page, 'from the disk\n', '2')
   await expect.poll(() => calls(page)).toEqual(['dirty:true', 'conflict:true'])
-  // A revert within half a second of a keystroke joins its undo group.
-  await page.waitForTimeout(700)
+  const before = await save(page)
   await probe(page, 'revert')
   await expect(content(page)).toHaveText('from the disk')
   await expect
     .poll(() => calls(page))
-    .toEqual(['dirty:true', 'conflict:true', 'dirty:false', 'conflict:false'])
-  // The revert is in the undo history.
+    .toEqual([
+      'dirty:true',
+      'conflict:true',
+      `save:${before}`,
+      'dirty:false',
+      'conflict:false',
+    ])
+  // One undo gives the exact content before the revert, with the last keystroke.
   await content(page).click()
-  await page.keyboard.press('ControlOrMeta+z')
-  await expect(content(page)).toContainText('mine')
+  await page.keyboard.press(`${await mod(page)}+z`)
+  expect(await save(page)).toBe(before)
 })
+
+for (const story of ['harness', 'diff-harness']) {
+  const pairs: [string, string, string][] = [
+    ['CRLF content, LF disk', 'a\r\nb\r\nc\r\n', 'a\nb\nc\n'],
+    ['LF content, CRLF disk', 'a\nb\nc\n', 'a\r\nb\r\nc\r\n'],
+    ['mixed content, CRLF disk', 'a\r\nb\nc\r\nd', 'a\r\nb\r\nc\r\n'],
+    ['CRLF content, mixed disk', 'a\r\nb\r\nc\r\n', 'a\r\nb\nc\r\nd'],
+  ]
+  for (const [name, mine, disk] of pairs) {
+    test(`${story}: revert, undo, redo, and save keep the line breaks (${name})`, async ({
+      page,
+      browserName,
+    }) => {
+      await page.setViewportSize({ width: 1200, height: 700 })
+      await open(page, story)
+      await setText(page, mine, '2')
+      await content(page).click()
+      await page.keyboard.press('ControlOrMeta+Home')
+      await page.keyboard.type('mine ')
+      const before = await save(page)
+      expect(before).toBe(`mine ${mine}`)
+      // A disk update keeps the unsaved bytes, with their line breaks.
+      await setText(page, disk, '3')
+      await expect.poll(() => calls(page)).toContain('conflict:true')
+      expect(await save(page)).toBe(before)
+
+      await probe(page, 'revert')
+      expect(await save(page)).toBe(disk)
+      await content(page).click()
+      await page.keyboard.press(`${await mod(page)}+z`)
+      expect(await save(page)).toBe(before)
+      // The redo key of macOS has a capital letter, which WebKit on Linux does
+      // not send; the unit tests and Chromium cover the redo.
+      if (browserName === 'webkit') return
+      await page.keyboard.press(await redoKey(page))
+      expect(await save(page)).toBe(disk)
+    })
+  }
+
+  test(`${story}: a disk text with other line endings does not change unsaved bytes`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1200, height: 700 })
+    await open(page, story)
+    await setText(page, 'a\n', '2')
+    await content(page).click()
+    await page.keyboard.press(`${await mod(page)}+a`)
+    await page.keyboard.type('b')
+    await page.keyboard.press('Enter')
+    expect(await save(page)).toBe('b\n')
+    await setText(page, 'b\r\n', '3')
+    await expect
+      .poll(() => calls(page))
+      .toEqual(expect.arrayContaining(['dirty:true', 'conflict:true']))
+    expect(await save(page)).toBe('b\n')
+  })
+}
 
 test('a new version during a composition keeps the content, and is not applied later', async ({
   page,

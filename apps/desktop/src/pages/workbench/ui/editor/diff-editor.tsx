@@ -27,6 +27,7 @@ import {
   type LineSeparator,
 } from '../../model/editor-text'
 import { editorHint, type CodeEditorProps } from './code-editor'
+import { openSearchPanelQuietly } from './search-panel'
 import {
   accessExtension,
   createKit,
@@ -110,7 +111,7 @@ export function DiffEditor({
   const [layout, setLayout] = useState<Layout>()
   const handle = useRef<Handle | null>(null)
   const [parts] = useState(createKit)
-  const [textSession] = useState(() => new TextSession(parts))
+  const [textSession] = useState(() => new TextSession())
   const kit = useRef<Kit>(parts)
   const session = useRef(textSession)
   const carry = useRef<Carry | null>(null)
@@ -266,7 +267,9 @@ export function DiffEditor({
       queueMicrotask(() => {
         if (handle.current !== made) return
         if (kept.search) {
-          openSearchPanel(made.main)
+          // Only a search that had the focus takes it back.
+          if (kept.focus === 'search') openSearchPanel(made.main)
+          else openSearchPanelQuietly(made.main)
           made.main.dispatch({ effects: setSearchQuery.of(kept.search.query) })
         }
         if (kept.focus === 'main') made.main.focus()

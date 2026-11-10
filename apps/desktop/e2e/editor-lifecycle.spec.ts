@@ -137,6 +137,26 @@ test('a layout switch does not take the focus from another control', async ({
   await expect(next).toBeFocused()
 })
 
+test('a layout switch with the search open keeps the focus where it was', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 700 })
+  await open(page, 'diff-harness')
+  await content(page).click()
+  await page.keyboard.press(`${await mod(page)}+f`)
+  await page.keyboard.type('job')
+  const next = page.getByRole('button', { name: 'Next control' })
+  await next.focus()
+  await setWidth(page, 500)
+  await expect(page.locator('.cm-editor')).toHaveCount(1)
+  // The panel is back with its query, and the focus stayed outside.
+  await expect(page.getByRole('textbox', { name: 'Find' })).toHaveValue('job')
+  await expect(next).toBeFocused()
+  await setWidth(page, 1000)
+  await expect(page.locator('.cm-editor')).toHaveCount(2)
+  await expect(next).toBeFocused()
+})
+
 test('a layout switch keeps an open search and its query', async ({ page }) => {
   await page.setViewportSize({ width: 1200, height: 700 })
   await open(page, 'diff-harness')

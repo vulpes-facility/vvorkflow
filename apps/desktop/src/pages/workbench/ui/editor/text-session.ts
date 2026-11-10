@@ -1,12 +1,13 @@
-import { Text, Transaction } from '@codemirror/state'
+import { isolateHistory } from '@codemirror/commands'
+import { Text, Transaction, type EditorState } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import {
   changedSpan,
   detectLineSeparator,
   documentForm,
   type LineSeparator,
-} from '../../model/editor-text'
-import { separatorExtension, type Kit } from './editor-kit'
+} from '../../model/editor-text.ts'
+import { changeSeparator } from './editor-separator.ts'
 
 /** What the owner of an editor hears about its text. */
 export interface TextCallbacks {
@@ -39,12 +40,6 @@ export class TextSession {
   /** The conflict that the owner knows. */
   private told = false
 
-  private readonly kit: Kit
-
-  constructor(kit: Kit) {
-    this.kit = kit
-  }
-
   /** Takes the first text. It tells the owner nothing. */
   init(text: string) {
     this.take(text)
@@ -64,13 +59,21 @@ export class TextSession {
     return Text.of(this.baseline.split('\n'))
   }
 
+  /**
+   * Whether the content, as `save` gives it, differs from the bytes of the
+   * disk text. Dirty and conflict are decided on these two strings only, and
+   * never on the form of the document or on the separator.
+   */
+  private differs(state: EditorState): boolean {
+    const { doc, lineBreak } = state
+    // The length of the saved text, with no string built.
+    const length = doc.length + (doc.lines - 1) * (lineBreak.length - 1)
+    return length !== this.disk.length || state.sliceDoc() !== this.disk
+  }
+
   /** Tells the owner when the dirty state or the conflict changes. */
   check(view: EditorView) {
-    const { doc, lineBreak } = view.state
-    const dirty =
-      doc.length !== this.baseline.length ||
-      lineBreak !== this.separator ||
-      doc.toString() !== this.baseline
+    const dirty = this.differs(view.state)
     if (dirty !== this.dirty) {
       this.dirty = dirty
       this.callbacks.onDirtyChange?.(dirty)
@@ -99,27 +102,28 @@ export class TextSession {
 
   /**
    * Takes a new text from the disk.
-   * With no unsaved edits and no composition, it replaces only the span that
-   * differs, so the cursor and the scroll position stay where they can, and
-   * the change is not in the undo history. With unsaved edits or a
-   * composition, it keeps the content and tells the owner about the conflict.
+   * With no unsaved edits and no composition, the content is the old text, so
+   * the editor replaces the document, and its separator, with the new text.
+   * It changes only the span that differs, so the cursor and the scroll
+   * position stay where they can, and the change is not in the undo history.
+   * With unsaved edits or a composition, it keeps the document and its
+   * separator, so that the bytes that the user typed never change, and tells
+   * the owner about the conflict when the content differs from the new text.
    */
   applyDisk(view: EditorView, text: string) {
-    const content = view.state.doc.toString()
     const hadEdits =
-      content !== this.baseline ||
-      view.state.lineBreak !== this.separator ||
-      view.compositionStarted
+      view.state.sliceDoc() !== this.disk || view.compositionStarted
     this.take(text)
-    if (hadEdits && content !== this.baseline) {
-      this.conflict = true
-    } else {
-      this.replaceContent(view, false)
-    }
+    if (!hadEdits) this.replaceContent(view, false)
+    else if (view.state.sliceDoc() !== text) this.conflict = true
     this.check(view)
   }
 
-  /** Replaces the content with the last text of the disk, and ends the conflict. The change is in the undo history. */
+  /**
+   * Replaces the content with the last text of the disk, and ends the
+   * conflict. The change, with the change of the separator, is one event of
+   * the undo history, apart from the typing before it.
+   */
   revert(view: EditorView) {
     this.replaceContent(view, true)
     this.check(view)
@@ -129,7 +133,7 @@ export class TextSession {
     const effects =
       view.state.lineBreak === this.separator
         ? []
-        : [this.kit.separator.reconfigure(separatorExtension(this.separator))]
+        : [changeSeparator.of(this.separator)]
     const span = changedSpan(view.state.doc.toString(), this.baseline)
     // The separator of the old state would split a string, so give a Text.
     const changes = span && {
@@ -141,7 +145,7 @@ export class TextSession {
       view.dispatch({
         changes,
         effects,
-        annotations: history ? [] : [external],
+        annotations: history ? [isolateHistory.of('full')] : [external],
       })
   }
 }

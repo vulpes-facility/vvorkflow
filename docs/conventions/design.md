@@ -190,6 +190,11 @@ Both are CodeMirror 6, in `apps/desktop/src/pages/workbench/ui/editor/`.
    - Otherwise the editor keeps the content, takes the new `text` as the text of the disk, and calls `onConflictChange(true)` when the content differs from it.\
      The conflict ends, with `onConflictChange(false)`, when the content is equal to the text again, as it is after a save, or after `revert()` of the handle.
    - `onSave` always gets the content, and the owner decides whether to write it over the disk.
+   - Two rules hold on each path that sets the document, the separator, the dirty state, or the conflict (mount, a new version, a composition, `revert()`, undo and redo, the layout switch, and a new `original`):
+     what `onSave` gives is byte for byte the content that the user sees and typed, and a disk update never changes it;
+     `dirty` and `conflict` follow only the saved content and the bytes of the disk text.\
+     `tests/text-session.test.ts` checks both in a long random sequence.
+   - `revert()` is one event of the undo history, apart from the typing before it, and it brings back the line breaks with the text on an undo.
    - A new `original` of the diff never touches the edits.
    - Each `version` is processed once, also when the platform or the layout changes in the same render.
    - The editor shows one file.\
@@ -201,7 +206,7 @@ Both are CodeMirror 6, in `apps/desktop/src/pages/workbench/ui/editor/`.
 
 Known gaps:
 
-- The layout switch of the diff keeps the content, the cursor, the focus, and the search, and waits for the end of an IME composition.\
+- The layout switch of the diff keeps the content, the cursor, the focus (not from another control, also when the search is open), and the search, and waits for the end of an IME composition.\
   It does not keep the undo history.
 - A text with a `\r` in a line, from a mixed text, shows a control character at the end of that line.
 - In the wide diff, F6 lands on the original side first.
