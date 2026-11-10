@@ -1,5 +1,5 @@
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { Prec, type Extension } from '@codemirror/state'
+import type { Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 
@@ -38,7 +38,7 @@ const base = EditorView.theme({
     border: 'none',
   },
   '.cm-lineNumbers .cm-gutterElement': {
-    minWidth: '3ch',
+    minWidth: 'var(--vv-editor-gutter-min-w)',
     padding: '0 var(--vv-space-2) 0 var(--vv-space-3)',
   },
   '.cm-activeLineGutter': {
@@ -54,6 +54,10 @@ const base = EditorView.theme({
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
     backgroundColor: 'var(--editor-selection)',
   },
+  // The selection of a diff is also a mark on the text, which the opaque
+  // changed lines and changed text do not hide, in either nesting order.
+  '.cm-vv-selected, .cm-vv-selected .cm-changedText, .cm-changedText .cm-vv-selected, .cm-vv-selected .cm-deletedText, .cm-deletedText .cm-vv-selected':
+    { background: 'var(--editor-selection)' },
   '.cm-matchingBracket, .cm-nonmatchingBracket': {
     backgroundColor: 'transparent',
     outline: 'var(--vv-hairline-w) solid var(--subtle-foreground)',
@@ -61,7 +65,7 @@ const base = EditorView.theme({
     fontWeight: '700',
   },
   '.cm-nonmatchingBracket': {
-    color: 'var(--destructive)',
+    color: 'var(--editor-error)',
     textDecoration: 'underline wavy',
   },
   '.cm-specialChar': { color: 'var(--muted-foreground)' },
@@ -106,7 +110,7 @@ const base = EditorView.theme({
   '.cm-deletedChunk': { paddingLeft: 'var(--vv-space-2)' },
   '.cm-changeGutter': {
     width: 'auto',
-    minWidth: '2ch',
+    minWidth: 'var(--vv-editor-mark-min-w)',
     padding: '0 var(--vv-space-1) 0 var(--vv-space-2)',
   },
   '.cm-changeGutter .cm-gutterElement': {
@@ -135,28 +139,7 @@ const base = EditorView.theme({
     lineHeight: 'var(--vv-leading-ui)',
   },
   '.cm-collapsedLines:hover': { color: 'var(--foreground)' },
-  '.cm-mergeView': { height: '100%' },
-  '.cm-mergeViewEditors': { minHeight: '100%' },
-  '.cm-mergeViewEditor + .cm-mergeViewEditor': {
-    borderLeft: 'var(--vv-hairline-w) solid var(--hairline)',
-  },
 })
-
-/**
- * The native selection shows above the opaque lines of a diff, which hide
- * the selection layer. It has the same color as the layer, so that the two
- * look like one.
- */
-const nativeSelection = Prec.highest(
-  EditorView.theme({
-    // More specific than the rule of CodeMirror that hides the native selection.
-    '&.cm-editor .cm-line': {
-      '& ::selection, &::selection': {
-        backgroundColor: 'var(--editor-selection) !important',
-      },
-    },
-  }),
-)
 
 const highlightStyle = HighlightStyle.define([
   {
@@ -209,14 +192,10 @@ const highlightStyle = HighlightStyle.define([
   },
   {
     tag: tags.invalid,
-    color: 'var(--destructive)',
+    color: 'var(--editor-error)',
     textDecoration: 'underline wavy',
   },
 ])
 
 /** The theme and the syntax colors of the editor. */
-export const editorTheme: Extension = [
-  base,
-  nativeSelection,
-  syntaxHighlighting(highlightStyle),
-]
+export const editorTheme: Extension = [base, syntaxHighlighting(highlightStyle)]

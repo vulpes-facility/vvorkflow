@@ -260,19 +260,24 @@ export function DiffEditor({
     }
 
     if (kept) {
-      // The search panel, and then the focus, in the new layout.
-      if (kept.search) {
-        openSearchPanel(made.main)
-        made.main.dispatch({ effects: setSearchQuery.of(kept.search.query) })
-      }
-      if (kept.focus === 'main') made.main.focus()
-      else if (kept.focus === 'original') (made.original ?? made.main).focus()
-      if (selection)
-        made.main.dispatch({
-          effects: EditorView.scrollIntoView(selection.main.head, {
-            y: 'center',
-          }),
-        })
+      // The search panel, and then the focus, in the new layout. React does
+      // not allow a synchronous render inside an effect, and the panel needs
+      // one, so this runs right after the effect.
+      queueMicrotask(() => {
+        if (handle.current !== made) return
+        if (kept.search) {
+          openSearchPanel(made.main)
+          made.main.dispatch({ effects: setSearchQuery.of(kept.search.query) })
+        }
+        if (kept.focus === 'main') made.main.focus()
+        else if (kept.focus === 'original') (made.original ?? made.main).focus()
+        if (selection)
+          made.main.dispatch({
+            effects: EditorView.scrollIntoView(selection.main.head, {
+              y: 'center',
+            }),
+          })
+      })
     }
 
     // The scheme changes the class of the root: CodeMirror needs its flag.

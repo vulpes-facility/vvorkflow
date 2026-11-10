@@ -6,6 +6,7 @@
 @import 'dockview-react/dist/styles/dockview.css';
 @import './tokens.css';
 @import './dockview-theme.css';
+@import './editor.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -110,6 +111,7 @@
   --color-editor-inserted-text: var(--editor-inserted-text);
   --color-editor-deleted: var(--editor-deleted);
   --color-editor-deleted-text: var(--editor-deleted-text);
+  --color-editor-error: var(--editor-error);
   --color-syntax-keyword: var(--syntax-keyword);
   --color-syntax-string: var(--syntax-string);
   --color-syntax-number: var(--syntax-number);

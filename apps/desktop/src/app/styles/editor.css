@@ -1,0 +1,19 @@
+/*
+ * The wrapper of the wide diff editor. CodeMirror puts the merge view around
+ * the two editors, so these rules cannot be in the theme of an editor, which
+ * only reaches elements inside it. The diff host is `data-diff-host`.
+ */
+
+/* The merge view is the vertical scroll area of both sides: it takes the height of the host. */
+[data-diff-host] .cm-mergeView {
+  height: 100%;
+}
+
+/* Both sides are as tall as the longer one, so that the divider and the tints run to the end of the view. */
+[data-diff-host] .cm-mergeViewEditors {
+  min-height: 100%;
+}
+
+[data-diff-host] .cm-mergeViewEditor + .cm-mergeViewEditor {
+  border-left: var(--vv-hairline-w) solid var(--hairline);
+}

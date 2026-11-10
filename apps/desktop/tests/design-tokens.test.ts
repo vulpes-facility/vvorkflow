@@ -200,6 +200,8 @@ const syntaxColors = [
   'syntax-comment',
   'syntax-function',
   'syntax-type',
+  // The color of an error in the code: an invalid token, and a bracket with no pair.
+  'editor-error',
 ]
 
 /** Every surface that text of the code editor can be on. */

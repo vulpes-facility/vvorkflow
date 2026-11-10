@@ -90,6 +90,9 @@
   --vv-space-3: 12px;
   --vv-space-9: 36px;
   --vv-focus-w: 2px;
+  /* The least width of the line number gutter, and of the gutter that marks the changed lines of a diff. */
+  --vv-editor-gutter-min-w: 3ch;
+  --vv-editor-mark-min-w: 2ch;
   --vv-editor-search-field-w: 192px;
   --vv-text-2xs: 11px;
   --vv-text-xs: 12px;
@@ -241,6 +244,7 @@
   --syntax-comment: var(--vv-gray-600);
   --syntax-function: var(--vv-teal-700);
   --syntax-type: var(--vv-magenta-700);
+  --editor-error: var(--vv-red-700);
 
   /* Terminal: the 16 ANSI colors. Black and white may be faint on the background; the terminal raises their contrast. */
   --terminal: var(--vv-gray-0);
@@ -342,6 +346,7 @@
   --syntax-comment: var(--vv-gray-400);
   --syntax-function: var(--vv-teal-400);
   --syntax-type: var(--vv-magenta-400);
+  --editor-error: var(--vv-red-300);
 
   /* Terminal */
   --terminal: var(--vv-gray-950);

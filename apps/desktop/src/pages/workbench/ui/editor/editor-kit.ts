@@ -151,6 +151,40 @@ export async function loadLanguage(path: string): Promise<Extension> {
   }
 }
 
+const selectedMark = Decoration.mark({ class: 'cm-vv-selected' })
+
+/**
+ * Marks the text of each selected range that shows. A diff has opaque
+ * backgrounds on its changed lines, which hide the selection that CodeMirror
+ * draws below the lines, so each range, not only the main one, is also a mark
+ * on the text, above those backgrounds.
+ */
+const selectionMarks = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet
+    constructor(view: EditorView) {
+      this.decorations = this.build(view)
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.selectionSet || update.viewportChanged)
+        this.decorations = this.build(update.view)
+    }
+    build(view: EditorView): DecorationSet {
+      const builder = new RangeSetBuilder<Decoration>()
+      for (const range of view.state.selection.ranges) {
+        if (range.empty) continue
+        for (const visible of view.visibleRanges) {
+          const from = Math.max(range.from, visible.from)
+          const to = Math.min(range.to, visible.to)
+          if (from < to) builder.add(from, to, selectedMark)
+        }
+      }
+      return builder.finish()
+    }
+  },
+  { decorations: (plugin) => plugin.decorations },
+)
+
 const activeLineMark = Decoration.line({ class: 'cm-activeLine' })
 
 /**
@@ -294,6 +328,7 @@ export function editorExtensions(
     bracketMatching(),
     rectangularSelection(),
     activeLine,
+    ...(options.diff ? [selectionMarks] : []),
     kit.search.of(
       search({ top: true, createPanel: createSearchPanel(platform) }),
     ),
