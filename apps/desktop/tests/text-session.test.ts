@@ -1,4 +1,11 @@
-import { history, redo, undo } from '@codemirror/commands'
+import { history, isolateHistory, redo, undo } from '@codemirror/commands'
+import {
+  replaceAll,
+  replaceNext,
+  search,
+  SearchQuery,
+  setSearchQuery,
+} from '@codemirror/search'
 import {
   Compartment,
   EditorState,
@@ -34,6 +41,7 @@ function makeEditor(text: string) {
       doc: session.document(),
       extensions: [
         history(),
+        search(),
         separator.of(separatorExtension(session.separator)),
         separatorHistory(separator),
       ],
@@ -42,7 +50,10 @@ function makeEditor(text: string) {
       const transaction =
         specs[0] instanceof Transaction
           ? specs[0]
-          : this.state.update(...(specs as TransactionSpec[]))
+          : this.state.update(...(specs as TransactionSpec[]), {
+              // Each edit is its own event of the history, so that a model can follow it.
+              annotations: isolateHistory.of('full'),
+            })
       const startBreak = this.state.lineBreak
       this.state = transaction.state
       if (transaction.docChanged || startBreak !== this.state.lineBreak)
@@ -218,7 +229,180 @@ describe('revert and the undo history', () => {
   })
 })
 
-describe('the invariants, in a long random sequence', () => {
+describe('a search replacement', () => {
+  /** Searches and replaces in the editor, with the commands of CodeMirror. */
+  function replace(
+    editor: ReturnType<typeof makeEditor>,
+    options: {
+      search: string
+      replace: string
+      regexp?: boolean
+      all?: boolean
+    },
+  ) {
+    editor.view.dispatch({
+      effects: setSearchQuery.of(
+        new SearchQuery({
+          search: options.search,
+          replace: options.replace,
+          regexp: options.regexp,
+          caseSensitive: true,
+        }),
+      ),
+    })
+    if (options.all ?? true) replaceAll(editor.editor)
+    else {
+      // The first command selects the match, and the second replaces it.
+      replaceNext(editor.editor)
+      replaceNext(editor.editor)
+    }
+  }
+
+  for (const all of [true, false]) {
+    const how = all ? 'replace all' : 'replace'
+    it(`gives the line breaks of a CRLF file to a capture over lines (${how})`, () => {
+      const editor = makeEditor('a\r\nb')
+      replace(editor, { search: '(a\\nb)', replace: '<$1>', regexp: true, all })
+      expect(editor.saved()).toBe('<a\r\nb>')
+      editor.undo()
+      expect(editor.saved()).toBe('a\r\nb')
+      editor.redo()
+      expect(editor.saved()).toBe('<a\r\nb>')
+    })
+
+    it(`gives the line breaks of a CRLF file to an escaped newline (${how})`, () => {
+      const editor = makeEditor('a\r\nb\r\n')
+      replace(editor, { search: 'b', replace: 'x\\ny', all })
+      expect(editor.saved()).toBe('a\r\nx\r\ny\r\n')
+      editor.undo()
+      expect(editor.saved()).toBe('a\r\nb\r\n')
+      editor.redo()
+      expect(editor.saved()).toBe('a\r\nx\r\ny\r\n')
+    })
+
+    it(`gives one LF break to an escaped CRLF in an LF file (${how})`, () => {
+      const editor = makeEditor('a\nb\n')
+      replace(editor, { search: 'b', replace: 'x\\r\\ny', all })
+      expect(editor.saved()).toBe('a\nx\ny\n')
+      editor.undo()
+      expect(editor.saved()).toBe('a\nb\n')
+      editor.redo()
+      expect(editor.saved()).toBe('a\nx\ny\n')
+    })
+
+    it(`keeps the lines of a capture over lines in an LF file (${how})`, () => {
+      const editor = makeEditor('a\nb\n')
+      replace(editor, { search: '(a\\nb)', replace: '$1$1', regexp: true, all })
+      expect(editor.saved()).toBe('a\nba\nb\n')
+    })
+  }
+
+  it('leaves a `\\r` at the end of a line of an LF document, which comes from the disk', () => {
+    const editor = makeEditor('a\r\nb\nc')
+    replace(editor, { search: 'c', replace: 'd' })
+    expect(editor.saved()).toBe('a\r\nb\nd')
+    editor.undo()
+    expect(editor.saved()).toBe('a\r\nb\nc')
+  })
+
+  it('does not change the text that comes from the disk', () => {
+    const editor = makeEditor('x')
+    editor.session.applyDisk(editor.editor, 'a\r\nb\nc')
+    expect(editor.saved()).toBe('a\r\nb\nc')
+  })
+})
+
+describe('the invariants against a model, in a long random sequence', () => {
+  type Separator = '\n' | '\r\n'
+
+  /** The line separator that an editor must use for a text, as a plain rule. */
+  function separatorOf(text: string): Separator {
+    const allCrlf = /\r\n/.test(text) && !/(?<!\r)\n|\r(?!\n)/.test(text)
+    return allCrlf ? '\r\n' : '\n'
+  }
+
+  interface Snapshot {
+    content: string
+    separator: Separator
+  }
+
+  /**
+   * What the editor must show, as plain strings: the bytes of the content and
+   * of the disk text, the separator for a new line break, a stack of undo and
+   * redo of its own, and the conflict.
+   */
+  class Model {
+    content: string
+    separator: Separator
+    disk: string
+    conflict = false
+    undoStack: Snapshot[] = []
+    redoStack: Snapshot[] = []
+
+    constructor(text: string) {
+      this.content = text
+      this.disk = text
+      this.separator = separatorOf(text)
+    }
+
+    get dirty() {
+      return this.content !== this.disk
+    }
+
+    private snapshot(): Snapshot {
+      return { content: this.content, separator: this.separator }
+    }
+
+    /** A change of the user is one event of the history. */
+    edit(content: string, separator = this.separator) {
+      this.undoStack.push(this.snapshot())
+      this.redoStack = []
+      this.content = content
+      this.separator = separator
+      this.settle()
+    }
+
+    /** The conflict ends when the content is equal to the disk text. */
+    settle() {
+      if (!this.dirty) this.conflict = false
+    }
+
+    version(text: string, composing: boolean) {
+      const hadEdits = this.dirty || composing
+      this.disk = text
+      if (!hadEdits) {
+        // The new text replaces the content, and the change is not in the history.
+        this.content = text
+        this.separator = separatorOf(text)
+        this.undoStack = []
+        this.redoStack = []
+      } else if (this.content !== text) this.conflict = true
+      this.settle()
+    }
+
+    revert() {
+      const separator = separatorOf(this.disk)
+      if (this.content === this.disk && this.separator === separator) return
+      this.edit(this.disk, separator)
+    }
+
+    undo() {
+      const before = this.undoStack.pop()!
+      this.redoStack.push(this.snapshot())
+      this.content = before.content
+      this.separator = before.separator
+      this.settle()
+    }
+
+    redo() {
+      const after = this.redoStack.pop()!
+      this.undoStack.push(this.snapshot())
+      this.content = after.content
+      this.separator = after.separator
+      this.settle()
+    }
+  }
+
   // A small seeded generator, so that a failure repeats.
   function random(seed: number) {
     let value = seed
@@ -227,67 +411,137 @@ describe('the invariants, in a long random sequence', () => {
       return value / 2 ** 32
     }
   }
-  const names = Object.keys(texts) as (keyof typeof texts)[]
 
-  for (let seed = 1; seed <= 40; seed++) {
+  const diskTexts = [
+    'a\nb\nc\n',
+    'a\r\nb\r\nc\r\n',
+    'a\r\nb\nc\r\nd',
+    'a\rb\rc',
+    'abc',
+    'a\r\nb',
+    'ab\nab\n',
+    'ab\r\nab\r\n',
+    '',
+  ]
+
+  // The replacements that the search can make: the spec of the field, and the
+  // bytes that it must give, with `SEP` for a line break of the document.
+  const replacements: [string, string][] = [
+    ['Z', 'Z'],
+    ['Q\\nR', 'Q\nR'],
+    ['Q\\r\\nR', 'Q\nR'],
+  ]
+
+  for (let seed = 1; seed <= 60; seed++) {
     it(`holds on sequence ${seed}`, () => {
       const next = random(seed)
       const pick = <T>(list: readonly T[]) =>
         list[Math.floor(next() * list.length)]
-      let disk = texts[pick(names)]
-      const editor = makeEditor(disk)
+      const first = pick(diskTexts)
+      const editor = makeEditor(first)
+      const model = new Model(first)
       let composing = false
-      for (let step = 0; step < 60; step++) {
-        const before = editor.saved()
-        const operation = pick([
-          'type',
-          'type',
-          'version',
-          'version',
-          'save-version',
-          'revert',
-          'undo',
-          'redo',
-          'compose',
-        ] as const)
-        if (operation === 'type') {
-          // The user types a letter or a line break. A `\r` or a raw `\n`
-          // cannot be typed, because the keyboard and the paste give the
-          // line breaks of the state.
-          editor.type(
-            Math.floor(next() * (editor.view.state.doc.length + 1)),
-            pick(['x', editor.view.state.lineBreak]),
-          )
-        } else if (operation === 'version') {
-          disk = texts[pick(names)]
-          const dirtyBefore = before !== editor.session.disk
-          editor.session.applyDisk(editor.editor, disk)
-          // (a) A disk update never changes unsaved bytes, or bytes while a composition is open.
-          if (dirtyBefore || composing) expect(editor.saved()).toBe(before)
-          else expect(editor.saved()).toBe(disk)
-        } else if (operation === 'save-version') {
-          disk = editor.saved()
-          editor.session.applyDisk(editor.editor, disk)
-          expect(editor.saved()).toBe(before)
+
+      const operations = [
+        'type',
+        'type',
+        'type',
+        'break',
+        'version',
+        'version',
+        'save-version',
+        'revert',
+        'undo',
+        'redo',
+        'replace-all',
+        'regexp-all',
+        'compose',
+      ] as const
+
+      for (let step = 0; step < 50; step++) {
+        const operation = pick(operations)
+        if (operation === 'type' || operation === 'break') {
+          const where = pick(['start', 'end', 'break'] as const)
+          const { content } = model
+          const at =
+            where === 'start'
+              ? 0
+              : where === 'end'
+                ? content.length
+                : content.indexOf('\n') + 1 || content.length
+          const insert = operation === 'type' ? 'x' : model.separator
+          // A position of the document: a line break is one position.
+          const from = content
+            .slice(0, at)
+            .split(model.separator)
+            .join('\n').length
+          editor.view.dispatch({
+            changes: { from, insert },
+            userEvent: 'input.type',
+          })
+          model.edit(content.slice(0, at) + insert + content.slice(at))
+        } else if (operation === 'version' || operation === 'save-version') {
+          const text = operation === 'version' ? pick(diskTexts) : model.content
+          editor.session.applyDisk(editor.editor, text)
+          model.version(text, composing)
         } else if (operation === 'revert') {
           editor.session.revert(editor.editor)
-          disk = editor.session.disk
-          expect(editor.saved()).toBe(disk)
-        } else if (operation === 'undo') editor.undo()
-        else if (operation === 'redo') editor.redo()
-        else {
+          model.revert()
+        } else if (operation === 'undo') {
+          if (!model.undoStack.length) continue
+          expect(editor.undo()).toBe(true)
+          model.undo()
+        } else if (operation === 'redo') {
+          if (!model.redoStack.length) continue
+          expect(editor.redo()).toBe(true)
+          model.redo()
+        } else if (operation === 'replace-all') {
+          const [spec, bytes] = pick(replacements)
+          const replacement = bytes.replaceAll('\n', model.separator)
+          editor.view.dispatch({
+            effects: setSearchQuery.of(
+              new SearchQuery({
+                search: 'a',
+                replace: spec,
+                caseSensitive: true,
+              }),
+            ),
+          })
+          replaceAll(editor.editor)
+          if (model.content.includes('a'))
+            model.edit(model.content.split('a').join(replacement))
+        } else if (operation === 'regexp-all') {
+          // A capture over two lines.
+          editor.view.dispatch({
+            effects: setSearchQuery.of(
+              new SearchQuery({
+                search: '(a\\nb)',
+                replace: '<$1>',
+                regexp: true,
+                caseSensitive: true,
+              }),
+            ),
+          })
+          replaceAll(editor.editor)
+          const found = `a${model.separator}b`
+          if (model.content.includes(found))
+            model.edit(model.content.split(found).join(`<${found}>`))
+        } else {
           composing = !composing
           editor.view.compositionStarted = composing
         }
-        // (b) Dirty is a function of the saved bytes and the bytes of the disk text.
-        const dirty = editor.saved() !== editor.session.disk
+
+        const label = `step ${step} ${operation}`
+        // (a) The bytes that the editor gives are the bytes of the model.
+        expect(editor.saved(), label).toBe(model.content)
+        expect(editor.view.state.lineBreak, label).toBe(model.separator)
+        expect(editor.session.disk, label).toBe(model.disk)
+        // (b) Dirty and conflict follow only the content and the disk text.
         const heard = editor.heard()
-        expect(heard.dirty ?? 'dirty:false', `step ${step} ${operation}`).toBe(
-          `dirty:${dirty}`,
+        expect(heard.dirty ?? 'dirty:false', label).toBe(`dirty:${model.dirty}`)
+        expect(heard.conflict ?? 'conflict:false', label).toBe(
+          `conflict:${model.conflict}`,
         )
-        // A conflict needs unsaved bytes, and the end of the difference ends it.
-        if (!dirty)
-          expect(heard.conflict ?? 'conflict:false').toBe('conflict:false')
       }
     })
   }

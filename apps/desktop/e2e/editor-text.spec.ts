@@ -321,3 +321,84 @@ test('mod+S during a composition does not save, and saves after it', async ({
   await page.waitForTimeout(200)
   expect(await save(page)).toContain('import { EventEmitter }')
 })
+
+// A search replacement keeps the line breaks of the file, byte for byte.
+for (const story of ['harness', 'diff-harness']) {
+  const cases: {
+    name: string
+    file: string
+    find: string
+    replace: string
+    regexp: boolean
+    result: string
+  }[] = [
+    {
+      name: 'a capture over two lines in a CRLF file',
+      file: 'a\r\nb',
+      find: '(a\\nb)',
+      replace: '<$1>',
+      regexp: true,
+      result: '<a\r\nb>',
+    },
+    {
+      name: 'an escaped newline in a CRLF file',
+      file: 'a\r\nb\r\n',
+      find: 'b',
+      replace: 'x\\ny',
+      regexp: false,
+      result: 'a\r\nx\r\ny\r\n',
+    },
+    {
+      name: 'a capture over two lines in an LF file',
+      file: 'a\nb\n',
+      find: '(a\\nb)',
+      replace: '<$1>',
+      regexp: true,
+      result: '<a\nb>\n',
+    },
+    {
+      name: 'an escaped CRLF in an LF file',
+      file: 'a\nb\n',
+      find: 'b',
+      replace: 'x\\r\\ny',
+      regexp: false,
+      result: 'a\nx\ny\n',
+    },
+  ]
+  for (const { name, file, find, replace, regexp, result } of cases) {
+    for (const how of ['replace all button', 'Enter in the replace field']) {
+      test(`${story}: ${name} (${how}), then undo and redo`, async ({
+        page,
+        browserName,
+      }) => {
+        await page.setViewportSize({ width: 1200, height: 700 })
+        await open(page, story)
+        await setText(page, file, '2')
+        await content(page).click()
+        await page.keyboard.press(`${await mod(page)}+f`)
+        await page.getByRole('button', { name: 'Show replace' }).click()
+        if (regexp)
+          await page.getByRole('button', { name: 'Regular expression' }).click()
+        await page.getByRole('textbox', { name: 'Find' }).fill(find)
+        const field = page.getByRole('textbox', { name: 'Replace' })
+        await field.fill(replace)
+        if (how === 'replace all button')
+          await page.getByRole('button', { name: 'Replace all' }).click()
+        else {
+          // The first Enter selects the match, and the second replaces it.
+          await field.press('Enter')
+          await field.press('Enter')
+        }
+        await content(page).click()
+        expect(await save(page)).toBe(result)
+
+        await page.keyboard.press(`${await mod(page)}+z`)
+        expect(await save(page)).toBe(file)
+        // The redo key of macOS has a capital letter, which WebKit on Linux does not send.
+        if (browserName === 'webkit') return
+        await page.keyboard.press(await redoKey(page))
+        expect(await save(page)).toBe(result)
+      })
+    }
+  }
+}

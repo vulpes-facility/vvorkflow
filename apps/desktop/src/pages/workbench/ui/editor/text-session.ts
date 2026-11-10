@@ -7,7 +7,7 @@ import {
   documentForm,
   type LineSeparator,
 } from '../../model/editor-text.ts'
-import { changeSeparator } from './editor-separator.ts'
+import { changeSeparator, fromDisk } from './editor-separator.ts'
 
 /** What the owner of an editor hears about its text. */
 export interface TextCallbacks {
@@ -145,7 +145,9 @@ export class TextSession {
       view.dispatch({
         changes,
         effects,
-        annotations: history ? [isolateHistory.of('full')] : [external],
+        annotations: history
+          ? [isolateHistory.of('full'), fromDisk.of(true)]
+          : [external, fromDisk.of(true)],
       })
   }
 }

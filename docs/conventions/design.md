@@ -181,9 +181,11 @@ Both are CodeMirror 6, in `apps/desktop/src/pages/workbench/ui/editor/`.
    - A text with only LF, or with no line break, uses `\n` as the line separator of the state.
    - A text with only CRLF uses `\r\n`.
    - A mixed text, also with a lone `\r`, uses `\n`, and each `\r` stays in the document as a character at the end of its line, which shows as a control character.
-   - A new line, and a pasted text, get the separator of the state.
+   - A new line, and a pasted text, get the separator of the state.\
+     A guard on each transaction does the same for every other source of text, such as a replacement of the search: a `\n` that the search makes inside a line of a CRLF document, or a `\r` in a replacement, becomes a real line break with the separator of the document.\
+     The text of the disk, and an undo or a redo, pass as they are.
    - A text with no final line break keeps none.\
-   The editor detects tabs or spaces and the width from the text, and uses 2 spaces when the text shows none.
+     The editor detects tabs or spaces and the width from the text, and uses 2 spaces when the text shows none.
 8. A new `version` never discards unsaved edits.
    - While the content has no unsaved edits and no IME composition is open, the editor replaces only the span that differs, so the cursor and the scroll position stay where they can.\
      The replace is not in the undo history.
