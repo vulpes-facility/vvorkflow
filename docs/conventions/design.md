@@ -85,7 +85,9 @@ The shell follows value 5 of the [core values](../core-values.md).
    The dialog keeps the focus and its keys: the shortcuts of the window do nothing while the focus is in a dialog (`isDialogKey`).\
    Escape closes it, and the focus goes back to the control that opened it.\
    A dialog starts empty each time it opens.
-7. Do not write a description under a title, an item, or an empty state.\
+7. An action that the user cannot take back, and that is not in a menu, asks first (`ConfirmDialog`): the question is the title, the dialog opens with the focus on Cancel, and the button of the action has its name.\
+   For example, Stop engine on the Welcome tab ends the terminal sessions of an engine of another version.
+8. Do not write a description under a title, an item, or an empty state.\
    The name, the icon, and the data, such as a path, are sufficient.\
    An error shows as a warning icon, with its message in a tooltip on hover and on keyboard focus, and in an alert for assistive technology.\
    The owner asked for this rule on 2026-11-09.
@@ -134,6 +136,21 @@ An agent runs its real TUI in it (value 3).
 5. The cursor does not blink (SC 2.2.2).
 6. The input of the terminal is invisible and takes the keys and the IME.\
    The screen capture leaves it out of the target size check, because the pointer target is the whole terminal.
+7. A terminal tab shows a session of the engine, which continues when no tab shows it.\
+   The tab attaches to the session while it has a terminal, and detaches when it closes: Close never ends a session.\
+   Kill terminal, in the menu of the tab and of a row of the Terminals view, ends the session, with no question, because the action is in a menu and has no shortcut.\
+   The tab of a session that ends closes.
+8. The session owns the size of its terminal.\
+   The terminal proposes the size that fits its room, 100 ms after the room stopped to change, and takes the size that the session tells.\
+   So each terminal of one session shows the same lines.
+9. The terminal writes the frames of the session in their order, and tells the end of each write, so that the app core reads the engine only as fast as the terminal takes its output (`docs/architecture.md`, Protocol, rule 12).\
+   For a screen, it takes the size, resets, and then writes.
+10. A tab that is hidden for 5 minutes drops its terminal and detaches; it gets the screen of the session again when it shows.
+11. The Terminals view lists each session of the engine, with its title and the name of its folder as data.\
+    The list has one tab stop; the arrow keys, Home, and End move in it, and Enter shows the tab of a session, or makes it again.\
+    When a session ends while its row has the focus, the focus moves to the row in its place.
+12. New terminal (`mod+Shift+T`) starts the shell of the user in the current worktree of the first open repository, or in the projects root.\
+    The shortcut is a Ctrl+Shift letter, so it also works from a terminal on Windows and Linux.
 
 Known gaps:
 
