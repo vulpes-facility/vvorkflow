@@ -14,6 +14,8 @@ const config: StorybookConfig = {
     getAbsolutePath('@storybook/addon-a11y'),
     getAbsolutePath('@storybook/addon-docs'),
   ],
+  // The sample media of the viewer stories, at /media.
+  staticDirs: [{ from: '../fixtures/media', to: '/media' }],
   framework: getAbsolutePath('@storybook/react-vite'),
   core: { disableTelemetry: true },
 }

@@ -17,3 +17,7 @@ export type {
   GitStatus,
 } from './model/explorer'
 export type { TerminalSession } from './model/terminal'
+export { MarkdownPreview } from './ui/markdown-preview/markdown-preview'
+export type { MarkdownPreviewProps } from './ui/markdown-preview/markdown-preview'
+export { MediaViewer } from './ui/media-viewer/media-viewer'
+export type { MediaViewerProps } from './ui/media-viewer/media-viewer'

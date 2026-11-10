@@ -141,6 +141,39 @@ Known gaps:
   The screen reader mode of xterm.js comes with a setting.
 - Paste with Ctrl+Shift+V relies on the paste of the webview.
 
+## Markdown preview and media viewer
+
+The Markdown preview and the media viewer are tabs of the editor area.
+They take their data through props, and they do not call the engine or the network.
+
+1. The preview uses `react-markdown` with `remark-gfm`: tables, task lists, strikethrough, autolinks, and footnotes.\
+   The preview removes raw HTML (`skipHtml`), and MUST NOT use `rehype-raw`.
+2. A source or a target that has a scheme other than `http`, `https`, and (for a link) `mailto` is blocked.\
+   A blocked link is plain text, and a blocked image is a placeholder.\
+   `classifyImageSource` and `classifyLinkTarget` decide this, and Vitest and `e2e/markdown-preview.spec.ts` test it.
+3. A remote image makes no request until the user allows it.\
+   Its place is a placeholder of one line with an icon and the host name.\
+   One icon button at the top allows the images of the document, and only when the document has a remote image.
+4. A link never navigates by itself: it calls `onOpenLink`.\
+   A footnote link scrolls the preview and moves the focus, and does not change the URL of the window.\
+   Each preview prefixes its footnote ids, so that two previews do not share an id.
+5. A task list shows a shape (a checked or an empty square) and a name, and has no input.
+6. The preview is a focusable scroll region with a readable measure (`--vv-measure`) and selectable text.\
+   A table and a code block scroll inside themselves.
+7. The image viewer fits the view and never enlarges.\
+   Its buttons and the keys `+`, `-`, and `0` zoom, and its pixel size shows as data.\
+   A transparent image sits on a checkerboard of two surface colors (`checkerboard`).
+8. A video and an audio file use the native controls, with no autoplay and `preload="metadata"`.\
+   A tab that is not active pauses, remembers the position, and removes the source (`load()` frees the decoder).\
+   The tab that is active again restores the source and the position, paused.
+9. A file that does not decode shows the `ErrorMark`, not a broken image.
+10. A link inside a sentence has `data-inline-link`, so that the target size check leaves it out (SC 2.5.8, inline).
+
+Known gaps:
+
+- A code block has no syntax highlighting.
+- The WebKit build of Playwright on Linux has no VP9 decoder, so the video tests skip there, and the error state shows.
+
 ## Stories and screens
 
 1. Keep the stories in `apps/desktop/stories/` and their sample data in `apps/desktop/fixtures/`.\

@@ -101,6 +101,10 @@
   /* At this window width and under, the side bar becomes a drawer. */
   --vv-narrow-max-w: 640px;
   --vv-hairline-w: 1px;
+  /* The longest line of a document in the Markdown preview. */
+  --vv-measure: 44rem;
+  /* The square of the checkerboard behind a transparent image. */
+  --vv-checker-size: 16px;
   /* The least space between a dialog and each edge of the window. */
   --vv-dialog-inset: 16px;
   --vv-radius-none: 0px;
