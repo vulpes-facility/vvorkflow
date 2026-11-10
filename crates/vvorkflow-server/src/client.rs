@@ -37,9 +37,10 @@ const ANSWER: Duration = Duration::from_secs(10);
 /// the engine. It is longer than the longest start of this client.
 const TURN: Duration = Duration::from_secs(60);
 
-/// The bytes of the frames that the owner did not give back yet, at which
-/// the client stops to read the connection (`docs/architecture.md`,
-/// Protocol, rule 12). One frame can take the count above it.
+/// The bytes of the events and the frames that the owner did not give back
+/// yet, at which the client stops to read the connection
+/// (`docs/architecture.md`, Protocol, rule 12). One item can take the count
+/// above it.
 pub const DELIVERY_LIMIT: usize = 1 << 20;
 
 type Socket = tokio_tungstenite::WebSocketStream<crate::ClientStream>;
@@ -49,8 +50,9 @@ type Pending = Arc<Mutex<Waiting>>;
 /// connection.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Delivery {
-    /// An event, as the JSON that the engine sent.
-    Event(Value),
+    /// An event, as the JSON that the engine sent, and the bytes of its
+    /// text.
+    Event { event: Value, size: usize },
     /// A binary frame of terminal output, as the engine sent it.
     Frame(Vec<u8>),
     /// The connection to the engine ended: after the last item of that
@@ -59,28 +61,40 @@ pub enum Delivery {
     Closed,
 }
 
-/// The events and the frames of the engine, for the owner of a client. The
-/// client stops to read the connection while the frames that the owner
-/// did not give back with [`Budget::release`] have [`DELIVERY_LIMIT`]
-/// bytes or more, so that the limits of the engine apply.
+impl Delivery {
+    /// The bytes that the item holds in the budget until the owner gives
+    /// them back: the text of an event, the whole frame, and none for
+    /// `Closed`.
+    pub fn size(&self) -> usize {
+        match self {
+            Delivery::Event { size, .. } => *size,
+            Delivery::Frame(bytes) => bytes.len(),
+            Delivery::Closed => 0,
+        }
+    }
+}
+
+/// The events and the frames of the engine, for the owner of a client: the
+/// part of the app core that sends them to the web UI.
+///
+/// The owner takes each item with [`Deliveries::next`], sends it to the web
+/// UI, and calls [`Budget::release`] with the bytes that the web UI
+/// acknowledged, [`Delivery::size`] in all. While the items that the owner
+/// did not give back have [`DELIVERY_LIMIT`] bytes or more, the client stops
+/// to read the connection, so that the limits of the engine apply.
 pub struct Deliveries {
-    receiver: mpsc::UnboundedReceiver<(Delivery, usize)>,
+    receiver: mpsc::UnboundedReceiver<Delivery>,
     budget: Budget,
 }
 
 impl Deliveries {
-    /// The next item, or None when the client is gone. The bytes of an
-    /// event come back at once; the owner gives back the bytes of a frame.
+    /// The next item, or None when the client is gone.
     pub async fn next(&mut self) -> Option<Delivery> {
-        let (delivery, size) = self.receiver.recv().await?;
-        if !matches!(delivery, Delivery::Frame(_)) {
-            self.budget.release(size);
-        }
-        Some(delivery)
+        self.receiver.recv().await
     }
 
-    /// The budget, for the owner part that tells which frames the terminal
-    /// took.
+    /// The budget, for the part of the owner that gets the acknowledgements
+    /// of the web UI.
     pub fn budget(&self) -> Budget {
         self.budget.clone()
     }
@@ -97,8 +111,8 @@ struct Bytes {
 }
 
 impl Budget {
-    /// Gives back the bytes of a frame: when the terminal took it, or when
-    /// the owner dropped it.
+    /// Gives back bytes of the items: when the web UI acknowledged them, or
+    /// when the owner dropped the items.
     pub fn release(&self, bytes: usize) {
         let mut held = self
             .0
@@ -133,7 +147,7 @@ impl Budget {
 /// Where the reader of a connection puts the events and the frames.
 #[derive(Clone)]
 struct Owner {
-    sender: mpsc::UnboundedSender<(Delivery, usize)>,
+    sender: mpsc::UnboundedSender<Delivery>,
     budget: Budget,
 }
 
@@ -628,7 +642,10 @@ impl Connection {
                             Err(_) => match serde_json::from_str::<Event>(&text) {
                                 Ok(Event::ConnectionClosed(_)) | Err(_) => break,
                                 Ok(_) => match serde_json::from_str::<Value>(&text) {
-                                    Ok(event) => (Delivery::Event(event), text.len()),
+                                    Ok(event) => Delivery::Event {
+                                        event,
+                                        size: text.len(),
+                                    },
                                     Err(_) => break,
                                 },
                             },
@@ -638,8 +655,7 @@ impl Connection {
                         if Frame::parse(&bytes).is_none() {
                             break;
                         }
-                        let size = bytes.len();
-                        (Delivery::Frame(bytes.into()), size)
+                        Delivery::Frame(bytes.into())
                     }
                     Message::Close(_) => break,
                     _ => continue,
@@ -647,7 +663,7 @@ impl Connection {
                 if let Some(owner) = &owner {
                     // The owner did not take enough: wait, and so stop to
                     // read the connection.
-                    owner.budget.hold(delivery.1).await;
+                    owner.budget.hold(delivery.size()).await;
                     let _ = owner.sender.send(delivery);
                 }
             }
@@ -692,12 +708,12 @@ fn answered(pending: &Pending, answer: ServerMessage<Value>) {
 
 /// Sends `Closed` to the owner when the reader of a connection ends, also
 /// when its task stops.
-struct Closed(Option<mpsc::UnboundedSender<(Delivery, usize)>>);
+struct Closed(Option<mpsc::UnboundedSender<Delivery>>);
 
 impl Drop for Closed {
     fn drop(&mut self) {
         if let Some(sender) = &self.0 {
-            let _ = sender.send((Delivery::Closed, 0));
+            let _ = sender.send(Delivery::Closed);
         }
     }
 }

@@ -2,8 +2,8 @@
 //! frames that the client of the app core gives to its owner, the limit of
 //! the frames that the owner did not take, the stop of an engine with
 //! sessions, the replacement of an engine of another version that has
-//! sessions, the idle time while a session runs, and a frame of the
-//! largest size.
+//! sessions, the idle time while a session runs, a frame of the largest
+//! size, and the events that the owner keeps.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -19,7 +19,9 @@ use vvorkflow_protocol::{
     CreateSession, ErrorCode, Frame, Hello, MAX_COLUMNS, MAX_FRAME, MAX_ROWS, MAX_SCREEN,
     PROTOCOL_VERSION, Request, Shutdown,
 };
-use vvorkflow_server::{Deliveries, Delivery, Endpoint, EngineClient, Limits, serve};
+use vvorkflow_server::{
+    DELIVERY_LIMIT, Deliveries, Delivery, Endpoint, EngineClient, Limits, serve,
+};
 
 const WAIT: Duration = Duration::from_secs(30);
 
@@ -131,30 +133,30 @@ mod unix {
     const RECENT: usize = 256;
 
     impl Mirror {
+        /// Uses an item, and then gives its bytes back, as the web UI
+        /// acknowledges them.
         fn take(&mut self, deliveries: &Deliveries, delivery: Delivery) {
+            let size = delivery.size();
             match delivery {
-                Delivery::Frame(bytes) => {
-                    match Frame::parse(&bytes).expect("a valid frame") {
-                        Frame::Screen {
-                            columns,
-                            rows,
-                            screen,
-                            ..
-                        } => {
-                            let mut fresh = Screen::new(columns, rows);
-                            fresh.feed(screen);
-                            self.screen = Some(fresh);
-                            self.screens += 1;
-                            self.remember(screen);
-                        }
-                        Frame::Output { output, .. } => {
-                            self.screen.as_mut().expect("a screen first").feed(output);
-                            self.remember(output);
-                        }
+                Delivery::Frame(bytes) => match Frame::parse(&bytes).expect("a valid frame") {
+                    Frame::Screen {
+                        columns,
+                        rows,
+                        screen,
+                        ..
+                    } => {
+                        let mut fresh = Screen::new(columns, rows);
+                        fresh.feed(screen);
+                        self.screen = Some(fresh);
+                        self.screens += 1;
+                        self.remember(screen);
                     }
-                    deliveries.budget().release(bytes.len());
-                }
-                Delivery::Event(event) => {
+                    Frame::Output { output, .. } => {
+                        self.screen.as_mut().expect("a screen first").feed(output);
+                        self.remember(output);
+                    }
+                },
+                Delivery::Event { event, .. } => {
                     if event["event"] == "session.resized" {
                         let screen = self.screen.as_mut().expect("a screen first");
                         let size = &event["params"];
@@ -167,6 +169,7 @@ mod unix {
                 }
                 Delivery::Closed => self.closed = true,
             }
+            deliveries.budget().release(size);
         }
 
         fn remember(&mut self, bytes: &[u8]) {
@@ -506,9 +509,8 @@ async fn delivery(deliveries: &mut Deliveries) -> Delivery {
         .expect("the client lives")
 }
 
-/// An engine that welcomes the client, and then sends a screen frame of the
-/// largest size, and then a frame that is one byte larger.
-fn engine_with_large_frames(place: &Place) -> JoinHandle<()> {
+/// An engine that welcomes the client, and then sends `messages`.
+fn fake_engine(place: &Place, messages: Vec<Message>) -> JoinHandle<()> {
     let endpoint = endpoint(place);
     endpoint.prepare().unwrap();
     let lock = endpoint.lock().unwrap();
@@ -541,17 +543,11 @@ fn engine_with_large_frames(place: &Place) -> JoinHandle<()> {
             };
             text = next;
         }
-        let screen = vec![b'x'; MAX_SCREEN];
-        let largest = Frame::Screen {
-            session: "0123456789abcdef",
-            columns: MAX_COLUMNS,
-            rows: MAX_ROWS,
-            screen: &screen,
+        for message in messages {
+            if socket.send(message).await.is_err() {
+                return;
+            }
         }
-        .encode();
-        assert_eq!(largest.len(), MAX_FRAME);
-        socket.send(Message::binary(largest)).await.unwrap();
-        let _ = socket.send(Message::binary(vec![0; MAX_FRAME + 1])).await;
         // The client ends the connection.
         while let Some(Ok(_)) = socket.next().await {}
     })
@@ -562,19 +558,82 @@ fn engine_with_large_frames(place: &Place) -> JoinHandle<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_client_takes_a_frame_of_the_largest_size() {
     let place = place();
-    let engine = engine_with_large_frames(&place);
+    let screen = vec![b'x'; MAX_SCREEN];
+    let largest = Frame::Screen {
+        session: "0123456789abcdef",
+        columns: MAX_COLUMNS,
+        rows: MAX_ROWS,
+        screen: &screen,
+    }
+    .encode();
+    assert_eq!(largest.len(), MAX_FRAME);
+    let too_large = vec![0; MAX_FRAME + 1];
+    let engine = fake_engine(
+        &place,
+        vec![Message::binary(largest), Message::binary(too_large)],
+    );
     let (client, mut deliveries) = client_only(&place);
     client.request(hello()).await.unwrap();
-    let Delivery::Frame(frame) = delivery(&mut deliveries).await else {
+    let frame = delivery(&mut deliveries).await;
+    assert_eq!(frame.size(), MAX_FRAME);
+    let Delivery::Frame(bytes) = &frame else {
         panic!("the frame comes first");
     };
-    assert_eq!(frame.len(), MAX_FRAME);
     assert!(matches!(
-        Frame::parse(&frame),
+        Frame::parse(bytes),
         Some(Frame::Screen { screen, .. }) if screen.len() == MAX_SCREEN
     ));
     // The owner gives the bytes back, so that the client reads again.
-    deliveries.budget().release(frame.len());
+    deliveries.budget().release(frame.size());
     assert!(matches!(delivery(&mut deliveries).await, Delivery::Closed));
+    engine.await.unwrap();
+}
+
+/// The bytes of an event stay in the budget until the owner gives them
+/// back, as the bytes of a frame do: an owner that keeps 1 MiB of events
+/// stops the read, and the rest comes after it gives them back.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_owner_that_keeps_the_events_stops_the_read() {
+    let place = place();
+    let event = json!({
+        "event": "session.resized",
+        "params": {"session": "0123456789abcdef", "columns": 80, "rows": 24},
+    })
+    .to_string();
+    let count = DELIVERY_LIMIT / event.len() + 2;
+    let mut messages = vec![Message::text(event.clone()); count];
+    let last = Frame::Output {
+        session: "0123456789abcdef",
+        output: b"last",
+    }
+    .encode();
+    messages.push(Message::binary(last.clone()));
+    let engine = fake_engine(&place, messages);
+    let (client, mut deliveries) = client_only(&place);
+    client.request(hello()).await.unwrap();
+
+    // The owner takes the events, and gives nothing back.
+    let mut held = 0;
+    while held < DELIVERY_LIMIT {
+        let item = delivery(&mut deliveries).await;
+        assert!(
+            matches!(&item, Delivery::Event { event, .. } if event["event"] == "session.resized")
+        );
+        assert_eq!(item.size(), event.len());
+        held += item.size();
+    }
+    // The client stops to read.
+    let next = tokio::time::timeout(Duration::from_millis(300), deliveries.next()).await;
+    assert!(next.is_err(), "an item came: {next:?}");
+
+    // The rest comes when the owner gives the bytes back.
+    deliveries.budget().release(held);
+    for _ in held / event.len()..count {
+        let item = delivery(&mut deliveries).await;
+        assert!(matches!(item, Delivery::Event { .. }));
+        deliveries.budget().release(item.size());
+    }
+    assert_eq!(delivery(&mut deliveries).await, Delivery::Frame(last));
+    drop(client);
     engine.await.unwrap();
 }
