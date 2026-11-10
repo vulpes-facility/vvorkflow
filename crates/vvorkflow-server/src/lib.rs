@@ -13,7 +13,7 @@ use std::time::Duration;
 use tokio::sync::{Notify, Semaphore, watch};
 use vvorkflow_engine::Engine;
 
-pub use client::EngineClient;
+pub use client::{Budget, DELIVERY_LIMIT, Deliveries, Delivery, EngineClient};
 pub use endpoint::{ClientStream, Endpoint, Listener, ServerStream};
 
 /// The largest message that the engine reads, which is far more than a
@@ -24,7 +24,8 @@ pub const MAX_MESSAGE: usize = 1 << 20;
 /// nobody, and no client can take all of it.
 #[derive(Clone, Copy, Debug)]
 pub struct Limits {
-    /// The time without a client after which the process stops.
+    /// The time without a client and without a session after which the
+    /// process stops.
     pub idle: Duration,
     /// The time that a client has for the WebSocket handshake and `hello`.
     pub hello: Duration,
@@ -50,7 +51,8 @@ impl Default for Limits {
 }
 
 /// Serves the engine on the endpoint until a client sends `shutdown`, or
-/// until no client is connected for the idle time of the `limits`.
+/// until no client is connected and no session runs for the idle time of
+/// the `limits`.
 ///
 /// Returns after the last answer is sent, and removes the socket. Refuses an
 /// endpoint whose folder is not safe, and an endpoint where another engine
@@ -78,8 +80,13 @@ pub async fn serve(endpoint: &Endpoint, engine: Arc<Engine>, limits: Limits) -> 
     });
     let (clients, mut count) = watch::channel(0_usize);
     let clients = Arc::new(clients);
+    // The engine does not stop for the idle time while a session runs.
+    let (sessions_changed, mut sessions) = watch::channel(0_usize);
+    shared.engine.watch_sessions(move |count| {
+        sessions_changed.send_replace(count);
+    });
     loop {
-        let alone = *count.borrow_and_update() == 0;
+        let alone = *count.borrow_and_update() == 0 && *sessions.borrow_and_update() == 0;
         tokio::select! {
             accepted = accept(&mut listener) => match accepted {
                 Ok(stream) if *clients.borrow() < limits.clients => {
@@ -94,6 +101,7 @@ pub async fn serve(endpoint: &Endpoint, engine: Arc<Engine>, limits: Limits) -> 
                 Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
             },
             _ = count.changed() => {}
+            _ = sessions.changed() => {}
             () = stop.closing.notified() => {
                 listener = None;
                 stop.closed.notify_one();

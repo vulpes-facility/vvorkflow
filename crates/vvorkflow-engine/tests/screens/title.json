@@ -1,0 +1,17 @@
+{
+  "columns": 20,
+  "description": "Titles with OSC 2 and OSC 0, with BEL and ST.",
+  "limits": {},
+  "output": "\u001b]2;first title\u0007text \u001b]0;second title\u001b\\more \u001b]2;third é title\u0007end",
+  "positions": [
+    16,
+    39,
+    66
+  ],
+  "rows": 4,
+  "screens": {
+    "16": "DQoNCg0KG1s/MjVoG1syMGwbWz8xMmwbXTI7Zmlyc3QgdGl0bGUbXBtbMTsxSA==",
+    "39": "dGV4dA0KDQoNChtbPzI1aBtbMjBsG1s/MTJsG10yO3NlY29uZCB0aXRsZRtcG1sxOzZI",
+    "66": "dGV4dCBtb3JlIGVuZA0KDQoNChtbPzI1aBtbMjBsG1s/MTJsG10yO3RoaXJkIMOpIHRpdGxlG1wbWzE7MTNIZA=="
+  }
+}

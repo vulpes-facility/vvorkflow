@@ -1,10 +1,12 @@
 //! The vvorkflow engine: it lists the projects of the projects root, and reads
 //! the repositories, the worktrees, the folders, and the git status that a
 //! client asks for, inside the folders that the user opened (core value 6).
-//! Each method takes a request of `vvorkflow-protocol` and returns its value
-//! or an [`EngineError`].
+//! It also keeps the terminal sessions. Each method takes a request of
+//! `vvorkflow-protocol` and returns its value or an [`EngineError`].
 
 mod git;
+pub mod screen;
+mod session;
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -14,10 +16,12 @@ use std::sync::{Arc, Mutex};
 use cap_std::ambient_authority;
 use cap_std::fs::Dir;
 use vvorkflow_protocol::{
-    ChangedPath, CreateProject, DirectoryEntry, EngineError, EntryKind, ErrorCode, Hello,
-    ListDirectory, ListProjects, OpenFolder, PROTOCOL_VERSION, Project, ReadStatus, Repository,
-    Request, Response, Welcome, Worktree,
+    ChangedPath, CreateProject, CreateSession, DirectoryEntry, Done, EngineError, EntryKind,
+    ErrorCode, Hello, ListDirectory, ListProjects, OpenFolder, PROTOCOL_VERSION, Project,
+    ReadStatus, Repository, Request, Response, Welcome, Worktree,
 };
+
+pub use session::{Client, ClientKind, INPUT_QUEUE, MAX_SESSIONS, OUTPUT_QUEUE, Outgoing, Wake};
 
 /// The environment variable that names the projects root.
 pub const ROOT_VARIABLE: &str = "VVORKFLOW_ROOT";
@@ -98,11 +102,12 @@ struct Root {
     git_dir: Option<PathBuf>,
 }
 
-/// The engine of one machine. It keeps the projects root, and the roots that
-/// requests can reach.
+/// The engine of one machine. It keeps the projects root, the roots that
+/// requests can reach, and the terminal sessions.
 pub struct Engine {
     projects: Projects,
     roots: Mutex<BTreeMap<PathBuf, Arc<Root>>>,
+    sessions: Arc<session::Sessions>,
 }
 
 /// The projects root, opened as a handle when the engine starts.
@@ -129,15 +134,28 @@ impl Engine {
                 path: projects_root.to_path_buf(),
             },
             roots: Mutex::default(),
+            sessions: Arc::new(session::Sessions::new()),
         })
     }
 
-    /// Does one request.
+    /// A client of the engine: the context of the requests of one
+    /// connection. `wake` tells the writer of the connection that the
+    /// client has output or events for [`Client::next`]; it MUST NOT block.
+    /// When the last copy of the client drops, it detaches from each
+    /// session.
+    pub fn connect(&self, kind: ClientKind, wake: Wake) -> Client {
+        Client::new(kind, wake)
+    }
+
+    /// Does one request of a client.
     ///
     /// Returns the value of its method, or the error of that method. Refuses
     /// `shutdown` (`failedPrecondition`), which the engine process does
-    /// itself.
-    pub fn handle(&self, request: Request) -> Result<Response, EngineError> {
+    /// itself with [`Engine::stop`]. After `session.attach`, the screen of
+    /// the session goes to the client only after [`Client::answered`], so
+    /// that the answer comes first.
+    pub fn handle(&self, client: &Client, request: Request) -> Result<Response, EngineError> {
+        let done = Response::Done(Done {});
         Ok(match request {
             Request::Hello(hello) => Response::Welcome(self.hello(hello)?),
             Request::ListProjects(list) => Response::Projects(self.list_projects(list)?),
@@ -151,7 +169,72 @@ impl Engine {
                     "Only the engine process can stop.".to_owned(),
                 ));
             }
+            Request::ListSessions(_) => Response::Sessions(self.sessions.list()),
+            Request::CreateSession(create) => {
+                Response::Session(self.create_session(client, create)?)
+            }
+            Request::AttachSession(attach) => {
+                Response::Session(self.sessions.attach(client, &attach.session)?)
+            }
+            Request::DetachSession(detach) => {
+                self.sessions.detach(client, &detach.session)?;
+                done
+            }
+            Request::WriteSession(write) => {
+                self.sessions.write(&write.session, &write.data)?;
+                done
+            }
+            Request::ResizeSession(resize) => {
+                self.sessions
+                    .resize(&resize.session, resize.columns, resize.rows)?;
+                done
+            }
+            Request::KillSession(kill) => {
+                self.sessions.kill(&kill.session)?;
+                done
+            }
         })
+    }
+
+    /// Starts the shell of the user in a new session, in an open worktree,
+    /// or in the projects root when the request names no worktree.
+    ///
+    /// Returns the session. Refuses a worktree that is not open
+    /// (`permissionDenied`), a size outside the limits (`invalidArgument`),
+    /// one session more than [`MAX_SESSIONS`], a shell that does not start,
+    /// and an engine that stops (`failedPrecondition`).
+    pub fn create_session(
+        &self,
+        _client: &Client,
+        request: CreateSession,
+    ) -> Result<vvorkflow_protocol::Session, EngineError> {
+        let folder = match &request.worktree {
+            Some(worktree) => self.root(worktree)?.path.clone(),
+            None => self.projects.path.clone(),
+        };
+        self.sessions.create(&folder, request.columns, request.rows)
+    }
+
+    /// The number of sessions that run.
+    pub fn session_count(&self) -> usize {
+        self.sessions.count()
+    }
+
+    /// Gives `watch` the number of sessions now, and after each change. It
+    /// MUST NOT block. A second watch takes the place of the first.
+    pub fn watch_sessions(&self, watch: impl Fn(usize) + Send + Sync + 'static) {
+        self.sessions.watch(Box::new(watch));
+    }
+
+    /// Stops the sessions for a stop of the engine process.
+    ///
+    /// Without `force`, refuses when a session runs (`failedPrecondition`,
+    /// with the number of sessions), and changes nothing. With `force`, the
+    /// engine takes no new session, ends each session as `session.kill`
+    /// does, with one limit of 3 seconds for all of them, and returns when
+    /// they ended, or after SIGKILL at the end of the limit.
+    pub fn stop(&self, force: bool) -> Result<(), EngineError> {
+        self.sessions.stop(force)
     }
 
     /// Checks the protocol version of a client.

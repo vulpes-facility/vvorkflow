@@ -1,0 +1,21 @@
+{
+  "columns": 10,
+  "description": "A scroll region with lines that scroll in it, and the origin mode.",
+  "limits": {},
+  "output": "1\r\n2\r\n3\r\n4\r\n5\r\n6\u001b[2;4r\u001b[4Hx\r\ny\r\nz\r\n\u001b[?6h\u001b[1;1Ho\u001b[2;2Hp\u001b[3;1H\r\nq\r\nr\r\ns\u001b[?6l\u001b[r\u001b[6;1Hbottom\r\nscrolled",
+  "positions": [
+    26,
+    53,
+    65,
+    83,
+    99
+  ],
+  "rows": 6,
+  "screens": {
+    "26": "MQ0KMg0KMw0KNA0KNQ0KNhtbMjs0chtbPzI1aBtbMjBsG1s/MTJsG1s0OzFI",
+    "53": "MQ0Kbw0Keg0KDQo1DQo2G1syOzRyG1s/NmgbWz8yNWgbWzIwbBtbPzEybBtbMjsySA==",
+    "65": "MQ0KDQpxDQoNCjUNCjYbWzI7NHIbWz82aBtbPzI1aBtbMjBsG1s/MTJsG1szOzFI",
+    "83": "MQ0KcQ0Kcg0Kcw0KNQ0KNhtbPzI1aBtbMjBsG1s/MTJsG1s2OzFI",
+    "99": "MQ0KcQ0Kcg0Kcw0KNQ0KYm90dG9tDQpzY3JvbGxlZBtbPzI1aBtbMjBsG1s/MTJsG1s2OzhIZA=="
+  }
+}

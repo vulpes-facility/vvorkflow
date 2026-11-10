@@ -191,7 +191,9 @@ fn hello() -> Request {
 }
 
 async fn shutdown(client: &EngineClient) {
-    let done = client.request(Request::Shutdown(Shutdown {})).await;
+    let done = client
+        .request(Request::Shutdown(Shutdown { force: false }))
+        .await;
     assert_eq!(done, Ok(json!({})));
 }
 

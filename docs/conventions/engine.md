@@ -22,3 +22,6 @@ These rules keep each request of the protocol inside the folders that the user o
    The terminals of the engine also run as the user.\
    So this limit does not give a client more than the user has.
 6. A worktree whose folder is gone, but that git still lists, is left out of the repository.
+7. `session.create` starts a session in an open worktree, or in the projects root when the request names none.\
+   The request names the worktree by its path, and the engine refuses a path that is not a root (`permissionDenied`).\
+   The shell then runs as the user, so the roots do not limit its commands ([`architecture.md`](../architecture.md#security)).

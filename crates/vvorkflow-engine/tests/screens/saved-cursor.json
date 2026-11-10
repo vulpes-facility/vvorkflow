@@ -1,0 +1,19 @@
+{
+  "columns": 20,
+  "description": "A cursor that DECSC saves with its attributes, and that DECRC and SCORC restore.",
+  "limits": {},
+  "output": "text\u001b[2;5H\u001b[1;32;7m\u001b7\u001b[0m\u001b[4;1Hmoved\u001b[33m\u001b8saved\u001b[0m \u001b[s\u001b[1;1Hhome\u001b[u after",
+  "positions": [
+    31,
+    41,
+    62,
+    75
+  ],
+  "rows": 5,
+  "screens": {
+    "31": "dGV4dA0KDQoNCg0KG1syOzVIG1swOzE7NzszMm0bNxtbMG0bWz8yNWgbWzIwbBtbPzEybBtbNDsxSA==",
+    "41": "dGV4dA0KDQoNCm1vdmVkDQobWzI7NUgbWzA7MTs3OzMybRs3G1swbRtbPzI1aBtbMjBsG1s/MTJsG1swOzMzbRtbNDs2SA==",
+    "62": "dGV4dA0KICAgIBtbMDsxOzc7MzJtc2F2ZWQbWzBtDQoNCm1vdmVkDQobWzI7MTFIGzcbWz8yNWgbWzIwbBtbPzEybBtbMTsxSA==",
+    "75": "aG9tZQ0KICAgIBtbMDsxOzc7MzJtc2F2ZWQbWzBtICBhZnRlcg0KDQptb3ZlZA0KG1syOzExSBs3G1s/MjVoG1syMGwbWz8xMmwbWzI7MTZIcg=="
+  }
+}

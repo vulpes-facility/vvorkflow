@@ -3,6 +3,18 @@
   "title": "Protocol",
   "type": "object",
   "properties": {
+    "attach_session": {
+      "description": "Attaches the connection to a session: the screen of the session comes as\na binary frame, and then each byte of its output. A second attach sends\nthe screen again.",
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
+      ]
+    },
     "changed_path": {
       "description": "A path with a git status, relative to its worktree, with `/` between the\nnames. A folder that git reports as a whole, such as an ignored or an\nuntracked folder, ends with `/`.",
       "type": "object",
@@ -38,6 +50,48 @@
       },
       "required": [
         "name"
+      ]
+    },
+    "create_session": {
+      "description": "Starts the shell of the user in a new pseudo-terminal. The request has no\ncommand: the user types each command (core value 6).",
+      "type": "object",
+      "properties": {
+        "columns": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 500,
+          "minimum": 2
+        },
+        "rows": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 200,
+          "minimum": 1
+        },
+        "worktree": {
+          "description": "The absolute path of an open worktree, where the shell starts. None\nis the projects root.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "columns",
+        "rows"
+      ]
+    },
+    "detach_session": {
+      "description": "Detaches the connection from a session; the session continues.",
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
       ]
     },
     "directory_entry": {
@@ -88,6 +142,112 @@
         "message"
       ]
     },
+    "event": {
+      "description": "A message without an id, which the engine can send at any time after\n`hello`, between the answers. The engine sends the events of a session\nonly to its attached clients.",
+      "oneOf": [
+        {
+          "description": "The shell of a session ended. No frame of that session follows.",
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "session.ended"
+            },
+            "params": {
+              "description": "The end of the shell of a session.",
+              "type": "object",
+              "properties": {
+                "exitCode": {
+                  "description": "The exit code of the shell, or none when a signal ended it.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "uint32",
+                  "minimum": 0
+                },
+                "session": {
+                  "type": "string"
+                },
+                "signal": {
+                  "description": "The signal that ended the shell, or none. Always none on Windows.",
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int32"
+                }
+              },
+              "required": [
+                "session"
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "params"
+          ]
+        },
+        {
+          "description": "A session has a new size, from the output that follows.",
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "session.resized"
+            },
+            "params": {
+              "description": "The new size of a session.",
+              "type": "object",
+              "properties": {
+                "columns": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "maximum": 500,
+                  "minimum": 2
+                },
+                "rows": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "maximum": 200,
+                  "minimum": 1
+                },
+                "session": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "session",
+                "columns",
+                "rows"
+              ]
+            }
+          },
+          "required": [
+            "event",
+            "params"
+          ]
+        },
+        {
+          "description": "The connection of the app core to the engine ended. Only the app core\nsends it, after the last frame of that connection.",
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "connection.closed"
+            },
+            "params": {
+              "description": "The end of the connection of the app core to the engine.",
+              "type": "object"
+            }
+          },
+          "required": [
+            "event",
+            "params"
+          ]
+        }
+      ]
+    },
     "hello": {
       "description": "Starts a connection with the protocol version of the client.",
       "type": "object",
@@ -100,6 +260,18 @@
       },
       "required": [
         "protocol"
+      ]
+    },
+    "kill_session": {
+      "description": "Ends a session: the shell and its foreground job get SIGHUP, and SIGKILL\nafter 3 seconds.",
+      "type": "object",
+      "properties": {
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session"
       ]
     },
     "list_directory": {
@@ -122,6 +294,10 @@
     },
     "list_projects": {
       "description": "Lists the projects: the folders directly in the projects root.",
+      "type": "object"
+    },
+    "list_sessions": {
+      "description": "Lists the terminal sessions of the engine.",
       "type": "object"
     },
     "open_folder": {
@@ -382,7 +558,218 @@
           ]
         },
         {
-          "description": "Stops the engine process. Answers [`Done`], then the process stops.\nIt is valid before `hello`, and its shape never changes, so that each\napp can stop an engine of an older version.",
+          "description": "Answers each [`Session`] of the engine, in the order of its start.",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "session.list"
+            },
+            "params": {
+              "description": "Lists the terminal sessions of the engine.",
+              "type": "object"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Starts the shell of the user in a new pseudo-terminal. Answers its\n[`Session`].",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "session.create"
+            },
+            "params": {
+              "description": "Starts the shell of the user in a new pseudo-terminal. The request has no\ncommand: the user types each command (core value 6).",
+              "type": "object",
+              "properties": {
+                "columns": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "maximum": 500,
+                  "minimum": 2
+                },
+                "rows": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "maximum": 200,
+                  "minimum": 1
+                },
+                "worktree": {
+                  "description": "The absolute path of an open worktree, where the shell starts. None\nis the projects root.",
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "default": null
+                }
+              },
+              "required": [
+                "columns",
+                "rows"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Sends the screen and then the output of a session to this connection.\nAnswers the [`Session`].",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "session.attach"
+            },
+            "params": {
+              "description": "Attaches the connection to a session: the screen of the session comes as\na binary frame, and then each byte of its output. A second attach sends\nthe screen again.",
+              "type": "object",
+              "properties": {
+                "session": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "session"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Stops the output of a session to this connection. Answers [`Done`].",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "session.detach"
+            },
+            "params": {
+              "description": "Detaches the connection from a session; the session continues.",
+              "type": "object",
+              "properties": {
+                "session": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "session"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Puts input bytes in the input queue of a session. Answers [`Done`].",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "session.write"
+            },
+            "params": {
+              "description": "Sends input to the program of a session.",
+              "type": "object",
+              "properties": {
+                "data": {
+                  "description": "The input bytes in Base64 (RFC 4648, with padding).",
+                  "type": "string"
+                },
+                "session": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "session",
+                "data"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Changes the size of a session. Answers [`Done`].",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "session.resize"
+            },
+            "params": {
+              "description": "Changes the size of the pseudo-terminal and of the kept screen.",
+              "type": "object",
+              "properties": {
+                "columns": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "maximum": 500,
+                  "minimum": 2
+                },
+                "rows": {
+                  "type": "integer",
+                  "format": "uint16",
+                  "maximum": 200,
+                  "minimum": 1
+                },
+                "session": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "session",
+                "columns",
+                "rows"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Ends a session as the close of a terminal window does. Answers\n[`Done`]; the event `session.ended` follows.",
+          "type": "object",
+          "properties": {
+            "method": {
+              "type": "string",
+              "const": "session.kill"
+            },
+            "params": {
+              "description": "Ends a session: the shell and its foreground job get SIGHUP, and SIGKILL\nafter 3 seconds.",
+              "type": "object",
+              "properties": {
+                "session": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "session"
+              ]
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ]
+        },
+        {
+          "description": "Stops the engine process. Answers [`Done`], then the process stops.\nIt is valid before `hello`, and its shape never changes from protocol\n3, so that each app can stop an engine of another version.",
           "type": "object",
           "properties": {
             "method": {
@@ -391,7 +778,14 @@
             },
             "params": {
               "description": "Stops the engine process.",
-              "type": "object"
+              "type": "object",
+              "properties": {
+                "force": {
+                  "description": "False, or not set: an engine with sessions refuses to stop. True: the\nengine ends each session, and then stops.",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
             }
           },
           "required": [
@@ -401,9 +795,79 @@
         }
       ]
     },
+    "resize_session": {
+      "description": "Changes the size of the pseudo-terminal and of the kept screen.",
+      "type": "object",
+      "properties": {
+        "columns": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 500,
+          "minimum": 2
+        },
+        "rows": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 200,
+          "minimum": 1
+        },
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "columns",
+        "rows"
+      ]
+    },
+    "session": {
+      "description": "A terminal session: a pseudo-terminal with the shell of the user in it.",
+      "type": "object",
+      "properties": {
+        "columns": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 500,
+          "minimum": 2
+        },
+        "folder": {
+          "description": "The absolute path of the folder where the shell started.",
+          "type": "string"
+        },
+        "id": {
+          "description": "16 characters, each a digit or a lowercase letter from `a` to `f`.",
+          "type": "string"
+        },
+        "rows": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 200,
+          "minimum": 1
+        },
+        "title": {
+          "description": "The last title that the program set, or the name of the shell.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "folder",
+        "columns",
+        "rows"
+      ]
+    },
     "shutdown": {
       "description": "Stops the engine process.",
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "force": {
+          "description": "False, or not set: an engine with sessions refuses to stop. True: the\nengine ends each session, and then stops.",
+          "type": "boolean",
+          "default": false
+        }
+      }
     },
     "welcome": {
       "description": "The answer to [`Hello`] when the engine speaks the protocol of the client.",
@@ -423,6 +887,23 @@
         "protocol",
         "root"
       ]
+    },
+    "write_session": {
+      "description": "Sends input to the program of a session.",
+      "type": "object",
+      "properties": {
+        "data": {
+          "description": "The input bytes in Base64 (RFC 4648, with padding).",
+          "type": "string"
+        },
+        "session": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "data"
+      ]
     }
   },
   "required": [
@@ -440,7 +921,16 @@
     "directory_entry",
     "read_status",
     "changed_path",
+    "list_sessions",
+    "create_session",
+    "attach_session",
+    "detach_session",
+    "write_session",
+    "resize_session",
+    "kill_session",
+    "session",
+    "event",
     "engine_error"
   ],
-  "x-protocol-version": 2
+  "x-protocol-version": 3
 }

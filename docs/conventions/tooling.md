@@ -46,3 +46,9 @@ This file gives only the rules that are different from that plugin, or that it d
     The build also makes `target/debug/vvorkflow-server`, and the app starts it as the engine process, which continues after the app closes.\
     Stop it with `pkill -x vvorkflow-serve` (the name of a Linux process has at most 15 characters) to start the next check with a new engine.\
     On a machine with no display, run it under `Xvfb` and `dbus-run-session`, with `WEBKIT_DISABLE_DMABUF_RENDERER=1`.
+16. The records in `crates/vvorkflow-engine/tests/screens/` hold the output of programs, positions in it, and the screen bytes of the engine at each position.\
+    `VVORKFLOW_UPDATE_SCREENS=1 cargo test -p vvorkflow-engine --test screens` writes the screen bytes again, and the test fails when they are out of date.\
+    `apps/desktop/tests/screens.test.ts` measures them with `@xterm/headless`, which MUST have the same version as `@xterm/xterm`.\
+    The test reads the parts of the state that the API of xterm.js does not show, such as the underline style and the cursor style, from its internal objects: check them again when xterm.js changes.
+17. The `dev` profile builds `alacritty_terminal` and `vte` with `opt-level = 3`, because the screen state reads each byte of the output of a session.\
+    Without it, the session tests run many times slower.

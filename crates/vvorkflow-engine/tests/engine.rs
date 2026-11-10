@@ -3,7 +3,9 @@
 use std::path::Path;
 use std::process::Command;
 
-use vvorkflow_engine::{Engine, projects_root};
+use std::sync::Arc;
+
+use vvorkflow_engine::{ClientKind, Engine, projects_root};
 use vvorkflow_protocol::{
     ChangedPath, CreateProject, DirectoryEntry, EntryKind, ErrorCode, GitStatus, Hello,
     ListDirectory, ListProjects, OpenFolder, PROTOCOL_VERSION, Project, ReadStatus, Request,
@@ -625,11 +627,15 @@ fn hello_answers_the_root_and_refuses_another_protocol() {
     let base = tempfile::tempdir().unwrap();
     let root = base.path().canonicalize().unwrap();
     let engine = Engine::new(&root).unwrap();
+    let client = engine.connect(ClientKind::Local, Arc::new(|| {}));
 
     let Response::Welcome(welcome) = engine
-        .handle(Request::Hello(Hello {
-            protocol: PROTOCOL_VERSION,
-        }))
+        .handle(
+            &client,
+            Request::Hello(Hello {
+                protocol: PROTOCOL_VERSION,
+            }),
+        )
         .unwrap()
     else {
         panic!("hello answers a welcome");

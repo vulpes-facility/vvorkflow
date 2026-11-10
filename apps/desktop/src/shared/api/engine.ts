@@ -7,7 +7,7 @@ import { protocol } from './protocol.gen.ts'
 const types = protocol.shape
 
 /** The protocol version of this client, which `hello` sends to the engine. */
-export const PROTOCOL_VERSION = 2
+export const PROTOCOL_VERSION = 3
 
 /**
  * The params and the value of each method of the engine. The generator types
@@ -30,6 +30,16 @@ export const methods = {
     params: types.read_status,
     result: types.changed_path.array(),
   },
+  'session.list': {
+    params: types.list_sessions,
+    result: types.session.array(),
+  },
+  'session.create': { params: types.create_session, result: types.session },
+  'session.attach': { params: types.attach_session, result: types.session },
+  'session.detach': { params: types.detach_session, result: types.done },
+  'session.write': { params: types.write_session, result: types.done },
+  'session.resize': { params: types.resize_session, result: types.done },
+  'session.kill': { params: types.kill_session, result: types.done },
   shutdown: { params: types.shutdown, result: types.done },
 } as const
 

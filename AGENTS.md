@@ -4,7 +4,8 @@ vvorkflow is a light IDE on a Rust engine and Tauri 2.\
 The user opens folders to see and edit them, and opens terminals to run commands and agents, such as Claude Code and Codex.\
 The engine runs on the user's computer or headless on a remote machine.\
 Its owner uses it alone, for now.\
-The desktop app has its design tokens, its window shell, the Welcome tab, the terminal tabs on sample data, and an Explorer that reads real folders and their git status from the local Rust engine.
+The desktop app has its design tokens, its window shell, the Welcome tab, the terminal tabs on sample data, and an Explorer that reads real folders and their git status from the local Rust engine.\
+The engine runs terminal sessions and keeps their screens, which the app does not show yet.
 
 ## Index
 
@@ -25,8 +26,10 @@ The desktop app has its design tokens, its window shell, the Welcome tab, the te
 - `apps/desktop/fixtures/` - The sample data of the stories, which the code in `src/` never imports.
 - `apps/desktop/src/shared/api/engine.ts` - The client of the engine: each request through the Tauri IPC, with its answer parsed by the generated protocol.
 - `crates/vvorkflow-protocol/` - The protocol of the engine, as serde types, and its JSON Schema in `schema/`, the source of the TypeScript client.
-- `crates/vvorkflow-server/` - The engine process `vvorkflow-server`: its local endpoint, its lock, and its WebSocket connections with the envelope of each request.
-- `crates/vvorkflow-engine/` - The engine: the projects root, the folders, the worktrees, and the git status, inside the roots that the user opened.
+- `crates/vvorkflow-server/` - The engine process `vvorkflow-server`: its local endpoint, its lock, its WebSocket connections with the envelope of each request, and the client of the app core with the events and the frames of the sessions.
+- `crates/vvorkflow-engine/` - The engine: the projects root, the folders, the worktrees, and the git status, inside the roots that the user opened, and the terminal sessions with the state of their screens.
+- `crates/vvorkflow-engine/tests/screens/` - The records of program output, with the screen bytes of the engine at positions in it.
+- `apps/desktop/tests/screens.test.ts` - The measure of the screen bytes of the records with xterm.js.
 - `.env.example` - The environment variables of the engine, such as the projects root `VVORKFLOW_ROOT`.
 - `package.json` - The root scripts that run each task with Turborepo, and the pinned versions of pnpm and Node.js.
 - `pnpm-workspace.yaml` - The workspace packages, and the packages that may run install scripts.

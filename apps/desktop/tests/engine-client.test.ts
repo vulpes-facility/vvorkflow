@@ -26,13 +26,13 @@ describe('the engine client', () => {
   })
 
   it('starts with the protocol version, and lists the projects', async () => {
-    invoke.mockResolvedValueOnce({ protocol: 2, root: '/home/me/vvorkflow' })
+    invoke.mockResolvedValueOnce({ protocol: 3, root: '/home/me/vvorkflow' })
     await expect(hello()).resolves.toEqual({
-      protocol: 2,
+      protocol: 3,
       root: '/home/me/vvorkflow',
     })
     expect(invoke).toHaveBeenLastCalledWith('request', {
-      request: { method: 'hello', params: { protocol: 2 } },
+      request: { method: 'hello', params: { protocol: 3 } },
     })
     const project = { name: 'app', path: '/home/me/vvorkflow/app', git: true }
     invoke.mockResolvedValueOnce([project])
