@@ -151,25 +151,34 @@ Both are CodeMirror 6, in `apps/desktop/src/pages/workbench/ui/editor/`.
    The font and the size come from `--vv-font-mono`, `--vv-editor-font-size`, and `--vv-editor-line-height`.
 2. The active line shows only while the selection is empty, so that it never hides a selection.\
    A selection and a search match have opaque colors.
-3. A search match has a fill and an outline, and the current match has a heavier outline, so that color is not the only sign.\
-   The search panel keeps the 24 by 24 pixel targets, also its check boxes.
-4. The diff shows `original` at the left and the editable text at the right when the editor is wider than 640 CSS pixels, and one unified column when it is not.\
+3. A search match has a fill and an outline, and the current match has a heavier outline, so that color is not the only sign.
+4. The search panel is our own, on the query and the commands of `@codemirror/search` (`search-panel-view.tsx`).\
+   It has icon buttons and a count, and no words:
+   - The first row has the find field, the count of matches as data (`3 of 17`, `17`, or `0`; a polite live region), previous and next match, three toggles (match case, whole word, regular expression), and close.
+   - A disclosure button at the start of the first row shows the second row, with the replace field, replace, and replace all.\
+     A read-only editor has neither the button nor the row.
+   - Each button is 24 by 24 pixels or more, has an accessible name, and has a tooltip with its name and its shortcut.\
+     A pressed toggle has `aria-pressed`, a surface, and a border.
+   - A regular expression that does not compile shows `aria-invalid` on the field and an `ErrorMark` with the message.
+   - Enter and Shift+Enter move to the next and the previous match, Escape closes the panel and gives the focus back to the editor, and `mod+F` opens it with the selection as the query.\
+     The rows wrap at 320 CSS pixels.
+5. The diff shows `original` at the left and the editable text at the right when the editor is wider than 640 CSS pixels, and one unified column when it is not.\
    The width of the editor decides, and not the width of the window (`ResizeObserver`).\
    A changed line has a tint and a mark in the gutter, a plus for an added line and a minus for a removed line, and a removed text has a strike.\
    Unchanged lines far from a change collapse.\
    `mod+Alt+U` opens the collapsed regions that show, because a region opens by a click only.
-5. The keyboard can always leave (SC 2.1.2).\
+6. The keyboard can always leave (SC 2.1.2).\
    Tab indents, and Escape then Tab moves the focus on, as CodeMirror documents.\
    F6 and Shift+F6 are not bound, so they reach the window.\
    The content has the path as its accessible name, and a description that tells both ways out.\
    A read-only content keeps a tab stop.
-6. The editor keeps the line ending of the file (LF or CRLF) in what `onSave` gets.\
+7. The editor keeps the line ending of the file (LF or CRLF) in what `onSave` gets.\
    It detects tabs or spaces and the width from the text, and uses 2 spaces when the text shows none.
-7. A new `version` replaces only the span that differs, so the cursor and the scroll position stay where they can.\
+8. A new `version` replaces only the span that differs, so the cursor and the scroll position stay where they can.\
    The replace is not in the undo history.
-8. A hidden panel is detached from the document and loses its scroll positions.\
+9. A hidden panel is detached from the document and loses its scroll positions.\
    The editor ignores a width of 0, and puts the scroll positions back when it has a size again.
-9. The key bindings follow the `platform` prop and not the user agent: `mod` is Command on macOS and Control elsewhere.
+10. The key bindings follow the `platform` prop and not the user agent: `mod` is Command on macOS and Control elsewhere.
 
 Known gaps:
 

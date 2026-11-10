@@ -36,6 +36,7 @@ import {
 import type { Platform } from '@/shared/lib'
 import { indentUnitText, tabSize, type Indent } from '../../model/editor-text'
 import { editorTheme } from './editor-theme'
+import { createSearchPanel } from './search-panel'
 
 /** The parts of an editor that change while it lives, as compartments. */
 export interface Kit {
@@ -202,7 +203,7 @@ export function editorExtensions(
     bracketMatching(),
     rectangularSelection(),
     activeLine,
-    search({ top: true }),
+    search({ top: true, createPanel: createSearchPanel(platform) }),
     kit.language.of([]),
     kit.indent.of([]),
     kit.access.of([]),

@@ -3,8 +3,6 @@ import { Prec, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 
-const hitArea = 'var(--vv-row-h)'
-
 /**
  * The look of the editor, from the semantic variables of the tokens. It reads
  * CSS variables only, so the color scheme changes it with no rebuild.
@@ -88,99 +86,6 @@ const base = EditorView.theme({
   '.cm-panels-top': {
     borderBottom: 'var(--vv-hairline-w) solid var(--hairline)',
   },
-  '.cm-panel.cm-search': {
-    display: 'flex',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 'var(--vv-space-1)',
-    padding:
-      'var(--vv-space-1) var(--vv-space-9) var(--vv-space-1) var(--vv-space-2)',
-    fontFamily: 'var(--vv-font-sans)',
-    fontSize: 'var(--vv-text-ui)',
-    '& br': { display: 'none' },
-    '& input, & button, & label': { margin: '0' },
-    '& label': {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 'var(--vv-space-1)',
-      minHeight: hitArea,
-      fontSize: 'var(--vv-text-ui)',
-      whiteSpace: 'nowrap',
-    },
-  },
-  '.cm-panel.cm-search .cm-textfield': {
-    boxSizing: 'border-box',
-    minWidth: '0',
-    width: 'var(--vv-editor-search-field-w)',
-    maxWidth: '100%',
-    height: hitArea,
-    padding: '0 var(--vv-space-1h)',
-    color: 'var(--foreground)',
-    backgroundColor: 'var(--editor)',
-    border: 'var(--vv-hairline-w) solid var(--input)',
-    borderRadius: 'var(--radius-md)',
-    font: 'inherit',
-  },
-  '.cm-panel.cm-search .cm-button': {
-    boxSizing: 'border-box',
-    minWidth: hitArea,
-    height: hitArea,
-    padding: '0 var(--vv-space-2)',
-    color: 'var(--secondary-foreground)',
-    backgroundColor: 'var(--secondary)',
-    backgroundImage: 'none',
-    border: 'var(--vv-hairline-w) solid var(--input)',
-    borderRadius: 'var(--radius-md)',
-    font: 'inherit',
-    cursor: 'pointer',
-  },
-  '.cm-panel.cm-search .cm-button:hover': {
-    backgroundColor: 'var(--accent)',
-    color: 'var(--accent-foreground)',
-  },
-  '.cm-panel.cm-search [name=close]': {
-    position: 'absolute',
-    top: 'var(--vv-space-1)',
-    right: 'var(--vv-space-1h)',
-    width: hitArea,
-    minWidth: hitArea,
-    height: hitArea,
-    padding: '0',
-    color: 'var(--chrome-foreground)',
-    backgroundColor: 'transparent',
-    border: 'none',
-    fontSize: 'var(--vv-text-lg)',
-    lineHeight: '1',
-  },
-  '.cm-panel.cm-search [name=close]:hover': {
-    backgroundColor: 'var(--hover)',
-  },
-  '.cm-panel.cm-search input[type=checkbox]': {
-    appearance: 'none',
-    boxSizing: 'border-box',
-    display: 'inline-grid',
-    placeContent: 'center',
-    width: hitArea,
-    height: hitArea,
-    border: 'var(--vv-hairline-w) solid var(--input)',
-    borderRadius: 'var(--radius-md)',
-    backgroundColor: 'var(--editor)',
-    color: 'var(--foreground)',
-  },
-  // A checked box shows a check mark, a shape, and not only a fill.
-  '.cm-panel.cm-search input[type=checkbox]:checked::after': {
-    content: '"✓"',
-    fontSize: 'var(--vv-text-sm)',
-    fontWeight: '700',
-  },
-  '.cm-panel.cm-search input[type=checkbox]:checked': {
-    backgroundColor: 'var(--selection)',
-  },
-  '.cm-panel.cm-search :focus-visible': {
-    outline: 'var(--vv-focus-w) solid var(--ring)',
-    outlineOffset: 'var(--vv-hairline-w)',
-  },
-
   // The diff: tinted lines with a mark in the gutter, and the text that changed.
   '&.cm-merge-b .cm-changedLine, &.cm-merge-b .cm-inlineChangedLine': {
     backgroundColor: 'var(--editor-inserted)',

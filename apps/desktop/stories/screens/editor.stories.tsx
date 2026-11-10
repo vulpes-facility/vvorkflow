@@ -54,6 +54,15 @@ export const Markdown: Story = {
 /** The search panel open, with a match under the cursor (`mod+F`). */
 export const SearchOpen: Story = {}
 
+/** The search panel with the replace row open. */
+export const SearchReplace: Story = {}
+
+/** The search panel in the light theme. */
+export const SearchLight: Story = { globals: { colorScheme: 'light' } }
+
+/** The search panel at 320 CSS pixels wide: the rows wrap and no button is clipped. */
+export const SearchReflow320: Story = {}
+
 /** A file that takes no input. */
 export const ReadOnly: Story = { args: { readOnly: true } }
 

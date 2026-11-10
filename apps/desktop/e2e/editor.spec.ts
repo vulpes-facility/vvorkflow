@@ -136,22 +136,108 @@ test('a read-only file refuses input, and still takes the focus', async ({
   await expect(content(page)).toBeFocused()
 })
 
-test('mod+F opens the search, and a match has a fill and an outline', async ({
+test('mod+F opens the search with the selection, and the keys work in its field', async ({
   page,
 }) => {
   await open(page, 'harness')
   await content(page).click()
+  // Select the word `JobQueue` with a double click.
+  await page.getByText('JobQueue', { exact: false }).first().dblclick()
   await page.keyboard.press(`${await mod(page)}+f`)
-  await expect(page.locator('.cm-search')).toBeVisible()
-  await page.keyboard.type('job')
+  const field = page.getByRole('textbox', { name: 'Find' })
+  await expect(field).toBeFocused()
+  await expect(field).toHaveValue(/Job/)
+  await field.fill('job')
+  const count = page.locator('.cm-vv-search [aria-live="polite"]')
+  await expect(count).toContainText(/\d+/)
   await expect(page.locator('.cm-searchMatch').first()).toBeVisible()
   const outline = await page
     .locator('.cm-searchMatch')
     .first()
     .evaluate((element) => getComputedStyle(element).outlineStyle)
   expect(outline).toBe('solid')
+
+  // Enter and Shift+Enter move between the matches.
+  await page.keyboard.press('Enter')
+  await expect(count).toHaveText(/^\d+ of \d+$/)
+  const first = await count.textContent()
+  await page.keyboard.press('Enter')
+  expect(await count.textContent()).not.toBe(first)
+  await page.keyboard.press('Shift+Enter')
+  expect(await count.textContent()).toBe(first)
+
+  // A toggle tells its state with aria-pressed.
+  const toggle = page.getByRole('button', { name: 'Match case' })
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+
+  // No match shows 0.
+  await field.fill('zzzzzz')
+  await expect(count).toHaveText('0')
+
+  // Escape closes the panel and gives the focus back to the editor.
   await page.keyboard.press('Escape')
-  await expect(page.locator('.cm-search')).toBeHidden()
+  await expect(page.locator('.cm-vv-search')).toBeHidden()
+  await expect(content(page)).toBeFocused()
+})
+
+test('the replace row replaces, and a wrong regular expression shows on the field', async ({
+  page,
+}) => {
+  await open(page, 'harness')
+  await content(page).click()
+  await page.keyboard.press(`${await mod(page)}+f`)
+  const disclosure = page.getByRole('button', { name: 'Show replace' })
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('textbox', { name: 'Replace' })).toHaveCount(0)
+  await disclosure.click()
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+
+  await page.getByRole('textbox', { name: 'Find' }).fill('MAX_ATTEMPTS')
+  await page.getByRole('textbox', { name: 'Replace' }).fill('LIMIT')
+  await page.getByRole('button', { name: 'Replace all' }).click()
+  await expect(content(page)).toContainText('const LIMIT = 3')
+  expect(await calls(page)).toEqual(['dirty:true'])
+
+  await page.getByRole('button', { name: 'Regular expression' }).click()
+  const field = page.getByRole('textbox', { name: 'Find' })
+  await field.fill('(')
+  await expect(field).toHaveAttribute('aria-invalid', 'true')
+  await expect(page.getByRole('alert')).toHaveCount(1)
+  await field.fill('LIM.T')
+  await expect(field).not.toHaveAttribute('aria-invalid', 'true')
+})
+
+test('a read-only editor has no replace row', async ({ page }) => {
+  await open(page, 'harness', '&args=readOnly:!true')
+  await content(page).click()
+  await page.keyboard.press(`${await mod(page)}+f`)
+  await expect(page.getByRole('textbox', { name: 'Find' })).toBeFocused()
+  await expect(page.getByRole('button', { name: 'Show replace' })).toHaveCount(
+    0,
+  )
+})
+
+test('each button of the search panel is 24 pixels or more and has a name', async ({
+  page,
+}) => {
+  await open(page, 'harness')
+  await content(page).click()
+  await page.keyboard.press(`${await mod(page)}+f`)
+  await page.getByRole('button', { name: 'Show replace' }).click()
+  const sizes = await page.locator('.cm-vv-search button').evaluateAll((all) =>
+    all.map((element) => {
+      const { width, height } = element.getBoundingClientRect()
+      return { name: element.getAttribute('aria-label'), width, height }
+    }),
+  )
+  expect(sizes.length).toBeGreaterThanOrEqual(9)
+  for (const { name, width, height } of sizes) {
+    expect(name).toBeTruthy()
+    expect(width).toBeGreaterThanOrEqual(24)
+    expect(height).toBeGreaterThanOrEqual(24)
+  }
 })
 
 test('the diff is two columns when wide and one when narrow, and keeps the edits', async ({
