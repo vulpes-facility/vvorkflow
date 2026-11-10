@@ -2,7 +2,8 @@
 //! starts the engine, uses it again, starts it again after it stops, reports
 //! the message of an engine that cannot start, and replaces an engine of
 //! another protocol version. Also the client with an engine in the test
-//! process: its turn to start an engine, its places, and its end.
+//! process: its turn to start an engine, its places, and its end, and with
+//! an engine that does not send answers.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -123,6 +124,38 @@ fn older_engine(place: &Place) -> (JoinHandle<()>, mpsc::UnboundedReceiver<()>) 
     (engine, refusals)
 }
 
+/// An engine that welcomes the client, and then sends a text that is not an
+/// answer for each request. It keeps the connection open.
+fn engine_without_answers(place: &Place) -> JoinHandle<()> {
+    let endpoint = endpoint(place);
+    endpoint.prepare().unwrap();
+    let _lock = endpoint.lock().unwrap();
+    let mut listener = endpoint.bind().unwrap();
+    tokio::spawn(async move {
+        let _lock = _lock;
+        let mut sockets = Vec::new();
+        loop {
+            let stream = listener.accept().await.unwrap();
+            // A probe of the client that closes at once has no handshake.
+            let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
+                continue;
+            };
+            let Some(Ok(Message::Text(_))) = socket.next().await else {
+                continue;
+            };
+            let welcome = json!({"id": 0, "result": {"protocol": PROTOCOL_VERSION, "root": "/"}});
+            socket
+                .send(Message::text(welcome.to_string()))
+                .await
+                .unwrap();
+            if let Some(Ok(Message::Text(_))) = socket.next().await {
+                socket.send(Message::text("no answer")).await.unwrap();
+            }
+            sockets.push(socket);
+        }
+    })
+}
+
 /// The answer to `hello`, as soon as the engine listens and has a place for
 /// the client, within five seconds.
 async fn hello_when_free(client: &EngineClient) -> Value {
@@ -231,6 +264,23 @@ async fn the_client_replaces_an_engine_of_another_version() {
     assert_eq!(welcome["protocol"], PROTOCOL_VERSION);
     older.await.unwrap();
     shutdown(&client).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_text_that_is_not_an_answer_ends_the_connection() {
+    let place = place();
+    let engine = engine_without_answers(&place);
+    let client = client_only(&place);
+
+    // Each request gets a new connection, because the last one ended.
+    for _ in 0..2 {
+        let refused = tokio::time::timeout(Duration::from_secs(5), client.request(hello()))
+            .await
+            .expect("the request ends")
+            .unwrap_err();
+        assert_eq!(refused.message, "The engine stopped before it answered.");
+    }
+    engine.abort();
 }
 
 #[tokio::test(flavor = "multi_thread")]

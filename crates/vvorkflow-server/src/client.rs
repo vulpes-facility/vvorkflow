@@ -446,8 +446,11 @@ impl Connection {
                     }
                     continue;
                 };
+                // An engine that sends something else than an answer does not
+                // speak the protocol: its connection ends, so that no request
+                // waits for an answer that cannot come.
                 let Ok(answer) = serde_json::from_str::<ServerMessage<Value>>(&text) else {
-                    continue;
+                    break;
                 };
                 let id = match &answer {
                     ServerMessage::Result { id, .. } | ServerMessage::Error { id, .. } => *id,
