@@ -537,13 +537,19 @@ async fn delivery(deliveries: &mut Deliveries) -> Delivery {
         .expect("the client lives")
 }
 
-/// An engine that welcomes the client, and then sends `messages`.
-fn fake_engine(place: &Place, messages: Vec<Message>) -> JoinHandle<()> {
+/// An engine that welcomes the client, and then sends `messages`. It tells
+/// the number of each message when its send returned: then the client read
+/// it, except the last bytes that the socket holds.
+fn fake_engine(
+    place: &Place,
+    messages: Vec<Message>,
+) -> (JoinHandle<()>, tokio::sync::mpsc::UnboundedReceiver<usize>) {
     let endpoint = endpoint(place);
     endpoint.prepare().unwrap();
     let lock = endpoint.lock().unwrap();
     let mut listener = endpoint.bind().unwrap();
-    tokio::spawn(async move {
+    let (sent, sends) = tokio::sync::mpsc::unbounded_channel();
+    let engine = tokio::spawn(async move {
         let _lock = lock;
         // A probe of the client closes at once.
         let (mut socket, mut text) = loop {
@@ -571,14 +577,16 @@ fn fake_engine(place: &Place, messages: Vec<Message>) -> JoinHandle<()> {
             };
             text = next;
         }
-        for message in messages {
+        for (number, message) in messages.into_iter().enumerate() {
             if socket.send(message).await.is_err() {
                 return;
             }
+            let _ = sent.send(number);
         }
         // The client ends the connection.
         while let Some(Ok(_)) = socket.next().await {}
-    })
+    });
+    (engine, sends)
 }
 
 /// A frame of the largest size passes the WebSocket of the client, whose
@@ -596,7 +604,7 @@ async fn the_client_takes_a_frame_of_the_largest_size() {
     .encode();
     assert_eq!(largest.len(), MAX_FRAME);
     let too_large = vec![0; MAX_FRAME + 1];
-    let engine = fake_engine(
+    let (engine, _sends) = fake_engine(
         &place,
         vec![Message::binary(largest), Message::binary(too_large)],
     );
@@ -636,7 +644,7 @@ async fn an_owner_that_keeps_the_events_stops_the_read() {
     }
     .encode();
     messages.push(Message::binary(last.clone()));
-    let engine = fake_engine(&place, messages);
+    let (engine, _sends) = fake_engine(&place, messages);
     let (client, mut deliveries) = client_only(&place);
     client.request(hello()).await.unwrap();
 
@@ -662,6 +670,44 @@ async fn an_owner_that_keeps_the_events_stops_the_read() {
         deliveries.budget().release(item.size());
     }
     assert_eq!(delivery(&mut deliveries).await, Delivery::Frame(last));
+    drop(client);
+    engine.await.unwrap();
+}
+
+/// The client reads nothing from the socket while the owner holds the
+/// limit: after a frame of the largest size, the next one stays in the
+/// socket, and the client holds at most one item above the limit.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_client_does_not_read_the_socket_while_the_owner_holds_the_limit() {
+    let place = place();
+    let screen = vec![b'x'; MAX_SCREEN];
+    let frame = Frame::Screen {
+        session: "0123456789abcdef",
+        columns: MAX_COLUMNS,
+        rows: MAX_ROWS,
+        screen: &screen,
+    }
+    .encode();
+    let (engine, mut sends) = fake_engine(
+        &place,
+        vec![Message::binary(frame.clone()), Message::binary(frame)],
+    );
+    let (client, mut deliveries) = client_only(&place);
+    client.request(hello()).await.unwrap();
+
+    let first = delivery(&mut deliveries).await;
+    assert_eq!(first.size(), MAX_FRAME);
+    assert_eq!(sends.recv().await, Some(0));
+    // The second frame does not fit in the socket: its send returns only
+    // when the client reads it, which it does not while the owner holds the
+    // first one.
+    let read = tokio::time::timeout(Duration::from_millis(300), sends.recv()).await;
+    assert!(read.is_err(), "the client read the second frame");
+
+    deliveries.budget().release(first.size());
+    let second = delivery(&mut deliveries).await;
+    assert_eq!(second.size(), MAX_FRAME);
+    assert_eq!(sends.recv().await, Some(1));
     drop(client);
     engine.await.unwrap();
 }

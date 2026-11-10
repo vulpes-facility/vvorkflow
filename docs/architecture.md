@@ -75,6 +75,7 @@ The receiver checks each message against the schema, at run time.
     It tells the bytes of an event when it has noted what the event asks for, before the requests that follow from it.\
     The app core counts the bytes of the frames and the events that the web UI did not take yet, also those that are on their way to it.\
     When the count is 1 MiB or more, it stops to read the connection, so that the limits of the engine apply, and no queue of the app grows without a limit.\
+    It checks the count before it reads the next message, and counts each message when it reads it.\
     One frame can take the count above 1 MiB, and a frame has at most 32 MiB and 21 bytes, so the count stays below 33 MiB and 21 bytes.
 13. When the connection of the app core to the engine ends, each open request fails, and the app core sends the event `connection.closed` on the channel:\
     after the last frame of that connection, and before the first frame of the next connection.\

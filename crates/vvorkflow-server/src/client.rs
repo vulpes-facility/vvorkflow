@@ -124,23 +124,29 @@ impl Budget {
         self.0.released.notify_one();
     }
 
-    /// Waits until the held bytes are below [`DELIVERY_LIMIT`], and then
-    /// holds `bytes` more.
-    async fn hold(&self, bytes: usize) {
+    /// Waits until the held bytes are below [`DELIVERY_LIMIT`].
+    async fn ready(&self) {
         loop {
+            if *self
+                .0
+                .held
+                .lock()
+                .expect("the budget lock is never poisoned")
+                < DELIVERY_LIMIT
             {
-                let mut held = self
-                    .0
-                    .held
-                    .lock()
-                    .expect("the budget lock is never poisoned");
-                if *held < DELIVERY_LIMIT {
-                    *held += bytes;
-                    return;
-                }
+                return;
             }
             self.0.released.notified().await;
         }
+    }
+
+    /// Holds the bytes of an item that the client read.
+    fn charge(&self, bytes: usize) {
+        *self
+            .0
+            .held
+            .lock()
+            .expect("the budget lock is never poisoned") += bytes;
     }
 }
 
@@ -655,7 +661,16 @@ impl Connection {
         let write = writer.abort_handle();
         let reader = tokio::spawn(async move {
             let closed = Closed(owner.as_ref().map(|owner| owner.sender.clone()));
-            while let Some(Ok(message)) = source.next().await {
+            loop {
+                // The owner did not give back enough: the client reads
+                // nothing, so that it holds at most one item more than the
+                // limit.
+                if let Some(owner) = &owner {
+                    owner.budget.ready().await;
+                }
+                let Some(Ok(message)) = source.next().await else {
+                    break;
+                };
                 let delivery = match message {
                     Message::Text(text) => {
                         // An engine that sends something else than an answer or
@@ -690,9 +705,7 @@ impl Connection {
                     _ => continue,
                 };
                 if let Some(owner) = &owner {
-                    // The owner did not take enough: wait, and so stop to
-                    // read the connection.
-                    owner.budget.hold(delivery.size()).await;
+                    owner.budget.charge(delivery.size());
                     let _ = owner.sender.send(delivery);
                 }
             }
