@@ -31,7 +31,7 @@ The engine continues when the app closes, so its terminal sessions continue.
 
 Each connection of the app core carries WebSocket frames, on the local socket and in the SSH tunnel.\
 A text frame holds one JSON message of the protocol.\
-A binary frame is for terminal output (M4).
+A binary frame holds terminal output ([Attach, output, and input](#attach-output-and-input)).
 
 ## Protocol
 
@@ -39,10 +39,11 @@ Each message is a JSON object.\
 The receiver checks each message against the schema, at run time.
 
 ```text
-→ {"id": 7, "method": "session.attach", "params": {"session": "s3"}}
-← {"id": 7, "result": {"screen": "…", "scrollback": 5000}}
+→ {"id": 7, "method": "session.attach", "params": {"session": "5f0c2a9e41b7d386"}}
+← {"id": 7, "result": {"id": "5f0c2a9e41b7d386", "title": "zsh", "folder": "/code/app", "columns": 120, "rows": 30}}
 ← {"id": 8, "error": {"code": "permissionDenied", "message": "…"}}
-← {"event": "session.output", "params": {"session": "s3", "data": "…"}}
+← (binary frame: the screen of the session, then its output)
+← {"event": "session.ended", "params": {"session": "5f0c2a9e41b7d386", "exitCode": 0}}
 ```
 
 1. A request has an `id`, a `method`, and `params`.\
@@ -63,9 +64,18 @@ The receiver checks each message against the schema, at run time.
 7. Over Tauri IPC, the web UI sends only `method` and `params`, and the app core adds the `id`.
 8. A client keeps at most 16 requests open on a connection: sent, and not answered yet.\
    The engine closes the connection of a client that sends more.
+9. An event is a text frame with an `event` and `params`.\
+   The engine can send it at any time after `hello`, between the answers.
+10. The engine does `session.attach`, `session.detach`, `session.write`, and `session.resize` when it reads them, in the order of the connection.\
+    Each other request runs on a worker, and its answer can come in any order.
+11. Over Tauri IPC, the web UI gives the app core one channel.\
+    On it, the app core sends each event as JSON and each binary frame as bytes, in the order of the connection.
+12. When the connection of the app core to the engine ends, the app core sends the event `connection.closed` on that channel.\
+    The attachments of that connection are gone: the web UI attaches again, and the next request opens a new connection.\
+    The engine never sends this event.
 
 Status: the methods, the version check, `shutdown`, and the envelope with the `id` are done (M3).\
-The events come with the terminal sessions (M4).
+The events and the binary frames are next, with the terminal sessions (M4).
 
 ## Projects root
 
@@ -129,6 +139,7 @@ The engine process stops on a root that is not correct, and the app shows its me
    When the engine stops before it listens, the app shows the last line of `engine.log`.\
    When the engine does not listen in 10 seconds, the app stops that process.\
    When `hello` fails because of the version, the app sends `shutdown`, and starts its own engine.\
+   From M4, an engine with sessions refuses that `shutdown` ([Engine stop with sessions](#engine-stop-with-sessions)): the app then shows the refusal and starts no engine.\
    Only one app at a time starts or replaces the engine: the app locks `engine.turn`, and says `hello` again before it does so.\
    Thus an app does not stop the engine that another app started a moment before.\
    An engine has 10 seconds to answer `hello`; after them the app shows an error, and the next request tries again.\
@@ -144,19 +155,74 @@ Status: done (M3).
 ## Terminal sessions
 
 ```text
-open tab ──► attach (makes the session when it does not exist)
+new terminal ──► session.create, then session.attach
 close tab / close app ──► detach: the session continues in the engine
-open tab again ──► attach: the current screen comes back
-Kill (menu) / end of the program ──► the session ends
+open tab again ──► session.attach: the current screen comes back
+Kill (menu) / end of the shell ──► the session ends
 ```
 
-1. The engine keeps each session: the pseudo-terminal, the screen state, and a scrollback with a limit.\
+### Session
+
+1. A session is a pseudo-terminal, the shell of the user in it, and the state of its screen.\
+   The engine keeps each session until its shell ends, also while no client is connected.\
    It uses ConPTY on Windows.
-2. On attach, the engine sends the current screen, then only the new output, while the client stays attached.
-3. The engine does not read the state of an agent.\
+2. `session.create` makes a session with a size in columns and rows.\
+   Its folder is an open worktree, or the projects root when the request names no worktree.\
+   The request has no command: the program is always the shell of the user, and the user types each command (value 6).
+3. The shell is `$SHELL`, or `/bin/sh` when the variable is not set.\
+   On macOS it starts as a login shell, because an app there does not get the environment of the profile.\
+   On Windows it is `pwsh.exe`, `powershell.exe`, or `%COMSPEC%`, the first that the engine finds.\
+   The shell gets the environment of the engine, with `TERM=xterm-256color`, `COLORTERM=truecolor`, and `TERM_PROGRAM=vvorkflow`.
+4. The id of a session is 16 lowercase hexadecimal characters from a random number.\
+   So an id of an engine that stopped does not name a session of the next engine.
+5. A size has 2 to 1,000 columns and 1 to 500 rows; the engine refuses another size (`invalidArgument`).\
+   The engine keeps at most 64 sessions (`failedPrecondition` for one more).
+6. `session.list` answers each session in the order of its start: its id, its title, its folder, and its size.\
+   The title is the title that the program set, or the name of the shell.
+7. The engine does not read the state of an agent.\
    An agent is only the program in a terminal.
 
-Status: planned (M4).
+### Screen state
+
+1. The engine reads the output of each session, also while no client is attached, and keeps the state that the output makes:\
+   the screen, the scrollback of at most 5,000 lines, the alternate screen, the cursor, the colors and the styles, the title, and the modes that change the input, such as bracketed paste, the mouse modes, and the application cursor keys.
+2. From this state the engine makes the screen bytes: bytes that draw the same state in a terminal that was reset.\
+   A test checks this: the state that the screen bytes make is equal to the state that made them.
+3. The engine answers a query of the program, such as the cursor position, only while no client is attached.\
+   While a client is attached, its terminal answers.\
+   Known limit: when two clients are attached to one session, the program gets two answers.
+
+### Attach, output, and input
+
+1. `session.attach` adds the connection to the attached clients of the session, and answers the size.\
+   In the same step, the engine puts one screen frame in the queue of that client.\
+   So the client gets the screen, then each byte of output after it, with no byte lost and no byte twice.\
+   `session.attach` on an attached session sends the screen again.
+2. `session.detach`, and the end of the connection, remove the client; the session continues.
+3. Terminal output is a binary frame:\
+   byte 0 is the kind, bytes 1 to 16 are the session id, and the other bytes are the data.\
+   Kind 0 is output: the next bytes of the program.\
+   Kind 1 is a screen: the client resets its terminal, then writes the data.
+4. Each attached client has an output queue for each session, with a limit of 1 MiB.\
+   The thread that reads the pseudo-terminal never waits for a client.\
+   When a queue is full, the engine discards it, and the next frame of that session to that client is a screen.
+5. `session.write` sends text to the program, and `session.resize` changes the size of the session.\
+   The engine does both when it reads the request, in the order of the connection, and not on a worker.\
+   The input of a session waits in a queue of at most 1 MiB; the engine refuses a write to a full queue (`failedPrecondition`).\
+   A session has one size: the last `session.resize` of any client sets it.
+6. When the shell ends, the engine sends the last output, then the event `session.ended` with the exit code to each attached client, and removes the session.\
+   `session.kill` ends the shell and the programs in its terminal: SIGHUP to the process group, then SIGKILL after 3 seconds, or the end of the ConPTY on Windows.
+
+### Engine stop with sessions
+
+1. The engine does not stop for the idle time while a session runs.
+2. `shutdown` has the optional param `force`.\
+   Without it, an engine with sessions refuses `shutdown` (`failedPrecondition`) and tells the number of sessions.\
+   With it, the engine ends each session, then stops.
+3. So an app of another protocol version does not end the sessions of the engine without a question to the user:\
+   it shows the refusal, and the user can stop the engine from there.
+
+Status: next (M4).
 
 ## Memory limits
 
@@ -166,10 +232,12 @@ A setting changes each one.
 
 | Part | Rule | Default |
 | --- | --- | --- |
-| Engine process | The engine process stops when no client is connected for a time. From M4, it also waits for the end of each session. | 5 minutes |
+| Engine process | The engine process stops when no client is connected for a time. From M4, it does not stop while a session runs. | 5 minutes |
 | Requests | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message to the engine has at most 1 MiB. | - |
+| Sessions | The engine keeps a limited number of sessions. | 64 sessions |
 | Session screen | The engine keeps the screen and the scrollback of each session. | 5,000 lines |
-| Engine output | The engine sends output only for attached sessions. Each client has an output queue with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | Proposal in M4 |
+| Engine output | The engine sends output only for attached sessions. Each client has an output queue for each session, with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | 1 MiB |
+| Session input | The input of a session waits in a queue with a limit. The engine refuses a write to a full queue. | 1 MiB |
 | App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |
 | Media and previews | The engine reads a large file in ranges, not all at once. A hidden media tab stops playback and decoding. | 1 MB ranges |
 | Explorer | The web UI reads only the open folders, and drops the folders that it does not use. A large folder scrolls virtually. | 5 minutes |
@@ -184,9 +252,9 @@ A setting changes each one.
 | Paths | A request can reach only the folders that the user opened, and the worktrees of their repositories. The engine reads the folders through directory handles, and runs git only with the git directory that it found when the folder opened. | Done |
 | Projects root | The engine also lists the [projects root](#projects-root) and makes new projects in it, through a directory handle. A remote client can open only the projects in it. | Done for the root; planned (M6) for remote clients |
 | Installs | The app does not run installs for the user. | Done |
-| Commands | The app types a command in the terminal, and the user presses Enter. | Planned (M4) |
+| Commands | The app types a command in the terminal, and the user presses Enter. A session has no command of its own: its program is the shell of the user. | Next (M4) |
 | Previews | The Markdown preview removes HTML and scripts from the document. It blocks remote images by default, and the user can allow them for each document. | Planned (M5) |
-| Sessions | A session runs as the user that runs the engine. | Planned (M4) |
+| Sessions | A session runs as the user that runs the engine. Each client of the engine can use each session. | Next (M4) |
 
 ## Roadmap
 
@@ -195,7 +263,7 @@ A setting changes each one.
 | M1 Shell | The design tokens, the window shell, accessibility, the tabs and the menus, and the icon. | Done |
 | M2 Engine base | The protocol, the roots, the folders, git, and the Explorer on real folders. | Done |
 | M3 Engine process | The protocol envelope with the version check, the projects root and the project list, the engine as a daemon, and the local socket. | Done |
-| M4 Terminals | The sessions of the engine: the pseudo-terminal, the screen state, attach and detach, and the terminal tabs on real sessions. | Planned |
+| M4 Terminals | The sessions of the engine: the pseudo-terminal, the screen state, attach and detach, and the terminal tabs on real sessions. | Next |
 | M5 Editor and viewers | Open, edit, and save files, the diff, the Markdown preview, the media viewer, the file watch, and the Explorer menus. | Planned |
 | M6 Remote | The headless install of `vvorkflow-server`, WebSocket, the token, and the connection manager. | Planned |
 | M7 Tools | Search, the command palette, the settings, and the browser panel. | Planned |

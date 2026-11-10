@@ -25,7 +25,8 @@ This file gives only the rules that are different from that plugin, or that it d
    Do not add a `minimumReleaseAgeExclude` entry.\
    Pick an older version.
 10. Keep the Playwright specs and the Vitest tests of `apps/desktop` outside `src/`, in `e2e/` and `tests/`.\
-    [design.md](design.md) gives the place of the stories and the fixtures.
+    [design.md](design.md) gives the place of the stories and the fixtures.\
+    `pnpm screens` serves the Storybook build on port 6007; set `VVORKFLOW_SCREENS_PORT` to run it in two worktrees at the same time.
 11. Fix an advisory of `pnpm audit` in a transitive package with an entry in `overrides` of `pnpm-workspace.yaml`.\
     Name the advisory in a comment, and remove the entry when the direct dependency takes the patched version.\
     When no patched version exists, as for `deepmerge` in the shadcn CLI, accept a low advisory in a tool that the app does not bundle.

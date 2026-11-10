@@ -7,13 +7,20 @@ import { defineConfig, devices } from '@playwright/test'
  *
  * https://playwright.dev/docs/test-configuration
  */
+/**
+ * The port of the Storybook preview. `VVORKFLOW_SCREENS_PORT` changes it, so
+ * that two worktrees can run `pnpm screens` at the same time, each with its
+ * own build.
+ */
+const port = Number(process.env.VVORKFLOW_SCREENS_PORT ?? 6007)
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://localhost:6007',
+    baseURL: `http://localhost:${port}`,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -35,9 +42,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command:
-      'pnpm exec vite preview --outDir storybook-static --port 6007 --strictPort',
-    url: 'http://localhost:6007',
+    command: `pnpm exec vite preview --outDir storybook-static --port ${port} --strictPort`,
+    url: `http://localhost:${port}`,
     reuseExistingServer: !process.env.CI,
   },
 })
