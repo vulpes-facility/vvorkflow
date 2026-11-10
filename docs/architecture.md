@@ -127,6 +127,7 @@ The engine process stops on a root that is not correct, and the app shows its me
    An engine has 10 seconds to answer `hello`; after them the app shows an error, and the next request tries again.\
    The app keeps one connection while it runs, and sends each request of the web UI on it with a new `id`.\
    It keeps at most 16 requests open; a further request waits.\
+   When the engine sends a text that is not an answer, the app ends the connection, and each open request gets an error.\
    When the engine stops, the next request opens a new connection, and starts an engine when none listens.
 10. The engine continues when the app closes, with the projects root that it started with.\
     To use another root, set `VVORKFLOW_ROOT` and start the app after the engine stops: 5 minutes after the last client leaves.

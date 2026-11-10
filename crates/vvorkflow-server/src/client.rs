@@ -438,6 +438,9 @@ impl Connection {
             end(&answers);
         });
         let answers = Arc::clone(&pending);
+        // The connection ends when the reader ends: the writer then stops
+        // too, so that the socket closes, and the engine has its place again.
+        let write = writer.abort_handle();
         let reader = tokio::spawn(async move {
             while let Some(Ok(message)) = source.next().await {
                 let Message::Text(text) = message else {
@@ -446,8 +449,11 @@ impl Connection {
                     }
                     continue;
                 };
+                // An engine that sends something else than an answer does not
+                // speak the protocol: its connection ends, so that no request
+                // waits for an answer that cannot come.
                 let Ok(answer) = serde_json::from_str::<ServerMessage<Value>>(&text) else {
-                    continue;
+                    break;
                 };
                 let id = match &answer {
                     ServerMessage::Result { id, .. } | ServerMessage::Error { id, .. } => *id,
@@ -462,6 +468,7 @@ impl Connection {
                 }
             }
             end(&answers);
+            write.abort();
         });
         Connection {
             outbox,
