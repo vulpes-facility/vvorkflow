@@ -85,7 +85,7 @@ pub(crate) fn spawn(shell: &Path, folder: &Path, columns: u16, rows: u16) -> io:
     let pair = portable_pty::native_pty_system()
         .openpty(size)
         .map_err(io::Error::other)?;
-    let mut command = command(shell);
+    let mut command = command(shell)?;
     #[cfg(unix)]
     command.cwd(folder);
     #[cfg(windows)]
@@ -163,18 +163,30 @@ fn current_folder(folder: &Path) -> PathBuf {
     }
 }
 
-fn command(shell: &Path) -> CommandBuilder {
+fn command(shell: &Path) -> io::Result<CommandBuilder> {
     // On macOS an app does not get the environment of the profile, so the
     // shell starts as a login shell: `portable-pty` does that for the shell
-    // that `SHELL` names, with `-` before the name of the program.
+    // that `SHELL` names, with `-` before the name of the program. When that
+    // shell cannot run, `portable-pty` starts the shell of the account
+    // instead; the engine refuses, as on the other systems.
     #[cfg(target_os = "macos")]
     {
-        let _ = shell;
-        CommandBuilder::new_default_prog()
+        use std::os::unix::ffi::OsStrExt;
+        let path =
+            std::ffi::CString::new(shell.as_os_str().as_bytes()).map_err(io::Error::other)?;
+        // SAFETY: `path` is a valid C string.
+        let runs = unsafe { libc::access(path.as_ptr(), libc::X_OK) } == 0;
+        if !runs || shell.to_str().is_none() {
+            return Err(io::Error::other(format!(
+                "{} is not a program that can run",
+                shell.display()
+            )));
+        }
+        Ok(CommandBuilder::new_default_prog())
     }
     #[cfg(not(target_os = "macos"))]
     {
-        CommandBuilder::new(shell.as_os_str())
+        Ok(CommandBuilder::new(shell.as_os_str()))
     }
 }
 
