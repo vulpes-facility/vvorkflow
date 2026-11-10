@@ -35,6 +35,11 @@ export class TextSession {
   baseline = ''
   /** The line separator of the last text of the disk. */
   separator: LineSeparator = '\n'
+  /**
+   * Clears the undo history of the view. The owner of the session sets it,
+   * because the history belongs to the extensions of the editor.
+   */
+  resetHistory: (view: EditorView) => void = () => {}
   private dirty = false
   private conflict = false
   /** The conflict that the owner knows. */
@@ -114,8 +119,10 @@ export class TextSession {
     const hadEdits =
       view.state.sliceDoc() !== this.disk || view.compositionStarted
     this.take(text)
-    if (!hadEdits) this.replaceContent(view, false)
-    else if (view.state.sliceDoc() !== text) this.conflict = true
+    // A text that replaced the content has no use for the history of the old one.
+    if (!hadEdits) {
+      if (this.replaceContent(view, false)) this.resetHistory(view)
+    } else if (view.state.sliceDoc() !== text) this.conflict = true
     this.check(view)
   }
 
@@ -129,7 +136,8 @@ export class TextSession {
     this.check(view)
   }
 
-  private replaceContent(view: EditorView, history: boolean) {
+  /** @returns Whether the content or its separator changed. */
+  private replaceContent(view: EditorView, history: boolean): boolean {
     const effects =
       view.state.lineBreak === this.separator
         ? []
@@ -141,13 +149,14 @@ export class TextSession {
       to: span.to,
       insert: Text.of(span.insert.split('\n')),
     }
-    if (changes || effects.length)
-      view.dispatch({
-        changes,
-        effects,
-        annotations: history
-          ? [isolateHistory.of('full'), fromDisk.of(true)]
-          : [external, fromDisk.of(true)],
-      })
+    if (!changes && !effects.length) return false
+    view.dispatch({
+      changes,
+      effects,
+      annotations: history
+        ? [isolateHistory.of('full'), fromDisk.of(true)]
+        : [external, fromDisk.of(true)],
+    })
+    return true
   }
 }

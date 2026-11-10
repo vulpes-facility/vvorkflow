@@ -181,14 +181,18 @@ Both are CodeMirror 6, in `apps/desktop/src/pages/workbench/ui/editor/`.
    - A text with only LF, or with no line break, uses `\n` as the line separator of the state.
    - A text with only CRLF uses `\r\n`.
    - A mixed text, also with a lone `\r`, uses `\n`, and each `\r` stays in the document as a character at the end of its line, which shows as a control character.
-   - A new line, and a pasted text, get the separator of the state.\
-     A guard on each transaction does the same for every other source of text, such as a replacement of the search: a `\n` that the search makes inside a line of a CRLF document, or a `\r` in a replacement, becomes a real line break with the separator of the document.\
-     The text of the disk, and an undo or a redo, pass as they are.
+   - A new line, and a pasted text, get the separator of the state.
+   - In a document with the `\n` separator (an LF file or a mixed file), a `\r` is an ordinary character, always, and a `\n` cannot be inside a line.\
+     So text that a command moves or copies keeps its bytes, and an escaped `\r\n` in a replacement gives exactly the bytes `\r\n`, as the user wrote them.
+   - In a document with the `\r\n` separator (a file with only CRLF), a line never holds a `\r` or a `\n`.\
+     A guard on each transaction (`separatorGuard`) turns, in the inserted text, each `\r\n` pair, each lone `\n`, and each lone `\r` into one real line break of the document, so that a replacement of the search cannot put a raw `\n` in a line.\
+     The text of the disk (`fromDisk`), and an undo or a redo, pass as they are.
    - A text with no final line break keeps none.\
      The editor detects tabs or spaces and the width from the text, and uses 2 spaces when the text shows none.
 8. A new `version` never discards unsaved edits.
    - While the content has no unsaved edits and no IME composition is open, the editor replaces only the span that differs, so the cursor and the scroll position stay where they can.\
-     The replace is not in the undo history.
+     The replace is not in the undo history, and it clears the history, because the history of an old text does not belong to the new one.\
+     A text that equals the content changes nothing, and the history stays.
    - Otherwise the editor keeps the content, takes the new `text` as the text of the disk, and calls `onConflictChange(true)` when the content differs from it.\
      The conflict ends, with `onConflictChange(false)`, when the content is equal to the text again, as it is after a save, or after `revert()` of the handle.
    - `onSave` always gets the content, and the owner decides whether to write it over the disk.

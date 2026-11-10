@@ -349,6 +349,14 @@ for (const story of ['harness', 'diff-harness']) {
       result: 'a\r\nx\r\ny\r\n',
     },
     {
+      name: 'an escaped CRLF in a CRLF file',
+      file: 'a\r\nb\r\n',
+      find: 'b',
+      replace: 'x\\r\\ny',
+      regexp: false,
+      result: 'a\r\nx\r\ny\r\n',
+    },
+    {
       name: 'a capture over two lines in an LF file',
       file: 'a\nb\n',
       find: '(a\\nb)',
@@ -357,12 +365,13 @@ for (const story of ['harness', 'diff-harness']) {
       result: '<a\nb>\n',
     },
     {
+      // A `\r` is an ordinary character in an LF file: the bytes are what the user wrote.
       name: 'an escaped CRLF in an LF file',
       file: 'a\nb\n',
       find: 'b',
       replace: 'x\\r\\ny',
       regexp: false,
-      result: 'a\nx\ny\n',
+      result: 'a\nx\r\ny\n',
     },
   ]
   for (const { name, file, find, replace, regexp, result } of cases) {
@@ -402,3 +411,81 @@ for (const story of ['harness', 'diff-harness']) {
     }
   }
 }
+
+// The commands that move text keep the bytes of a mixed text.
+for (const story of ['harness', 'diff-harness']) {
+  // A CRLF, an LF, and a CRLF again; the cursor goes to the line `b`, which has an LF.
+  const mixed = 'a\r\nb\nc\r\nd'
+  const commands: [string, (page: Page) => Promise<string>, string][] = [
+    [
+      'move a line up (Alt+ArrowUp)',
+      async () => 'Alt+ArrowUp',
+      'b\na\r\nc\r\nd',
+    ],
+    [
+      'move a line down (Alt+ArrowDown)',
+      async () => 'Alt+ArrowDown',
+      'a\r\nc\r\nb\nd',
+    ],
+    [
+      'copy a line up (Shift+Alt+ArrowUp)',
+      async () => 'Shift+Alt+ArrowUp',
+      'a\r\nb\nb\nc\r\nd',
+    ],
+    [
+      'copy a line down (Shift+Alt+ArrowDown)',
+      async () => 'Shift+Alt+ArrowDown',
+      'a\r\nb\nb\nc\r\nd',
+    ],
+    [
+      'delete a line (mod+Shift+K)',
+      async (page) => `${await mod(page)}+Shift+k`,
+      'a\r\nc\r\nd',
+    ],
+    ['indent a line (Tab)', async () => 'Tab', 'a\r\n  b\nc\r\nd'],
+  ]
+  for (const [name, key, result] of commands) {
+    test(`${story}: ${name} keeps the bytes of a mixed text, with undo and redo`, async ({
+      page,
+      browserName,
+    }) => {
+      await page.setViewportSize({ width: 1200, height: 700 })
+      await open(page, story)
+      await setText(page, mixed, '2')
+      await content(page).click()
+      await page.keyboard.press('ControlOrMeta+Home')
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press(await key(page))
+      expect(await save(page)).toBe(result)
+      await page.keyboard.press(`${await mod(page)}+z`)
+      expect(await save(page)).toBe(mixed)
+      // The redo key of macOS has a capital letter, which WebKit on Linux does not send.
+      if (browserName === 'webkit') return
+      await page.keyboard.press(await redoKey(page))
+      expect(await save(page)).toBe(result)
+    })
+  }
+}
+
+test('the history stays when the saved text comes back, and the same text comes again', async ({
+  page,
+}) => {
+  await open(page, 'harness')
+  // The content before the typing: the text of the disk.
+  await setText(page, 'a\nb\n', '0')
+  await content(page).click()
+  await page.keyboard.press(`${await mod(page)}+End`)
+  await page.keyboard.type('x')
+  const saved = (await save(page)) ?? ''
+  await setText(page, saved, '2')
+  await setText(page, saved, '3')
+  await expect
+    .poll(() => calls(page))
+    .toEqual(['dirty:true', `save:${saved}`, 'dirty:false'])
+  await content(page).click()
+  await page.keyboard.press(`${await mod(page)}+z`)
+  await expect
+    .poll(() => calls(page))
+    .toEqual(['dirty:true', `save:${saved}`, 'dirty:false', 'dirty:true'])
+  expect(await save(page)).toBe('a\nb\n')
+})

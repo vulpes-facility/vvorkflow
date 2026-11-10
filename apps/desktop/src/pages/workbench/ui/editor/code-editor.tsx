@@ -12,6 +12,7 @@ import type { Platform } from '@/shared/lib'
 import { detectIndent } from '../../model/editor-text'
 import {
   accessExtension,
+  clearHistory,
   createKit,
   editorExtensions,
   indentExtension,
@@ -87,7 +88,11 @@ export function CodeEditor({
   const hint = useId()
   const view = useRef<EditorView | null>(null)
   const [parts] = useState(createKit)
-  const [textSession] = useState(() => new TextSession())
+  const [textSession] = useState(() => {
+    const created = new TextSession()
+    created.resetHistory = (view) => clearHistory(view, parts)
+    return created
+  })
   const kit = useRef<Kit>(parts)
   const session = useRef(textSession)
   const applied = useRef(version)

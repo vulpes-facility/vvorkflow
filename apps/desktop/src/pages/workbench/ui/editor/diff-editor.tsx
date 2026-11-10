@@ -30,6 +30,7 @@ import { editorHint, type CodeEditorProps } from './code-editor'
 import { openSearchPanelQuietly } from './search-panel'
 import {
   accessExtension,
+  clearHistory,
   createKit,
   editorExtensions,
   indentExtension,
@@ -111,7 +112,11 @@ export function DiffEditor({
   const [layout, setLayout] = useState<Layout>()
   const handle = useRef<Handle | null>(null)
   const [parts] = useState(createKit)
-  const [textSession] = useState(() => new TextSession())
+  const [textSession] = useState(() => {
+    const created = new TextSession()
+    created.resetHistory = (view) => clearHistory(view, parts)
+    return created
+  })
   const kit = useRef<Kit>(parts)
   const session = useRef(textSession)
   const carry = useRef<Carry | null>(null)

@@ -43,14 +43,12 @@ export function separatorExtension(separator: LineSeparator): Extension {
 export const fromDisk = Annotation.define<boolean>()
 
 /**
- * Whether a text that a transaction inserts has a line break that is not the
- * separator of the document: any `\r`, and in a CRLF document also a `\n`
- * inside a line.
+ * Whether a text that a transaction inserts has a line break inside a line:
+ * a `\r` or a `\n`. It is a rule of a CRLF document only: there, a line never
+ * holds either of them.
  */
-function hasForeignBreak(text: Text, separator: LineSeparator): boolean {
-  return text
-    .toJSON()
-    .some((line) => (separator === '\r\n' ? /[\r\n]/ : /\r/).test(line))
+function hasForeignBreak(text: Text): boolean {
+  return text.toJSON().some((line) => /[\r\n]/.test(line))
 }
 
 /** The same text, with a real line for each line break that is in it. */
@@ -67,15 +65,19 @@ const kept: AnnotationType<unknown>[] = [
 ]
 
 /**
- * A guard on every transaction: the text that it inserts has real lines.
- * A command such as replace gives the text with the line breaks of the search,
- * which are LF, so in a CRLF document a `\n` would stay inside a line, and the
- * save would not have the CRLF. A `\r` in the replacement, as in an escaped
- * `\r\n`, would be a character before a break. The guard turns each of them
- * into a line break of the document, with its separator.\
- * It leaves alone the text of the disk (`fromDisk`), which can have a `\r` at
- * the end of a line of an LF document, and the text that an undo or a redo puts
- * back, which is a text that the document had.
+ * A guard on the transactions of a document with the CRLF separator, which is
+ * a file with only CRLF line breaks. A line of such a document never holds a
+ * `\r` or a `\n`. A command such as replace gives text with the line breaks of
+ * the search, which are LF, so a `\n` would stay inside a line, and the save
+ * would not have the CRLF. The guard turns each `\r\n` pair, each lone `\n`, and
+ * each lone `\r` of the inserted text into one line break of the document.\
+ * In a document with the `\n` separator, which is an LF file or a mixed file,
+ * a `\r` is an ordinary character, so the guard does nothing: the text that a
+ * command moves or copies keeps its bytes, and an escaped `\r\n` in a
+ * replacement gives the bytes that the user wrote.\
+ * It also leaves alone the text of the disk (`fromDisk`), which can have a `\r`
+ * in a line while the old state is still CRLF, and the text that an undo or a
+ * redo puts back, which is a text that the document had.
  */
 function separatorGuard(): Extension {
   return EditorState.transactionFilter.of((transaction) => {
@@ -83,14 +85,14 @@ function separatorGuard(): Extension {
       !transaction.docChanged ||
       transaction.annotation(fromDisk) ||
       transaction.isUserEvent('undo') ||
-      transaction.isUserEvent('redo')
+      transaction.isUserEvent('redo') ||
+      transaction.startState.lineBreak !== '\r\n'
     )
       return transaction
-    const separator = transaction.startState.lineBreak as LineSeparator
     // The fixes are in the coordinates of the document after the transaction.
     const fixes: { from: number; to: number; insert: Text }[] = []
     transaction.changes.iterChanges((_a, _b, from, to, inserted) => {
-      if (hasForeignBreak(inserted, separator))
+      if (hasForeignBreak(inserted))
         fixes.push({ from, to, insert: splitBreaks(inserted) })
     })
     if (!fixes.length) return transaction

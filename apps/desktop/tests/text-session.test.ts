@@ -1,4 +1,15 @@
-import { history, isolateHistory, redo, undo } from '@codemirror/commands'
+import {
+  copyLineDown,
+  copyLineUp,
+  deleteLine,
+  history,
+  indentMore,
+  isolateHistory,
+  moveLineDown,
+  moveLineUp,
+  redo,
+  undo,
+} from '@codemirror/commands'
 import {
   replaceAll,
   replaceNext,
@@ -8,8 +19,10 @@ import {
 } from '@codemirror/search'
 import {
   Compartment,
+  EditorSelection,
   EditorState,
   type ChangeSpec,
+  type SelectionRange,
   Transaction,
   type TransactionSpec,
 } from '@codemirror/state'
@@ -21,6 +34,9 @@ import {
 } from '../src/pages/workbench/ui/editor/editor-separator.ts'
 import { TextSession } from '../src/pages/workbench/ui/editor/text-session.ts'
 
+/** A command of CodeMirror, which takes the view. */
+type Command = (view: EditorView) => boolean
+
 /**
  * An editor with no DOM: a state with the separator and the history of the
  * editors, and the members that `TextSession` uses. A change of the document
@@ -28,6 +44,9 @@ import { TextSession } from '../src/pages/workbench/ui/editor/text-session.ts'
  */
 function makeEditor(text: string) {
   const separator = new Compartment()
+  const historyKit = new Compartment()
+  // Each change is its own event of the history, so that a model can follow it.
+  const newHistory = () => history({ newGroupDelay: 0 })
   const session = new TextSession()
   const events: string[] = []
   session.callbacks = {
@@ -35,12 +54,27 @@ function makeEditor(text: string) {
     onConflictChange: (conflict) => events.push(`conflict:${conflict}`),
   }
   session.init(text)
+  session.resetHistory = (target) => {
+    target.dispatch({ effects: historyKit.reconfigure([]) })
+    target.dispatch({ effects: historyKit.reconfigure(newHistory()) })
+  }
   const view = {
     compositionStarted: false,
+    /** The move of the cursor to the line before or after, as the view does with no wrapped lines. */
+    moveVertically(range: SelectionRange, forward: boolean): SelectionRange {
+      const { doc } = this.state
+      const line = doc.lineAt(range.head)
+      const target = doc.line(
+        Math.min(doc.lines, Math.max(1, line.number + (forward ? 1 : -1))),
+      )
+      return EditorSelection.cursor(
+        target.from + Math.min(range.head - line.from, target.length),
+      )
+    },
     state: EditorState.create({
       doc: session.document(),
       extensions: [
-        history(),
+        historyKit.of(newHistory()),
         search(),
         separator.of(separatorExtension(session.separator)),
         separatorHistory(separator),
@@ -60,6 +94,8 @@ function makeEditor(text: string) {
         session.check(this as unknown as EditorView)
     },
   }
+  // Like the view, it works when a command takes `dispatch` from it.
+  view.dispatch = view.dispatch.bind(view)
   const editor = view as unknown as EditorView
   return {
     session,
@@ -280,14 +316,25 @@ describe('a search replacement', () => {
       expect(editor.saved()).toBe('a\r\nx\r\ny\r\n')
     })
 
-    it(`gives one LF break to an escaped CRLF in an LF file (${how})`, () => {
+    it(`writes the bytes that the user wrote for an escaped CRLF in an LF file (${how})`, () => {
+      // A `\r` is an ordinary character in an LF file, so `\r\n` stays as it is.
       const editor = makeEditor('a\nb\n')
       replace(editor, { search: 'b', replace: 'x\\r\\ny', all })
-      expect(editor.saved()).toBe('a\nx\ny\n')
+      expect(editor.saved()).toBe('a\nx\r\ny\n')
       editor.undo()
       expect(editor.saved()).toBe('a\nb\n')
       editor.redo()
-      expect(editor.saved()).toBe('a\nx\ny\n')
+      expect(editor.saved()).toBe('a\nx\r\ny\n')
+    })
+
+    it(`makes one line break of an escaped CRLF or CR in a CRLF file (${how})`, () => {
+      const editor = makeEditor('a\r\nb\r\n')
+      replace(editor, { search: 'b', replace: 'x\\r\\ny\\rz', all })
+      expect(editor.saved()).toBe('a\r\nx\r\ny\r\nz\r\n')
+      editor.undo()
+      expect(editor.saved()).toBe('a\r\nb\r\n')
+      editor.redo()
+      expect(editor.saved()).toBe('a\r\nx\r\ny\r\nz\r\n')
     })
 
     it(`keeps the lines of a capture over lines in an LF file (${how})`, () => {
@@ -310,6 +357,84 @@ describe('a search replacement', () => {
     editor.session.applyDisk(editor.editor, 'a\r\nb\nc')
     expect(editor.saved()).toBe('a\r\nb\nc')
   })
+})
+
+describe('the history and a disk text that equals the content', () => {
+  it('keeps the history when the saved text comes back, and the same text comes again', () => {
+    const editor = makeEditor('a\nb\n')
+    editor.type(0, 'x')
+    const saved = editor.saved()
+    // The save comes back as a new version: the content is equal to it.
+    editor.session.applyDisk(editor.editor, saved)
+    expect(editor.heard().dirty).toBe('dirty:false')
+    // The same text comes once more: no change, so the history stays.
+    editor.session.applyDisk(editor.editor, saved)
+    expect(editor.saved()).toBe(saved)
+    expect(editor.undo()).toBe(true)
+    expect(editor.saved()).toBe('a\nb\n')
+    expect(editor.heard().dirty).toBe('dirty:true')
+    expect(editor.redo()).toBe(true)
+    expect(editor.saved()).toBe(saved)
+    expect(editor.heard().dirty).toBe('dirty:false')
+  })
+
+  it('clears the history when a different text replaces the clean content', () => {
+    const editor = makeEditor('a\n')
+    editor.type(0, 'x')
+    editor.session.applyDisk(editor.editor, editor.saved())
+    editor.session.applyDisk(editor.editor, 'other\n')
+    expect(editor.saved()).toBe('other\n')
+    expect(editor.undo()).toBe(false)
+    expect(editor.redo()).toBe(false)
+    expect(editor.saved()).toBe('other\n')
+  })
+
+  it('has nothing to undo or redo in a new editor', () => {
+    const editor = makeEditor('a\r\nb')
+    expect(editor.undo()).toBe(false)
+    expect(editor.redo()).toBe(false)
+    expect(editor.saved()).toBe('a\r\nb')
+  })
+})
+
+describe('the commands that move text, in a mixed text', () => {
+  /** Puts the cursor at the start of a line of the document (from 1), and runs a command. */
+  function run(
+    editor: ReturnType<typeof makeEditor>,
+    line: number,
+    command: Command,
+  ) {
+    editor.view.dispatch({
+      selection: { anchor: editor.view.state.doc.line(line).from },
+    })
+    command(editor.editor)
+  }
+
+  // The text has a CRLF, an LF, and a lone `\r` at the end of a line.
+  const mixed = 'a\r\nb\nc\r\nd'
+  const cases: [string, number, Command, string][] = [
+    ['move a line up', 2, moveLineUp, 'b\na\r\nc\r\nd'],
+    ['move a line down', 2, moveLineDown, 'a\r\nc\r\nb\nd'],
+    ['move a line with a `\\r` up', 3, moveLineUp, 'a\r\nc\r\nb\nd'],
+    ['move a line with a `\\r` down', 1, moveLineDown, 'b\na\r\nc\r\nd'],
+    ['copy a line up', 1, copyLineUp, 'a\r\na\r\nb\nc\r\nd'],
+    ['copy a line down', 3, copyLineDown, 'a\r\nb\nc\r\nc\r\nd'],
+    ['delete a line', 2, deleteLine, 'a\r\nc\r\nd'],
+    ['delete the last line', 4, deleteLine, 'a\r\nb\nc\r'],
+    ['indent a line', 3, indentMore, 'a\r\nb\n  c\r\nd'],
+  ]
+  for (const [name, line, command, expected] of cases) {
+    it(`keeps the bytes: ${name}`, () => {
+      const editor = makeEditor(mixed)
+      run(editor, line, command)
+      expect(editor.saved()).toBe(expected)
+      expect(editor.view.state.lineBreak).toBe('\n')
+      expect(editor.undo()).toBe(true)
+      expect(editor.saved()).toBe(mixed)
+      expect(editor.redo()).toBe(true)
+      expect(editor.saved()).toBe(expected)
+    })
+  }
 })
 
 describe('the invariants against a model, in a long random sequence', () => {
@@ -371,11 +496,17 @@ describe('the invariants against a model, in a long random sequence', () => {
       const hadEdits = this.dirty || composing
       this.disk = text
       if (!hadEdits) {
-        // The new text replaces the content, and the change is not in the history.
+        // The new text replaces the content, and the change is not in the
+        // history. A text that equals the content changes nothing, so the
+        // history stays; otherwise the editor clears it.
+        const separator = separatorOf(text)
+        const same = text === this.content && separator === this.separator
         this.content = text
-        this.separator = separatorOf(text)
-        this.undoStack = []
-        this.redoStack = []
+        this.separator = separator
+        if (!same) {
+          this.undoStack = []
+          this.redoStack = []
+        }
       } else if (this.content !== text) this.conflict = true
       this.settle()
     }
@@ -425,11 +556,25 @@ describe('the invariants against a model, in a long random sequence', () => {
   ]
 
   // The replacements that the search can make: the spec of the field, and the
-  // bytes that it must give, with `SEP` for a line break of the document.
-  const replacements: [string, string][] = [
-    ['Z', 'Z'],
-    ['Q\\nR', 'Q\nR'],
-    ['Q\\r\\nR', 'Q\nR'],
+  // bytes that it must give for a document with a separator. A `\n` is a line
+  // break of the document. A `\r` is an ordinary character in an LF or a mixed
+  // document, and is a line break, with `\r\n` as one, in a CRLF document.
+  const replacements: [string, (separator: Separator) => string][] = [
+    ['Z', () => 'Z'],
+    ['Q\\nR', (separator) => `Q${separator}R`],
+    // `\r\n` is the same bytes in both.
+    ['Q\\r\\nR', () => 'Q\r\nR'],
+    // A lone `\r` is a character in an LF document, and a break in a CRLF one.
+    ['Q\\rR', (separator) => (separator === '\r\n' ? 'Q\r\nR' : 'Q\rR')],
+  ]
+
+  const lineCommands: [string, Command][] = [
+    ['move-up', moveLineUp],
+    ['move-down', moveLineDown],
+    ['copy-up', copyLineUp],
+    ['copy-down', copyLineDown],
+    ['delete', deleteLine],
+    ['indent', indentMore],
   ]
 
   for (let seed = 1; seed <= 60; seed++) {
@@ -455,6 +600,8 @@ describe('the invariants against a model, in a long random sequence', () => {
         'redo',
         'replace-all',
         'regexp-all',
+        'command',
+        'command',
         'compose',
       ] as const
 
@@ -488,16 +635,15 @@ describe('the invariants against a model, in a long random sequence', () => {
           editor.session.revert(editor.editor)
           model.revert()
         } else if (operation === 'undo') {
-          if (!model.undoStack.length) continue
-          expect(editor.undo()).toBe(true)
-          model.undo()
+          // With nothing to undo in the model, the editor must change nothing.
+          expect(editor.undo()).toBe(model.undoStack.length > 0)
+          if (model.undoStack.length) model.undo()
         } else if (operation === 'redo') {
-          if (!model.redoStack.length) continue
-          expect(editor.redo()).toBe(true)
-          model.redo()
+          expect(editor.redo()).toBe(model.redoStack.length > 0)
+          if (model.redoStack.length) model.redo()
         } else if (operation === 'replace-all') {
           const [spec, bytes] = pick(replacements)
-          const replacement = bytes.replaceAll('\n', model.separator)
+          const replacement = bytes(model.separator)
           editor.view.dispatch({
             effects: setSearchQuery.of(
               new SearchQuery({
@@ -526,6 +672,35 @@ describe('the invariants against a model, in a long random sequence', () => {
           const found = `a${model.separator}b`
           if (model.content.includes(found))
             model.edit(model.content.split(found).join(`<${found}>`))
+        } else if (operation === 'command') {
+          // A command that moves, copies, deletes, or indents a line, on a
+          // line of the document. The model does it on the lines of its bytes.
+          const lines = model.content.split(model.separator)
+          const index = Math.floor(next() * lines.length)
+          const result = [...lines]
+          const [name, command] = pick(lineCommands)
+          if (name === 'move-up' && index > 0)
+            [result[index - 1], result[index]] = [
+              lines[index],
+              lines[index - 1],
+            ]
+          else if (name === 'move-down' && index < lines.length - 1)
+            [result[index + 1], result[index]] = [
+              lines[index],
+              lines[index + 1],
+            ]
+          else if (name === 'copy-up' || name === 'copy-down')
+            result.splice(index, 0, lines[index])
+          else if (name === 'delete') {
+            result.splice(index, 1)
+            if (!result.length) result.push('')
+          } else if (name === 'indent') result[index] = `  ${lines[index]}`
+          editor.view.dispatch({
+            selection: { anchor: editor.view.state.doc.line(index + 1).from },
+          })
+          command(editor.editor)
+          const content = result.join(model.separator)
+          if (content !== model.content) model.edit(content)
         } else {
           composing = !composing
           editor.view.compositionStarted = composing

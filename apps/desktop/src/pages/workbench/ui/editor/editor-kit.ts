@@ -53,6 +53,8 @@ export interface Kit {
   scheme: Compartment
   /** The line separator of the state. */
   separator: Compartment
+  /** The undo history, which a replacement of the text from the disk clears. */
+  history: Compartment
   /** The key bindings, which follow the platform of the app. */
   keys: Compartment
   /** The search, with its panel. */
@@ -67,6 +69,7 @@ export function createKit(): Kit {
     access: new Compartment(),
     scheme: new Compartment(),
     separator: new Compartment(),
+    history: new Compartment(),
     keys: new Compartment(),
     search: new Compartment(),
   }
@@ -230,6 +233,16 @@ export function expandUnchanged(view: EditorView): boolean {
   return regions.length > 0
 }
 
+/**
+ * Clears the undo history of a view: the history of an old text does not
+ * belong to a text that replaced it. It takes the history out of the state and
+ * puts a new one in.
+ */
+export function clearHistory(view: EditorView, kit: Kit) {
+  view.dispatch({ effects: kit.history.reconfigure([]) })
+  view.dispatch({ effects: kit.history.reconfigure(history()) })
+}
+
 /** What differs between the editors that use the kit. */
 export interface KitOptions {
   /** The editor is a side of a diff: it has the key that opens the collapsed regions. */
@@ -307,7 +320,7 @@ export function editorExtensions(
     lineNumbers(),
     highlightActiveLineGutter(),
     highlightSpecialChars(),
-    history(),
+    kit.history.of(history()),
     drawSelection(),
     EditorState.allowMultipleSelections.of(true),
     indentOnInput(),
