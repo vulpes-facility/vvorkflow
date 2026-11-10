@@ -49,15 +49,15 @@ test.describe('security', () => {
     await page.waitForLoadState('networkidle')
     // The inline, the reference-style, and the protocol-relative image, and
     // the raw <img> of the document: none of them makes a request. The raw
-    // <img> is removed. The obfuscated forms (a leading space, capitals, and
-    // backslashes) are remote images too, and the form with two readings
-    // (`https:name.png`) is blocked.
+    // <img> is removed. Capitals are a remote image too. The forms that only a
+    // decode makes remote (a leading space and backslashes), and the form with
+    // two readings (`https:name.png`), are blocked.
     await page.waitForTimeout(500)
     expect(requests).toEqual([])
     // Each blocked image is a placeholder with its host.
     await expect(
       region(page).getByRole('img', { name: /remote-images\.test/ }),
-    ).toHaveCount(7)
+    ).toHaveCount(5)
   })
 
   test('the same images load when remoteImages is true (the counter works)', async ({
@@ -72,17 +72,18 @@ test.describe('security', () => {
     await expect
       .poll(() => [...new Set(requests)].sort())
       .toEqual([
-        '/bs.png',
         '/dragged.png',
         '/inline.png',
         '/reference.png',
         '/relative.png',
-        '/space.png',
         '/upper.png',
       ])
     // The raw <img> of the document never loads, also when images are allowed.
     expect(requests).not.toContain('/raw.png')
     expect(requests).not.toContain('/same-scheme.png')
+    // Forms that only a decode makes remote are blocked, and make no request.
+    expect(requests).not.toContain('/space.png')
+    expect(requests).not.toContain('/bs.png')
   })
 
   test('raw HTML, scripts, frames, styles, and event handlers have no effect', async ({
@@ -159,6 +160,8 @@ test.describe('security', () => {
         .getByRole('img', { name: /javascript:/ })
         .first(),
     ).toBeVisible()
+    for (const name of ['space (https:)', 'backslash (https:)'])
+      await expect(region(page).getByRole('img', { name })).toBeVisible()
     // `https:name.png` has two readings: it is blocked, and makes no request.
     await expect(
       region(page).getByRole('img', { name: 'same scheme (https:)' }),
@@ -266,6 +269,77 @@ test.describe('security', () => {
         )
       )?.includes('https://example.com/safe'),
     ).toBe(true)
+  })
+
+  test('a link has a menu to copy its address: right click, Shift+F10, and the Menu key', async ({
+    page,
+    browserName,
+  }) => {
+    // The clipboard of WebKit is not readable in Playwright: stub the write.
+    if (browserName === 'chromium')
+      await page
+        .context()
+        .grantPermissions(['clipboard-read', 'clipboard-write'])
+    else
+      await page.addInitScript(() => {
+        const copied: string[] = []
+        ;(window as never as { copied: string[] }).copied = copied
+        Object.defineProperty(navigator, 'clipboard', {
+          value: { writeText: async (text: string) => void copied.push(text) },
+        })
+      })
+    await page.goto(story('hostile'))
+    await region(page).waitFor()
+    const link = region(page).getByRole('link', { name: 'drag me' })
+    await link.scrollIntoViewIfNeeded()
+    // The destination is not in a native attribute that the browser reads.
+    expect(await link.getAttribute('title')).toBeNull()
+    expect(await link.getAttribute('href')).toBeNull()
+    // The link text can still be selected.
+    expect(
+      await link.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return style.userSelect === 'none' || style.webkitUserSelect === 'none'
+      }),
+    ).toBe(false)
+
+    const copied = () =>
+      browserName === 'chromium'
+        ? page.evaluate(() => navigator.clipboard.readText())
+        : page.evaluate(() =>
+            (window as never as { copied: string[] }).copied.at(-1),
+          )
+    const item = page.getByRole('menuitem', { name: 'Copy link address' })
+
+    for (const open of [
+      () => link.click({ button: 'right' }),
+      async () => {
+        await link.focus()
+        await page.keyboard.press('Shift+F10')
+      },
+      async () => {
+        await link.focus()
+        await page.keyboard.press('ContextMenu')
+      },
+    ]) {
+      await open()
+      await expect(item).toBeVisible()
+      await item.click()
+      await expect(item).toHaveCount(0)
+      expect(await copied()).toBe('https://link-target.test/page')
+      // The focus comes back to the link.
+      await expect(link).toBeFocused()
+      await page.evaluate(() =>
+        navigator.clipboard.writeText?.('x').catch(() => {}),
+      )
+    }
+    // The keyboard picks the item too: Enter, and Escape closes the menu.
+    await link.focus()
+    await page.keyboard.press('Shift+F10')
+    await expect(item).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(item).toHaveCount(0)
+    await expect(link).toBeFocused()
   })
 
   test('two previews on one page do not share an id, and a footnote moves only its own preview', async ({

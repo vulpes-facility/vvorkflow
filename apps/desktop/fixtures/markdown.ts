@@ -61,6 +61,12 @@ export function greet(name: string): string {
 
 [Go](https://example.com/short)
 
+[a](https://example.com/a) [b](https://example.com/b)
+
+- [A link in a list item](https://example.com/outer)
+  - A nested item with [a link](https://example.com/nested) in prose
+  - [A nested link alone](https://example.com/nested-alone)
+
 ---
 
 ![A photo](./media/photo.jpg)
@@ -167,6 +173,8 @@ const aVeryLongLine = 'it does not wrap in a code block, so the block scrolls in
 \`\`\`
 
 ![Wide](./media/photo.jpg)
+
+[![Wide linked photo](./media/photo.jpg)](https://example.com/photo)
 `
 
 /** A document with footnote labels that look like the ids of the preview. */

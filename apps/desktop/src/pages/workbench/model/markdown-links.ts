@@ -6,6 +6,7 @@ interface HastNode {
   children?: HastNode[]
 }
 
+/** The elements that hold their own run of inline text. */
 const blocks = new Set([
   'p',
   'li',
@@ -20,33 +21,74 @@ const blocks = new Set([
   'h6',
   'section',
   'div',
+  'ul',
+  'ol',
+  'table',
+  'thead',
+  'tbody',
+  'tr',
+  'pre',
 ])
-
-function textOf(node: HastNode): string {
-  if (node.type === 'text') return node.value ?? ''
-  return (node.children ?? []).map(textOf).join('')
-}
 
 /**
  * A rehype plugin. It sets `dataInlineLink` on each link that is in a
- * sentence: its block has text other than the text of the link. The target
- * size rule of WCAG 2.2 (SC 2.5.8) leaves out only such a link. A link that
- * stands alone in its block, such as the only content of a paragraph, a list
- * item, or a table cell, and a linked image, has no mark, so that the preview
- * gives it a target of 24 by 24 CSS pixels.
+ * sentence: its inline text run has prose that is not a link. The target size
+ * rule of WCAG 2.2 (SC 2.5.8) leaves out only such a link.
+ *
+ * - The inline run of a block is its text and its inline elements, such as
+ *   `em` and `code`. It does not go into a block inside the block, such as a
+ *   nested list: that block has its own run.
+ * - The text of another link, and the white space between links, is not
+ *   prose. So `[a](/a) [b](/b)` has two links and no prose, and a row of
+ *   links keeps the target size.
+ * - A linked image is never in a sentence: it keeps the target size.
+ *
+ * It visits each node once, so the work grows in step with the document.
+ * `onVisit` is for the test of that.
  */
-export function markInlineLinks() {
+export function markInlineLinks(options: { onVisit?: () => void } = {}) {
   return (tree: HastNode) => {
-    const walk = (node: HastNode, block: HastNode | undefined) => {
-      const here = node.tagName && blocks.has(node.tagName) ? node : block
-      if (node.type === 'element' && node.tagName === 'a' && here) {
-        const around = textOf(here).replace(/\s+/g, '')
-        const own = textOf(node).replace(/\s+/g, '')
-        if (around.length > own.length)
-          node.properties = { ...node.properties, dataInlineLink: true }
+    const { onVisit } = options
+    const block = (root: HastNode) => {
+      const links: HastNode[] = []
+      let prose = false
+      // The nested blocks wait, so that a block does not go into another.
+      const nested: HastNode[] = []
+      const walk = (node: HastNode, inLink: boolean) => {
+        onVisit?.()
+        if (node.type === 'text') {
+          if (!inLink && /\S/.test(node.value ?? '')) prose = true
+          return
+        }
+        const isLink = node.tagName === 'a'
+        if (isLink) links.push(node)
+        for (const child of node.children ?? []) {
+          if (child.type === 'element' && blocks.has(child.tagName ?? ''))
+            nested.push(child)
+          else walk(child, inLink || isLink)
+        }
       }
-      node.children?.forEach((child) => walk(child, here))
+      for (const child of root.children ?? []) {
+        if (child.type === 'element' && blocks.has(child.tagName ?? ''))
+          nested.push(child)
+        else walk(child, false)
+      }
+      for (const link of links)
+        if (prose && !hasImage(link))
+          link.properties = { ...link.properties, dataInlineLink: true }
+      for (const child of nested) block(child)
     }
-    walk(tree, undefined)
+    block(tree)
   }
+}
+
+/** True when a link has an image in it. The search stops at the first image. */
+function hasImage(link: HastNode): boolean {
+  const stack = [...(link.children ?? [])]
+  while (stack.length > 0) {
+    const node = stack.pop()!
+    if (node.tagName === 'img') return true
+    stack.push(...(node.children ?? []))
+  }
+  return false
 }

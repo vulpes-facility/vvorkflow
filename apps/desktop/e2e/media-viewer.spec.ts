@@ -339,3 +339,67 @@ test.describe('video, fast changes', () => {
     ).toBe(true)
   })
 })
+
+test('a deactivation before the metadata keeps the saved position (the race is forced)', async ({
+  page,
+  browserName,
+}) => {
+  await page.goto(story('video'))
+  await page.locator('video').waitFor()
+  const canPlay = await page.evaluate(
+    () =>
+      document
+        .createElement('video')
+        .canPlayType('video/webm; codecs="vp9"') !== '',
+  )
+  test.skip(!canPlay, `${browserName} cannot decode the sample video`)
+  const video = page.locator('video')
+  await page.waitForFunction(
+    () => (document.querySelector('video') as HTMLVideoElement).readyState >= 1,
+  )
+  await video.evaluate(async (element: HTMLVideoElement) => {
+    element.muted = true
+    await element.play()
+  })
+  await expect
+    .poll(() =>
+      video.evaluate((element: HTMLVideoElement) => element.currentTime),
+    )
+    .toBeGreaterThan(0.6)
+
+  // Hold the answer of the file, so that the metadata cannot come.
+  let hold = false
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  await page.route(/\/media\/clip\.webm/, async (route) => {
+    if (hold) await gate
+    await route.continue().catch(() => {})
+  })
+
+  await update(page, 'video', { active: false })
+  hold = true
+  await update(page, 'video', { active: true })
+  // The source is back, and the metadata is not.
+  await expect(video).toHaveAttribute('src', /clip\.webm$/)
+  await page.waitForTimeout(300)
+  expect(
+    await video.evaluate((element: HTMLVideoElement) => element.readyState),
+  ).toBe(0)
+  // The tab hides again before the metadata comes, and shows again.
+  await update(page, 'video', { active: false })
+  await update(page, 'video', { active: true })
+  expect(
+    await video.evaluate((element: HTMLVideoElement) => element.readyState),
+  ).toBe(0)
+
+  hold = false
+  release()
+  await expect
+    .poll(() =>
+      video.evaluate((element: HTMLVideoElement) => element.currentTime),
+    )
+    .toBeGreaterThan(0.5)
+  expect(
+    await video.evaluate((element: HTMLVideoElement) => element.paused),
+  ).toBe(true)
+})

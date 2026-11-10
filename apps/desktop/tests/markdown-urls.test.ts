@@ -13,8 +13,6 @@ describe('classifyImageSource', () => {
     '\\\\example.com/a.png',
     '  https://example.com/a.png',
     'ht\ttps://example.com/a.png',
-    '%20%20https://example.com/a.png',
-    '%5C%5Cexample.com%5Ca.png',
   ])('treats %j as remote', (source) => {
     expect(classifyImageSource(source).kind).toBe('remote')
   })
@@ -74,6 +72,10 @@ describe('classifyImageSource', () => {
     'java%09script:alert(1)',
     'JAVA%0ASCRIPT:alert(1)',
     '%20%20javascript:alert(1)',
+    '%20%20https://example.com/a.png',
+    '%5C%5Cexample.com%5Ca.png',
+    '%68ttps://example.com/a.png',
+    '%2F%2Fexample.com/a.png',
   ])('blocks %j', (source) => {
     expect(classifyImageSource(source).kind).toBe('blocked')
   })
@@ -89,6 +91,24 @@ describe('classifyImageSource', () => {
   )
 })
 
+describe('the URL that loads', () => {
+  it.each([
+    'https://cdn.example.com/a%23b.png',
+    'https://cdn.example.com/a%2Fb.png',
+    'https://cdn.example.com/a%25b.png',
+    'https://cdn.example.com/a.png?sig=x%3Fy%26z%23w%2F%25',
+    'https://cdn.example.com/a.png?x=1%261&y=%3F',
+    'https://cdn.example.com/a.png?path=a\\b',
+    '//cdn.example.com/a%23b.png?q=%26',
+  ])('keeps the path and the query of %j', (source) => {
+    const result = classifyImageSource(source)
+    expect(result.kind).toBe('remote')
+    expect((result as { url: string }).url).toBe(
+      source.startsWith('//') ? `https:${source}` : source,
+    )
+  })
+})
+
 describe('classifyLinkTarget', () => {
   it.each([
     'javascript:alert(1)',
@@ -99,6 +119,7 @@ describe('classifyLinkTarget', () => {
     'file:///etc/passwd',
     'java%09script:alert(1)',
     '%20javascript:alert(1)',
+    '%68ttp://example.com',
     'JAVASCRIPT%3Aalert(1)',
   ])('blocks %j', (href) => {
     expect(classifyLinkTarget(href)).toEqual({ kind: 'blocked' })
@@ -119,6 +140,11 @@ describe('classifyLinkTarget', () => {
       id: 'user-content-fn-1',
     })
     expect(classifyLinkTarget('#a%20b')).toEqual({ kind: 'anchor', id: 'a b' })
+    // The fragment decodes once: `%2523` is `%23`, not `#`.
+    expect(classifyLinkTarget('#a%2523b')).toEqual({
+      kind: 'anchor',
+      id: 'a%23b',
+    })
   })
 })
 

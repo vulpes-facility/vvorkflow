@@ -160,7 +160,8 @@ The only loads that they allow are the URLs that the host gives (`resolveImage` 
    One icon button at the top allows the images of the document, and only when the document has a remote image.
 4. A link never navigates by itself: it calls `onOpenLink`.\
    It has the role `link` and is in the tab order, but it has no `href`, so the browser has no destination to follow: a click with a modifier key, a middle click, and a drag and drop of the link or of an image cannot navigate or open a window.\
-   The destination is the data `data-href` and the tooltip of the link.\
+   The destination is the data `data-href` and the tooltip of the link, and a context menu (right click, Shift+F10, or the Menu key) has "Copy link address".\
+   A decode is only a probe for the scheme and the host checks: the URL that loads keeps its path and its query as the document wrote them.\
    A footnote link scrolls the preview and moves the focus, and does not change the URL of the window.\
    Each preview prefixes its footnote ids, so that two previews do not share an id.
 5. A task list shows a shape (a checked or an empty square) and a name, and has no input.
@@ -175,8 +176,9 @@ The only loads that they allow are the URLs that the host gives (`resolveImage` 
 9. A file that does not decode shows the `ErrorMark`, not a broken image.\
    The kind and the source are the identity of the player and of its error state.\
    When the viewer had the focus, it moves to the error icon.
-10. Only a link inside a sentence has `data-inline-link`, so that the target size check leaves it out (SC 2.5.8, inline).\
-    A link that stands alone in its block, and a linked image, has a target of 24 by 24 CSS pixels or more.
+10. Only a link in a run of text that has prose has `data-inline-link`, so that the target size check leaves it out (SC 2.5.8, inline).\
+    The text of other links and the space between links is not prose.\
+    A link that stands alone, a row of links, and a linked image have a target of 24 by 24 CSS pixels or more, and a linked image shrinks to the width of the preview.
 
 Known gaps:
 

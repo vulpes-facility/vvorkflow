@@ -1,6 +1,14 @@
-import { Square, SquareCheck } from 'lucide-react'
+import { Copy, Square, SquareCheck } from 'lucide-react'
 import { cn } from '@/shared/lib'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/shared/ui'
 import { classifyLinkTarget } from '../../model/markdown-urls'
 import { usePreview } from './preview-context'
 
@@ -63,12 +71,31 @@ export function Link({
       }}
       onAuxClick={(event) => event.preventDefault()}
       onKeyDown={(event) => {
-        if (event.key !== 'Enter') return
-        event.preventDefault()
-        activate()
+        if (event.key === 'Enter') {
+          event.preventDefault()
+          activate()
+        } else if (
+          target.kind === 'open' &&
+          (event.key === 'ContextMenu' ||
+            (event.shiftKey && event.key === 'F10'))
+        ) {
+          // WebKit sends no `contextmenu` event for these keys: open the menu
+          // at the link, as a right click there would.
+          event.preventDefault()
+          const { left, bottom } = event.currentTarget.getBoundingClientRect()
+          event.currentTarget.dispatchEvent(
+            new MouseEvent('contextmenu', {
+              bubbles: true,
+              cancelable: true,
+              clientX: left,
+              clientY: bottom,
+            }),
+          )
+        }
       }}
       className={cn(
-        'cursor-pointer rounded-sm text-link underline underline-offset-2 outline-none hover:decoration-2 focus-visible:ring-1 focus-visible:ring-ring',
+        // A linked image shrinks to the width of the preview.
+        'max-w-full cursor-pointer rounded-sm text-link underline underline-offset-2 outline-none hover:decoration-2 focus-visible:ring-1 focus-visible:ring-ring [&_img]:min-w-0',
         !inline && 'inline-flex min-h-6 min-w-6 items-center justify-center',
       )}
     >
@@ -76,17 +103,32 @@ export function Link({
     </a>
   )
   if (target.kind === 'anchor') return link
+  // The menu gives what the missing `href` takes from the browser.
   return (
-    <Tooltip>
-      <TooltipTrigger render={link} />
-      <TooltipContent
-        side="top"
-        align="start"
-        className="font-mono wrap-anywhere"
-      >
-        {target.url}
-      </TooltipContent>
-    </Tooltip>
+    <ContextMenu>
+      <Tooltip>
+        <TooltipTrigger
+          render={<ContextMenuTrigger render={link} className="select-text!" />}
+        />
+        <TooltipContent
+          side="top"
+          align="start"
+          className="font-mono wrap-anywhere"
+        >
+          {target.url}
+        </TooltipContent>
+      </Tooltip>
+      <ContextMenuContent side="bottom" align="start">
+        <ContextMenuItem
+          onClick={() => {
+            void navigator.clipboard?.writeText(target.url).catch(() => {})
+          }}
+        >
+          <Copy className="size-icon-sm" strokeWidth={1.75} aria-hidden />
+          Copy link address
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }
 
