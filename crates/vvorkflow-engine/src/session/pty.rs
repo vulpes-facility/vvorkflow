@@ -295,10 +295,25 @@ struct System {
     killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
 }
 
-/// The process group of the foreground job when a hang-up started, for the
-/// SIGKILL after it.
-#[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct Foreground(#[cfg(unix)] Option<i32>);
+/// The foreground job of the terminal when a hang-up started, for the
+/// SIGKILL after it: its process group, and the processes that it had then,
+/// so that a signal never goes to a later group with the same id.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Foreground(#[cfg(unix)] unix::Job);
+
+impl Foreground {
+    /// Whether a process of the job still runs in its group.
+    pub(crate) fn alive(&self) -> bool {
+        #[cfg(unix)]
+        {
+            self.0.alive()
+        }
+        #[cfg(windows)]
+        {
+            false
+        }
+    }
+}
 
 impl Process {
     fn new(system: System) -> Process {
@@ -375,15 +390,20 @@ impl Process {
         {
             let exited = self.exited();
             if *exited {
-                return Foreground(None);
+                return Foreground::default();
             }
             let pid = self.system.pid;
-            let group = self.system.io.foreground().filter(|group| *group != pid);
+            // The job of this moment: its processes and their start times.
+            let job = self
+                .system
+                .io
+                .foreground()
+                .filter(|group| *group != pid)
+                .map(|group| unix::Job::capture(group, pid))
+                .unwrap_or_default();
             unix::signal(pid, libc::SIGHUP);
-            if let Some(group) = group {
-                unix::signal(-group, libc::SIGHUP);
-            }
-            Foreground(group)
+            job.signal(libc::SIGHUP);
+            Foreground(job)
         }
         #[cfg(windows)]
         {
@@ -391,18 +411,18 @@ impl Process {
         }
     }
 
-    /// Sends SIGKILL to the shell and to the foreground job that still run,
-    /// or ends the shell on Windows.
-    pub(crate) fn kill(&self, foreground: Foreground) {
+    /// Sends SIGKILL to the shell, and to the foreground job, when they
+    /// still run; or ends the shell on Windows. The signal goes to the group
+    /// of the job only while a process of the job still runs in it.
+    pub(crate) fn kill(&self, foreground: &Foreground) {
         let exited = self.exited();
         #[cfg(unix)]
         {
             if !*exited {
                 unix::signal(self.system.pid, libc::SIGKILL);
             }
-            if let Some(group) = foreground.0 {
-                unix::signal(-group, libc::SIGKILL);
-            }
+            drop(exited);
+            foreground.0.signal(libc::SIGKILL);
         }
         #[cfg(windows)]
         {
@@ -557,6 +577,145 @@ mod unix {
         }
     }
 
+    /// A process of a foreground job: its id, and its start time, which
+    /// tells it apart from a later process with the same id.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub(super) struct Member {
+        pub(super) pid: i32,
+        pub(super) start: u64,
+    }
+
+    /// A foreground job: its process group, and its processes when the
+    /// engine took it. Group 0 is no job.
+    #[derive(Clone, Debug, Default)]
+    pub(crate) struct Job {
+        pub(super) group: i32,
+        pub(super) members: Vec<Member>,
+    }
+
+    impl Job {
+        /// The processes of `group` that have the terminal of `shell`.
+        pub(super) fn capture(group: i32, shell: i32) -> Job {
+            let Some(terminal) = info(shell).map(|info| info.terminal) else {
+                return Job::default();
+            };
+            let members = group_members(group)
+                .into_iter()
+                .filter_map(|pid| {
+                    let info = info(pid)?;
+                    (info.group == group && info.terminal == terminal).then_some(Member {
+                        pid,
+                        start: info.start,
+                    })
+                })
+                .collect();
+            Job { group, members }
+        }
+
+        /// Whether a process of the job still runs in its group: then the id
+        /// of the group is still this job, because the system gives the id
+        /// of a group to no other group while a process is in it.
+        pub(super) fn alive(&self) -> bool {
+            self.group > 0
+                && self.members.iter().any(|member| {
+                    info(member.pid)
+                        .is_some_and(|info| info.group == self.group && info.start == member.start)
+                })
+        }
+
+        /// Sends `signal` to the group of the job, when the job still runs.
+        /// Known limit: the check and the signal are two steps, so the job
+        /// can end between them; its id can then go to a new group only after
+        /// the system gave out each other process id.
+        pub(super) fn signal(&self, signal: libc::c_int) {
+            if self.alive() {
+                self::signal(-self.group, signal);
+            }
+        }
+    }
+
+    /// What tells a process apart, and where it runs.
+    struct Info {
+        group: i32,
+        start: u64,
+        /// The session (Linux) or the terminal device (macOS) of the process.
+        terminal: u64,
+    }
+
+    /// The group, the start time, and the session of a process, from
+    /// `/proc/<pid>/stat`.
+    #[cfg(target_os = "linux")]
+    fn info(pid: i32) -> Option<Info> {
+        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        // The name of the program is in parentheses, and can hold spaces.
+        let fields: Vec<&str> = stat.get(stat.rfind(')')? + 2..)?.split(' ').collect();
+        // From the state (field 3): the group is field 5, the session field
+        // 6, and the start time field 22.
+        Some(Info {
+            group: fields.get(2)?.parse().ok()?,
+            terminal: fields.get(3)?.parse().ok()?,
+            start: fields.get(19)?.parse().ok()?,
+        })
+    }
+
+    /// The processes of a group, from the process list of `/proc`.
+    #[cfg(target_os = "linux")]
+    fn group_members(group: i32) -> Vec<i32> {
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return Vec::new();
+        };
+        entries
+            .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+            .filter(|pid| info(*pid).is_some_and(|info| info.group == group))
+            .collect()
+    }
+
+    /// The group, the start time, and the terminal of a process.
+    #[cfg(target_os = "macos")]
+    fn info(pid: i32) -> Option<Info> {
+        let size = std::mem::size_of::<libc::proc_bsdinfo>();
+        // SAFETY: an all-zero `proc_bsdinfo` is valid.
+        let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+        // SAFETY: `info` has `size` bytes.
+        let filled = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                (&raw mut info).cast(),
+                i32::try_from(size).ok()?,
+            )
+        };
+        (usize::try_from(filled).ok()? == size).then(|| Info {
+            group: i32::try_from(info.pbi_pgid).unwrap_or(0),
+            start: info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec,
+            terminal: u64::from(info.e_tdev),
+        })
+    }
+
+    /// The processes of a group.
+    #[cfg(target_os = "macos")]
+    fn group_members(group: i32) -> Vec<i32> {
+        let mut pids = vec![0_i32; 1024];
+        let bytes = i32::try_from(pids.len() * std::mem::size_of::<i32>()).unwrap_or(0);
+        // SAFETY: `pids` has `bytes` bytes.
+        let count = unsafe { libc::proc_listpgrppids(group, pids.as_mut_ptr().cast(), bytes) };
+        pids.truncate(usize::try_from(count).unwrap_or(0));
+        pids
+    }
+
+    /// Other systems: the engine does not know the processes of a group,
+    /// so it never signals one.
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    fn info(_pid: i32) -> Option<Info> {
+        None
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    fn group_members(_group: i32) -> Vec<i32> {
+        Vec::new()
+    }
+
     pub(super) fn signal(target: i32, signal: libc::c_int) {
         // SAFETY: `kill` has no memory effects.
         unsafe {
@@ -576,6 +735,46 @@ mod unix {
                 return;
             }
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod job_tests {
+    use std::os::unix::process::{CommandExt, ExitStatusExt};
+
+    use super::unix::{Job, Member};
+
+    /// A signal goes to the group of a job only while a process of the job
+    /// runs in it with its start time: a later process with the same id
+    /// gets none.
+    #[test]
+    fn a_job_gets_a_signal_only_while_it_has_its_identity() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        let this = i32::try_from(std::process::id()).unwrap();
+        let job = Job::capture(pid, this);
+        assert_eq!(job.members.len(), 1);
+        assert!(job.alive());
+
+        // The same id, with another start time: another process.
+        let other = Job {
+            group: pid,
+            members: vec![Member {
+                pid,
+                start: job.members[0].start + 1,
+            }],
+        };
+        assert!(!other.alive());
+        other.signal(libc::SIGKILL);
+        assert!(child.try_wait().unwrap().is_none(), "no signal went");
+
+        job.signal(libc::SIGKILL);
+        assert_eq!(child.wait().unwrap().signal(), Some(libc::SIGKILL));
+        assert!(!job.alive(), "a reaped job has no process");
     }
 }
 

@@ -844,6 +844,68 @@ mod unix {
         assert!(start.elapsed() >= Duration::from_millis(2_900));
     }
 
+    /// The process id that a job printed as `job <id>`, when the whole
+    /// line came.
+    fn job_pid(mirror: &Mirror) -> Option<i32> {
+        let text = String::from_utf8_lossy(&mirror.recent);
+        let at = text.find("job ")? + 4;
+        let digits: String = text[at..]
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        let after = text[at + digits.len()..].chars().next()?;
+        matches!(after, '\r' | '\n')
+            .then(|| digits.parse().ok())
+            .flatten()
+    }
+
+    /// A foreground job that ignores SIGHUP gets SIGKILL after 3 seconds,
+    /// also when its shell ended at the SIGHUP; and a stop of the engine
+    /// waits for that kill.
+    #[test]
+    fn a_kill_ends_the_foreground_job_that_outlives_its_shell() {
+        let place = place();
+        let viewer = Viewer::new(&place.engine);
+        let session = create(&place.engine, &viewer.client, 80, 24);
+        attach(&place.engine, &viewer, &session.id);
+        let mut mirror = Mirror::default();
+        write(
+            &place.engine,
+            &viewer.client,
+            &session.id,
+            "sh -c 'trap \"\" HUP; echo \"jo\"\"b $$\"; while :; do sleep 1; done'\r",
+        );
+        follow_until(&viewer, &mut mirror, |mirror| job_pid(mirror).is_some());
+        let job = job_pid(&mirror).unwrap();
+
+        let start = Instant::now();
+        request(
+            &place.engine,
+            &viewer.client,
+            Request::KillSession(KillSession {
+                session: session.id.clone(),
+            }),
+        );
+        let end = ended(&place.engine, &viewer, &mut mirror, &session.id);
+        assert_eq!(end.signal, Some(libc_sighup()));
+        // The engine has no session, but the kill of the job is not done.
+        place.engine.stop(false).unwrap();
+        let stopped = start.elapsed();
+
+        // SAFETY: `kill` with signal 0 only checks the process.
+        let gone = || unsafe { libc::kill(job, 0) } != 0;
+        let deadline = Instant::now() + WAIT;
+        while !gone() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        if !gone() {
+            // SAFETY: the job of this test is still its group.
+            unsafe { libc::kill(-job, libc::SIGKILL) };
+            panic!("the job outlives its shell");
+        }
+        assert!(stopped >= Duration::from_millis(2_900), "{stopped:?}");
+    }
+
     fn libc_sighup() -> i32 {
         1
     }

@@ -279,7 +279,10 @@ Kill (menu) / end of the shell ──► the session ends
    A client keeps at most 64 ended sessions whose end it did not take yet; at one more, the engine drops all its queues and closes its connection, and the web UI attaches again on a new one.\
    Then the engine closes the pseudo-terminal.
 9. `session.kill` does what the close of a terminal window does: the engine sends SIGHUP to the shell and to the foreground job, and closes the pseudo-terminal when the shell ends.\
-   After 3 seconds, it sends SIGKILL to the shell and to the foreground job that still run.\
+   After 3 seconds, it sends SIGKILL to the shell and to the foreground job that still run, also when the shell ended first.\
+   The engine knows the foreground job by its processes and their start times at the SIGHUP, and signals its process group only while one of these processes still runs in it, so that no signal reaches a later group with the same id.\
+   Known limit: the check and the signal are two steps; between them, the id of a job that ended can go to a new group only after the system gave out each other process id.\
+   A stop of the engine waits for the SIGKILL of each `session.kill` before it.\
    On Windows, it closes the ConPTY, which ends the programs in it, and after 3 seconds it ends the shell that still runs; the read of the output continues on its own thread until the end.\
    Known limit: a program that left the terminal, or a background job that ignores SIGHUP, can continue.
 

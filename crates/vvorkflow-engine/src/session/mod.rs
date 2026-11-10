@@ -43,6 +43,9 @@ const DRAIN_TIME: Duration = Duration::from_secs(1);
 /// The time between SIGHUP and SIGKILL.
 const KILL_TIME: Duration = Duration::from_secs(3);
 
+/// The time between two looks at a foreground job that outlives its shell.
+const JOB_LOOK: Duration = Duration::from_millis(50);
+
 /// The bytes that one read of the pseudo-terminal takes at most.
 const READ_SIZE: usize = 64 * 1024;
 
@@ -83,6 +86,9 @@ struct SessionsInner {
     starting: usize,
     /// The engine stops, and takes no new session.
     closing: bool,
+    /// The kills whose SIGKILL did not come yet: a stop of the engine waits
+    /// for them.
+    escalations: usize,
 }
 
 /// The part of a session that the clients share: its id, its folder, and
@@ -618,8 +624,9 @@ impl Sessions {
     }
 
     /// Ends a session: SIGHUP now, and SIGKILL after [`KILL_TIME`] to the
-    /// shell and the foreground job that still run.
-    pub(crate) fn kill(&self, id: &str) -> Result<(), EngineError> {
+    /// shell and the foreground job that still run, also when the shell
+    /// ended first.
+    pub(crate) fn kill(self: &Arc<Self>, id: &str) -> Result<(), EngineError> {
         let live = self.find(id)?;
         let mut killed = live.killed.lock().expect("the kill lock is never poisoned");
         if *killed {
@@ -627,16 +634,30 @@ impl Sessions {
         }
         *killed = true;
         drop(killed);
+        let deadline = Instant::now() + KILL_TIME;
         let foreground = live.hang_up();
+        self.inner().escalations += 1;
         let process = Arc::clone(&live.process);
-        let _ = std::thread::Builder::new()
+        let job = foreground.clone();
+        let sessions = Arc::clone(self);
+        let started = std::thread::Builder::new()
             .name("session-kill".to_owned())
             .spawn(move || {
-                if !process.wait_until(Instant::now() + KILL_TIME) {
-                    process.kill(foreground);
-                }
+                escalate(&process, &job, deadline);
+                sessions.escalated();
             });
+        if started.is_err() {
+            // Without the thread, the request waits for the SIGKILL.
+            escalate(&live.process, &foreground, deadline);
+            self.escalated();
+        }
         Ok(())
+    }
+
+    /// Counts the end of a kill, for a stop of the engine.
+    fn escalated(&self) {
+        self.inner().escalations -= 1;
+        self.gone.notify_all();
     }
 
     /// Stops the sessions for a stop of the engine. Without `force`, refuses
@@ -661,11 +682,28 @@ impl Sessions {
         };
         let deadline = Instant::now() + KILL_TIME;
         let foregrounds: Vec<_> = list.iter().map(|live| live.hang_up()).collect();
+        self.wait_gone(deadline, |inner| inner.list.is_empty());
+        // A foreground job can outlive its shell: it ends on its own, or
+        // gets SIGKILL at the deadline.
+        for foreground in &foregrounds {
+            wait_job(foreground, deadline);
+        }
+        for (live, foreground) in list.iter().zip(&foregrounds) {
+            live.process.kill(foreground);
+        }
+        // The kills before this stop send their SIGKILL at their own
+        // deadlines, which are not later than this one.
+        self.wait_gone(deadline + KILL_TIME, |inner| inner.escalations == 0);
+        Ok(())
+    }
+
+    /// Waits until `done` holds, at most until the deadline.
+    fn wait_gone(&self, deadline: Instant, done: impl Fn(&SessionsInner) -> bool) {
         let mut inner = self.inner();
-        while !inner.list.is_empty() {
+        while !done(&inner) {
             let now = Instant::now();
             if now >= deadline {
-                break;
+                return;
             }
             inner = self
                 .gone
@@ -673,11 +711,26 @@ impl Sessions {
                 .expect("the sessions lock is never poisoned")
                 .0;
         }
-        drop(inner);
-        for (live, foreground) in list.iter().zip(foregrounds) {
-            live.process.kill(foreground);
+    }
+}
+
+/// Waits until the shell and its foreground job ended, at most until the
+/// deadline, and then sends SIGKILL to what is left of them.
+fn escalate(process: &Process, foreground: &Foreground, deadline: Instant) {
+    if process.wait_until(deadline) {
+        wait_job(foreground, deadline);
+    }
+    process.kill(foreground);
+}
+
+/// Waits until a foreground job ended, at most until the deadline.
+fn wait_job(foreground: &Foreground, deadline: Instant) {
+    while foreground.alive() {
+        let now = Instant::now();
+        if now >= deadline {
+            return;
         }
-        Ok(())
+        std::thread::sleep(JOB_LOOK.min(deadline - now));
     }
 }
 
