@@ -248,3 +248,94 @@ test('an audio file has controls and starts paused', async ({ page }) => {
     await audio.evaluate((element: HTMLAudioElement) => element.paused),
   ).toBe(true)
 })
+
+test('a new kind with the same source starts a new player', async ({
+  page,
+}) => {
+  await page.goto(story('audio'))
+  const audio = page.locator('audio')
+  await expect(audio).toHaveAttribute('src', /tone\.wav$/)
+  await update(page, 'audio', { kind: 'video' })
+  await expect(page.locator('audio')).toHaveCount(0)
+  await expect(page.locator('video')).toHaveAttribute('src', /tone\.wav$/)
+})
+
+test('a file with the wrong kind recovers when the kind is right', async ({
+  page,
+}) => {
+  await page.goto(story('wrong-kind'))
+  await expect(page.getByRole('button', { name: 'File error' })).toBeVisible()
+  await update(page, 'wrong-kind', { kind: 'audio' })
+  await expect(page.locator('audio')).toHaveAttribute('src', /tone\.wav$/)
+  await expect(page.getByRole('button', { name: 'File error' })).toHaveCount(0)
+  // And back: the wrong kind fails again, with a clean state each time.
+  await update(page, 'wrong-kind', { kind: 'image' })
+  await expect(page.getByRole('button', { name: 'File error' })).toBeVisible()
+})
+
+test('a late decode error moves the focus to the error icon', async ({
+  page,
+}) => {
+  await page.goto(story('photo'))
+  await page.getByRole('img', { name: 'photo.jpg' }).waitFor()
+  await page.getByRole('button', { name: 'Zoom in' }).focus()
+  await page
+    .getByRole('img', { name: 'photo.jpg' })
+    .evaluate((image) => image.dispatchEvent(new Event('error')))
+  const mark = page.getByRole('button', { name: 'File error' })
+  await expect(mark).toBeFocused()
+  // A failure while the focus is elsewhere does not take it.
+  await page.goto(story('photo'))
+  await page.getByRole('img', { name: 'photo.jpg' }).waitFor()
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur())
+  await page
+    .getByRole('img', { name: 'photo.jpg' })
+    .evaluate((image) => image.dispatchEvent(new Event('error')))
+  await expect(mark).toBeVisible()
+  await expect(mark).not.toBeFocused()
+})
+
+test.describe('video, fast changes', () => {
+  test('the position survives active changes that come before the metadata', async ({
+    page,
+    browserName,
+  }) => {
+    await page.goto(story('video'))
+    await page.locator('video').waitFor()
+    const canPlay = await page.evaluate(
+      () =>
+        document
+          .createElement('video')
+          .canPlayType('video/webm; codecs="vp9"') !== '',
+    )
+    test.skip(!canPlay, `${browserName} cannot decode the sample video`)
+    const video = page.locator('video')
+    await page.waitForFunction(
+      () =>
+        (document.querySelector('video') as HTMLVideoElement).readyState >= 1,
+    )
+    await video.evaluate(async (element: HTMLVideoElement) => {
+      element.muted = true
+      await element.play()
+    })
+    await expect
+      .poll(() =>
+        video.evaluate((element: HTMLVideoElement) => element.currentTime),
+      )
+      .toBeGreaterThan(0.5)
+    // Off, on, off, on in quick turns: the metadata of an interrupted load
+    // never came, and the saved position must stay.
+    await update(page, 'video', { active: false })
+    await update(page, 'video', { active: true })
+    await update(page, 'video', { active: false })
+    await update(page, 'video', { active: true })
+    await expect
+      .poll(() =>
+        video.evaluate((element: HTMLVideoElement) => element.currentTime),
+      )
+      .toBeGreaterThan(0.4)
+    expect(
+      await video.evaluate((element: HTMLVideoElement) => element.paused),
+    ).toBe(true)
+  })
+})

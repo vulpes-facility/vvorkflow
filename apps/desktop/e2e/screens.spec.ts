@@ -28,6 +28,7 @@ const screens = [
   'screens-markdownpreview--hostile',
   'screens-markdownpreview--reflow-320',
   'screens-markdownpreview--long-lines-320',
+  'screens-markdownpreview--two-previews',
   'screens-mediaviewer--photo',
   'screens-mediaviewer--photo-light',
   'screens-mediaviewer--transparent',
@@ -157,6 +158,7 @@ for (const id of screens) {
         'textarea',
         '[role="tab"]',
         '[role="button"]',
+        '[role="link"]',
         '[data-pointer-target]',
       ].join(', ')
       return [

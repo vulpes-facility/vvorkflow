@@ -56,3 +56,8 @@ export const Audio: Story = {
 
 /** The image viewer at 320 CSS pixels wide: the toolbar stays one row. */
 export const Reflow320: Story = {}
+
+/** A file with the wrong kind: the sound file does not decode as an image. */
+export const WrongKind: Story = {
+  args: { kind: 'image', src: '/media/tone.wav', name: 'tone.wav' },
+}

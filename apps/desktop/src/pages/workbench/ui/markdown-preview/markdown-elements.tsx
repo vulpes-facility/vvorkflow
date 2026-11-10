@@ -1,5 +1,6 @@
 import { Square, SquareCheck } from 'lucide-react'
 import { cn } from '@/shared/lib'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/shared/ui'
 import { classifyLinkTarget } from '../../model/markdown-urls'
 import { usePreview } from './preview-context'
 
@@ -19,31 +20,73 @@ function goTo(region: HTMLElement | null, id: string) {
   target.focus({ preventScroll: true })
 }
 
-export function Link({ node: _node, href, children, ...props }: Props<'a'>) {
+/**
+ * A link of the document. It is a link for assistive technology (role `link`,
+ * in the tab order, Enter activates it), but it has no `href`, so that the
+ * browser has no destination to follow: a click with a modifier key, a middle
+ * click, a drag and drop onto the window, and the context menu cannot open or
+ * load it. The destination is data (`data-href`, and the tooltip of an
+ * external link). The preview itself acts on an activation: it moves inside
+ * the preview, or it calls `onOpenLink`.
+ */
+export function Link({
+  node: _node,
+  href,
+  children,
+  className: _className,
+  ...props
+}: Props<'a'>) {
   const { region, prefix, onOpenLink } = usePreview()
   const target = classifyLinkTarget(href ?? '')
   // A link that the preview does not follow is plain text.
   if (target.kind === 'blocked' || !href) return <span>{children}</span>
   // The label of the footnotes has an id that the preview makes its own.
   const describedBy = props['aria-describedby']
-  return (
+  // A link that stands alone in its block gets a target of 24 by 24 pixels.
+  const inline = (props as Record<string, unknown>)['data-inline-link']
+  const activate = () => {
+    if (target.kind === 'anchor') goTo(region.current, target.id)
+    else onOpenLink?.(target.url)
+  }
+  const link = (
     <a
       {...props}
-      href={href}
+      role="link"
+      tabIndex={0}
+      data-href={href}
       aria-describedby={describedBy ? `${prefix}${describedBy}` : undefined}
-      // An inline link is exempt from the target size (WCAG 2.2 SC 2.5.8).
-      data-inline-link
+      draggable={false}
+      onDragStart={(event) => event.preventDefault()}
       onClick={(event) => {
-        // The preview never navigates by itself.
         event.preventDefault()
-        if (target.kind === 'anchor') goTo(region.current, target.id)
-        else onOpenLink?.(target.url)
+        activate()
       }}
       onAuxClick={(event) => event.preventDefault()}
-      className="rounded-sm text-link underline underline-offset-2 outline-none hover:decoration-2 focus-visible:ring-1 focus-visible:ring-ring"
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter') return
+        event.preventDefault()
+        activate()
+      }}
+      className={cn(
+        'cursor-pointer rounded-sm text-link underline underline-offset-2 outline-none hover:decoration-2 focus-visible:ring-1 focus-visible:ring-ring',
+        !inline && 'inline-flex min-h-6 min-w-6 items-center justify-center',
+      )}
     >
       {children}
     </a>
+  )
+  if (target.kind === 'anchor') return link
+  return (
+    <Tooltip>
+      <TooltipTrigger render={link} />
+      <TooltipContent
+        side="top"
+        align="start"
+        className="font-mono wrap-anywhere"
+      >
+        {target.url}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

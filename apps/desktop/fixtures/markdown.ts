@@ -29,6 +29,7 @@ ${filler('build')}
   - A nested item
   - Another nested item
 - The last list item
+- [A link alone in a list item](https://example.com/item)
 
 1. First step
 2. Second step
@@ -44,11 +45,21 @@ ${filler('build')}
 | server  |  1.4.1  | 1 MB |
 | desktop |  0.9.0  | 8 MB |
 
+| Link                                        |
+| ------------------------------------------- |
+| [A link alone in a table cell](https://example.com/cell) |
+
 \`\`\`ts
 export function greet(name: string): string {
   return \`Hello, \${name}\`
 }
 \`\`\`
+
+[A link alone in its paragraph](https://example.com/alone)
+
+[![A linked image](./media/transparent.png)](https://example.com/image)
+
+[Go](https://example.com/short)
 
 ---
 
@@ -118,6 +129,26 @@ export const hostile = `# Hostile document
 [safe link](https://example.com/safe)
 
 [ref]: https://remote-images.test/reference.png
+
+![space](<  https://remote-images.test/space.png>)
+
+![upper](HTTPS://REMOTE-IMAGES.TEST/upper.png)
+
+![backslash](\\\\\\\\remote-images.test\\bs.png)
+
+![tab](java&#9;script:window.__pwned='image-tab')
+
+![same scheme](https:remote-images.test/same-scheme.png)
+
+[tab link](java&#9;script:window.__pwned='tab')
+
+[upper link](JAVASCRIPT:window.__pwned='upper')
+
+[space link](<  javascript:window.__pwned='space'>)
+
+[drag me](https://link-target.test/page)
+
+![dragged](https://remote-images.test/dragged.png)
 `
 
 /** A long line without a break, in text and in code, for the 320 pixel reflow. */
@@ -136,4 +167,24 @@ const aVeryLongLine = 'it does not wrap in a code block, so the block scrolls in
 \`\`\`
 
 ![Wide](./media/photo.jpg)
+`
+
+/** A document with footnote labels that look like the ids of the preview. */
+export const hostileFootnotes = `# Footnotes
+
+${filler('first')}[^footnote-label]
+
+${filler('second')}[^user-content-fn-1]
+
+${filler('third')}[^1]
+
+${filler('fourth')}
+
+${filler('fifth')}
+
+${filler('sixth')}
+
+[^footnote-label]: A note with the label of the footnote section.
+[^user-content-fn-1]: A note with a label that looks like an id.
+[^1]: A plain note.
 `

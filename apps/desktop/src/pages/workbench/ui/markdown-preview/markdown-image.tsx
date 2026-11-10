@@ -12,7 +12,8 @@ import { usePreview } from './preview-context'
  */
 export function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
   const { remoteImages, resolveImage } = usePreview()
-  const [failed, setFailed] = useState(false)
+  // The URL that failed, so that a new URL gets a new try.
+  const [failedUrl, setFailedUrl] = useState<string>()
   if (!src) return null
   const source = classifyImageSource(src)
 
@@ -28,7 +29,7 @@ export function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
     label = `${source.scheme}:`
   }
 
-  if (!url || failed)
+  if (!url || failedUrl === url)
     return (
       <span
         role="img"
@@ -50,7 +51,9 @@ export function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
       loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"
-      onError={() => setFailed(true)}
+      onError={() => setFailedUrl(url)}
+      draggable={false}
+      onDragStart={(event) => event.preventDefault()}
       className="inline-block h-auto max-w-full rounded-sm align-middle"
     />
   )

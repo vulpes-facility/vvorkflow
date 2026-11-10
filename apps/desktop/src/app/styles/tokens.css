@@ -66,6 +66,8 @@
   /* Typography */
   --vv-font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
   --vv-font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  /* Inline code in a sentence is a little smaller than the text around it. */
+  --vv-code-size: 0.9em;
   --vv-terminal-font-size: 13px;
   --vv-terminal-line-height: 1.2;
   --vv-text-2xs: 11px;

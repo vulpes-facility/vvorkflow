@@ -45,15 +45,33 @@ export interface MediaViewerProps {
  *   tooltip, and no broken image.
  */
 export function MediaViewer({ kind, src, name, active }: MediaViewerProps) {
-  // The source that failed to decode, so that a new source starts clean.
-  const [failedSrc, setFailedSrc] = useState<string>()
-  const failed = failedSrc === src
-  const fail = useCallback(() => setFailedSrc(src), [src])
+  // The kind and the source that failed to decode. A new kind or a new source
+  // starts clean: the same file can decode as another kind.
+  const identity = `${kind}:${src}`
+  const [failedIdentity, setFailedIdentity] = useState<string>()
+  const failed = failedIdentity === identity
+  const root = useRef<HTMLDivElement>(null)
+  const mark = useRef<HTMLButtonElement>(null)
+  // True when the viewer had the focus when the decode failed.
+  const hadFocus = useRef(false)
+  const fail = useCallback(() => {
+    hadFocus.current = Boolean(root.current?.contains(document.activeElement))
+    setFailedIdentity(identity)
+  }, [identity])
 
+  // The failed element goes away with its controls: the focus moves to the
+  // error icon, and does not fall to the document (WCAG 2.2 SC 2.4.3).
+  useLayoutEffect(() => {
+    if (failed && hadFocus.current) mark.current?.focus()
+    hadFocus.current = false
+  }, [failed])
+
+  let content: React.ReactNode
   if (failed) {
-    return (
+    content = (
       <div className="flex h-full items-center justify-center gap-2 bg-editor px-4">
         <ErrorMark
+          ref={mark}
           label="File error"
           message={`${name} cannot be decoded.`}
           side="bottom"
@@ -63,26 +81,32 @@ export function MediaViewer({ kind, src, name, active }: MediaViewerProps) {
         </span>
       </div>
     )
-  }
-  if (kind === 'image')
-    return (
+  } else if (kind === 'image') {
+    content = (
       <ImageViewer
-        key={src}
+        key={identity}
         src={src}
         name={name}
         active={active}
         onError={fail}
       />
     )
+  } else {
+    content = (
+      <PlayerViewer
+        key={identity}
+        kind={kind}
+        src={src}
+        name={name}
+        active={active}
+        onError={fail}
+      />
+    )
+  }
   return (
-    <PlayerViewer
-      key={src}
-      kind={kind}
-      src={src}
-      name={name}
-      active={active}
-      onError={fail}
-    />
+    <div ref={root} className="h-full min-h-0">
+      {content}
+    </div>
   )
 }
 
@@ -99,6 +123,7 @@ function ImageViewer({
 }) {
   const [zoom, setZoom] = useState<Zoom>({ kind: 'fit' })
   const [natural, setNatural] = useState<{ width: number; height: number }>()
+  // The room of the image in the area: its size without the padding.
   const [view, setView] = useState({ width: 0, height: 0 })
   const area = useRef<HTMLDivElement>(null)
   // The point of the image in the middle of the view, to keep it there.
@@ -107,23 +132,23 @@ function ImageViewer({
   useEffect(() => {
     const element = area.current
     if (!element) return
-    const observer = new ResizeObserver(() =>
-      setView({ width: element.clientWidth, height: element.clientHeight }),
-    )
+    const observer = new ResizeObserver(() => {
+      // The padding of the content is a class, so measure it.
+      const style = getComputedStyle(element.firstElementChild ?? element)
+      const sum = (a: string, b: string) =>
+        (Number.parseFloat(a) || 0) + (Number.parseFloat(b) || 0)
+      setView({
+        width: element.clientWidth - sum(style.paddingLeft, style.paddingRight),
+        height:
+          element.clientHeight - sum(style.paddingTop, style.paddingBottom),
+      })
+    })
     observer.observe(element)
     return () => observer.disconnect()
   }, [])
 
-  // The padding of the area is 16 px on each side.
   const scale =
-    zoom.kind === 'scale'
-      ? zoom.scale
-      : natural
-        ? fitScale(natural, {
-            width: view.width - 32,
-            height: view.height - 32,
-          })
-        : 1
+    zoom.kind === 'scale' ? zoom.scale : natural ? fitScale(natural, view) : 1
 
   function zoomTo(next: Zoom) {
     const element = area.current
@@ -261,20 +286,21 @@ function PlayerViewer({
     const media = element.current
     if (!media || !active) return
     const saved = position.current
+    // The position comes back when the metadata is there. Until then, the
+    // saved position stays, also when the tab goes inactive again.
+    let pending = saved?.src === src && saved.time > 0
+    const restore = () => {
+      pending = false
+      if (saved) media.currentTime = saved.time
+    }
+    if (pending) media.addEventListener('loadedmetadata', restore)
     // Only an active element reports an error: removing the source is not one.
     media.addEventListener('error', onError)
     media.src = src
-    if (saved?.src === src && saved.time > 0)
-      media.addEventListener(
-        'loadedmetadata',
-        () => {
-          media.currentTime = saved.time
-        },
-        { once: true },
-      )
     return () => {
+      media.removeEventListener('loadedmetadata', restore)
       media.removeEventListener('error', onError)
-      position.current = { src, time: media.currentTime }
+      if (!pending) position.current = { src, time: media.currentTime }
       media.pause()
       // Without a source and a load, the element keeps its decoder.
       media.removeAttribute('src')

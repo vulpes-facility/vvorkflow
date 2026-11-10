@@ -20,6 +20,20 @@ function normalizeUrl(url: string): string {
   )
 }
 
+/**
+ * Decodes the percent escapes of a URL once, so that `java%09script:` is read
+ * as the browser would read it after a decode. The Markdown parser escapes
+ * spaces, tabs, and backslashes of a destination, so a hostile form arrives
+ * escaped. A text that does not decode stays as it is.
+ */
+function decodeUrl(url: string): string {
+  try {
+    return decodeURIComponent(url)
+  } catch {
+    return url
+  }
+}
+
 /** The lowercase scheme of a URL, or undefined for a relative URL. */
 function schemeOf(url: string): string | undefined {
   return /^([a-z][a-z0-9+.-]*):/i.exec(url)?.[1].toLowerCase()
@@ -27,25 +41,41 @@ function schemeOf(url: string): string | undefined {
 
 /** How the preview treats the source of an image. */
 export type ImageSource =
-  /** `http`, `https`, or protocol-relative: it needs the network, and the user must allow it. */
+  /**
+   * `http`, `https`, or protocol-relative: it needs the network, and the user
+   * must allow it. `url` is canonical: the preview loads exactly this URL, and
+   * `host` is the host of this URL.
+   */
   | { kind: 'remote'; url: string; host: string }
   /** A path of the document, which the host resolves to a URL. */
   | { kind: 'local'; path: string }
-  /** Any other scheme, such as `data:` or `javascript:`: it never loads. */
+  /** Any other scheme, or a form that has two readings: it never loads. */
   | { kind: 'blocked'; scheme: string }
 
 /**
- * Sorts the source of an image. A source that has a scheme other than `http`
- * and `https` is blocked, so a `data:` or `javascript:` image never loads.
- * A source with no scheme and no leading `//` is a local path.
+ * Sorts the source of an image.
+ *
+ * - A remote source has the form `http://host/…`, `https://host/…`, or
+ *   `//host/…`. The preview makes it canonical once, with the URL parser, and
+ *   loads only that URL. A protocol-relative source gets `https`, because the
+ *   scheme of the page is not the scheme of the document.
+ * - A form with two readings is blocked: a scheme with no `//` (such as
+ *   `https:picture.png`, which a browser reads as a path of the page), and a
+ *   source with a user name or a password.
+ * - A source with another scheme, such as `data:` or `javascript:`, is
+ *   blocked.
+ * - A source with no scheme and no leading `//` is a local path.
  */
 export function classifyImageSource(source: string): ImageSource {
-  const url = normalizeUrl(source)
+  const url = normalizeUrl(decodeUrl(source))
   const scheme = schemeOf(url)
-  if (scheme === 'http' || scheme === 'https' || url.startsWith('//')) {
+  const remote = /^https?:\/\//i.test(url) || url.startsWith('//')
+  if (remote) {
     try {
-      const host = new URL(url, 'https://base.invalid').host
-      return { kind: 'remote', url, host }
+      const parsed = new URL(url.startsWith('//') ? `https:${url}` : url)
+      if (parsed.username || parsed.password || !parsed.host)
+        return { kind: 'blocked', scheme: parsed.protocol.slice(0, -1) }
+      return { kind: 'remote', url: parsed.href, host: parsed.host }
     } catch {
       return { kind: 'blocked', scheme: scheme ?? 'https' }
     }
@@ -65,7 +95,7 @@ export type LinkTarget =
 
 /** Sorts the target of a link. Only the schemes `http`, `https`, and `mailto` open. */
 export function classifyLinkTarget(href: string): LinkTarget {
-  const url = normalizeUrl(href)
+  const url = normalizeUrl(decodeUrl(href))
   if (url.startsWith('#')) {
     try {
       return { kind: 'anchor', id: decodeURIComponent(url.slice(1)) }

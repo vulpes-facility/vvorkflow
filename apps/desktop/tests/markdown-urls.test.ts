@@ -13,16 +13,52 @@ describe('classifyImageSource', () => {
     '\\\\example.com/a.png',
     '  https://example.com/a.png',
     'ht\ttps://example.com/a.png',
+    '%20%20https://example.com/a.png',
+    '%5C%5Cexample.com%5Ca.png',
   ])('treats %j as remote', (source) => {
     expect(classifyImageSource(source).kind).toBe('remote')
   })
 
-  it('gives the host of a remote image', () => {
+  it('gives the canonical URL and its host', () => {
     expect(classifyImageSource('https://cdn.example.com:8443/a.png')).toEqual({
       kind: 'remote',
       url: 'https://cdn.example.com:8443/a.png',
       host: 'cdn.example.com:8443',
     })
+    expect(classifyImageSource('HTTPS://CDN.Example.com/A b.png')).toEqual({
+      kind: 'remote',
+      url: 'https://cdn.example.com/A%20b.png',
+      host: 'cdn.example.com',
+    })
+  })
+
+  it('gives protocol-relative and backslash forms the https scheme', () => {
+    expect(classifyImageSource('//cdn.example.com/a.png')).toMatchObject({
+      url: 'https://cdn.example.com/a.png',
+    })
+    expect(classifyImageSource('\\\\cdn.example.com\\a.png')).toMatchObject({
+      url: 'https://cdn.example.com/a.png',
+      host: 'cdn.example.com',
+    })
+    // Extra slashes: the host is what the browser loads.
+    expect(
+      classifyImageSource('https:////cdn.example.com/a.png'),
+    ).toMatchObject({
+      host: 'cdn.example.com',
+    })
+  })
+
+  it.each([
+    'https:picture.png',
+    'HTTP:picture.png',
+    'https:/picture.png',
+    'https:./picture.png',
+    'http:picture.png',
+    'https://user:pass@example.com/a.png',
+    'https://user@example.com/a.png',
+    'https://',
+  ])('blocks the form with two readings %j', (source) => {
+    expect(classifyImageSource(source).kind).toBe('blocked')
   })
 
   it.each([
@@ -35,6 +71,9 @@ describe('classifyImageSource', () => {
     'file:///etc/passwd',
     'blob:https://example.com/id',
     'ftp://example.com/a.png',
+    'java%09script:alert(1)',
+    'JAVA%0ASCRIPT:alert(1)',
+    '%20%20javascript:alert(1)',
   ])('blocks %j', (source) => {
     expect(classifyImageSource(source).kind).toBe('blocked')
   })
@@ -58,6 +97,9 @@ describe('classifyLinkTarget', () => {
     'vbscript:x',
     'data:text/html,<script>alert(1)</script>',
     'file:///etc/passwd',
+    'java%09script:alert(1)',
+    '%20javascript:alert(1)',
+    'JAVASCRIPT%3Aalert(1)',
   ])('blocks %j', (href) => {
     expect(classifyLinkTarget(href)).toEqual({ kind: 'blocked' })
   })

@@ -3,6 +3,7 @@ import { useId, useMemo, useRef } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { IconButton } from '@/shared/ui'
+import { markInlineLinks } from '../../model/markdown-links'
 import { countRemoteImages } from '../../model/markdown-urls'
 import { markdownComponents } from './markdown-components'
 import { PreviewContext, type PreviewState } from './preview-context'
@@ -91,6 +92,7 @@ export function MarkdownPreview({
           )}
           <Markdown
             remarkPlugins={[remarkGfm]}
+            rehypePlugins={[markInlineLinks]}
             remarkRehypeOptions={{ clobberPrefix: prefix }}
             skipHtml
             // The preview checks each URL itself, in the elements below.

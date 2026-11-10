@@ -51,13 +51,13 @@ export const markdownComponents: Components = {
     <pre
       {...props}
       tabIndex={0}
-      className="my-4 overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs leading-normal outline-none focus-visible:ring-1 focus-visible:ring-ring [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-[1em]"
+      className="my-4 overflow-x-auto rounded-md bg-muted p-3 font-mono text-xs leading-normal outline-none focus-visible:ring-1 focus-visible:ring-ring [&_code]:bg-transparent [&_code]:p-0 [&_code]:[font-size:inherit]"
     />
   ),
   code: ({ node: _node, ...props }) => (
     <code
       {...props}
-      className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.9em]"
+      className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[length:var(--vv-code-size)]"
     />
   ),
   table: ({ node: _node, ...props }) => (

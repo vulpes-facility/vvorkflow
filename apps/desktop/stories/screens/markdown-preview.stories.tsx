@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { useState } from 'react'
 import {
   everything,
+  hostileFootnotes,
   hostile,
   longLines,
   remoteImagesDocument,
@@ -84,3 +86,51 @@ export const Reflow320: Story = {}
 
 /** Long lines at 320 CSS pixels wide: text wraps, and tables and code scroll inside themselves. */
 export const LongLines320: Story = { args: { text: longLines } }
+
+/**
+ * Two previews with the same footnote labels on one page: their ids do not
+ * collide, and a footnote link moves only its own preview.
+ */
+export const TwoPreviews: Story = {
+  args: { text: hostileFootnotes },
+  render: (args) => (
+    <div
+      style={{ display: 'grid', gridTemplateRows: '1fr 1fr', height: '100vh' }}
+    >
+      <div style={{ minHeight: 0 }}>
+        <MarkdownPreview {...args} />
+      </div>
+      <div style={{ minHeight: 0 }}>
+        <MarkdownPreview {...args} />
+      </div>
+    </div>
+  ),
+}
+
+function ImageUrlChangeDemo(
+  args: React.ComponentProps<typeof MarkdownPreview>,
+) {
+  const [good, setGood] = useState(false)
+  return (
+    <div style={{ height: '100vh' }}>
+      <button type="button" onClick={() => setGood(true)}>
+        Fix the image
+      </button>
+      <div style={{ height: '80vh' }}>
+        <MarkdownPreview
+          {...args}
+          resolveImage={() => (good ? '/media/photo.jpg' : '/media/broken.png')}
+        />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * The URL of an image changes after it failed: the new URL gets a new try.
+ * The button gives the preview a working URL.
+ */
+export const ImageUrlChange: Story = {
+  args: { text: '![A photo](./photo.jpg)' },
+  render: (args) => <ImageUrlChangeDemo {...args} />,
+}

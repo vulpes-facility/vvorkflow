@@ -49,13 +49,15 @@ test.describe('security', () => {
     await page.waitForLoadState('networkidle')
     // The inline, the reference-style, and the protocol-relative image, and
     // the raw <img> of the document: none of them makes a request. The raw
-    // <img> is removed, so only three placeholders remain.
+    // <img> is removed. The obfuscated forms (a leading space, capitals, and
+    // backslashes) are remote images too, and the form with two readings
+    // (`https:name.png`) is blocked.
     await page.waitForTimeout(500)
     expect(requests).toEqual([])
     // Each blocked image is a placeholder with its host.
     await expect(
       region(page).getByRole('img', { name: /remote-images\.test/ }),
-    ).toHaveCount(3)
+    ).toHaveCount(7)
   })
 
   test('the same images load when remoteImages is true (the counter works)', async ({
@@ -65,11 +67,22 @@ test.describe('security', () => {
     await page.goto(story('hostile'))
     await region(page).waitFor()
     await update(page, 'hostile', { remoteImages: true })
+    // An image under the fold is lazy.
+    await region(page).evaluate((element) => element.scrollTo(0, 1e6))
     await expect
       .poll(() => [...new Set(requests)].sort())
-      .toEqual(['/inline.png', '/reference.png', '/relative.png'])
+      .toEqual([
+        '/bs.png',
+        '/dragged.png',
+        '/inline.png',
+        '/reference.png',
+        '/relative.png',
+        '/space.png',
+        '/upper.png',
+      ])
     // The raw <img> of the document never loads, also when images are allowed.
     expect(requests).not.toContain('/raw.png')
+    expect(requests).not.toContain('/same-scheme.png')
   })
 
   test('raw HTML, scripts, frames, styles, and event handlers have no effect', async ({
@@ -109,9 +122,26 @@ test.describe('security', () => {
     await countRemoteRequests(page)
     await page.goto(story('hostile'))
     await region(page).waitFor()
-    for (const name of ['javascript link', 'vbscript link', 'data link'])
+    // The obfuscated forms of the scheme are plain text too: a tab in the
+    // scheme, capitals, and a leading space.
+    for (const name of [
+      'javascript link',
+      'vbscript link',
+      'data link',
+      'tab link',
+      'upper link',
+      'space link',
+    ]) {
       await expect(region(page).getByRole('link', { name })).toHaveCount(0)
-    await expect(region(page)).toContainText('javascript link')
+      await expect(region(page)).toContainText(name)
+    }
+    // Only the two safe links are links.
+    await expect(region(page).getByRole('link')).toHaveCount(2)
+    expect(
+      await page.evaluate(
+        () => (window as never as { __pwned?: string }).__pwned,
+      ),
+    ).toBeUndefined()
     // No element of the preview has a `javascript:` or `data:` URL.
     expect(
       await region(page).evaluate((root) =>
@@ -125,24 +155,165 @@ test.describe('security', () => {
     ).toEqual([])
     await expect(region(page).getByRole('img', { name: 'data:' })).toBeVisible()
     await expect(
-      region(page).getByRole('img', { name: /javascript:/ }),
+      region(page)
+        .getByRole('img', { name: /javascript:/ })
+        .first(),
+    ).toBeVisible()
+    // `https:name.png` has two readings: it is blocked, and makes no request.
+    await expect(
+      region(page).getByRole('img', { name: 'same scheme (https:)' }),
     ).toBeVisible()
   })
 
-  test('a link never navigates: it calls onOpenLink', async ({ page }) => {
+  test('a link has no destination for the browser: no navigation, no popup, no request', async ({
+    page,
+  }) => {
+    const popups: string[] = []
+    page.context().on('page', (popup) => popups.push(popup.url()))
+    const navigations: string[] = []
+    page.on('framenavigated', (frame) => navigations.push(frame.url()))
+    const targetRequests: string[] = []
+    await page.route(/link-target\.test/, (route) => {
+      targetRequests.push(route.request().url())
+      return route.fulfill({ contentType: 'text/html', body: 'page' })
+    })
+    await countRemoteRequests(page)
     await page.goto(story('hostile'))
     await region(page).waitFor()
     const url = page.url()
-    await region(page).getByRole('link', { name: 'safe link' }).click()
-    await region(page)
-      .getByRole('link', { name: 'safe link' })
-      .click({ button: 'middle' })
-    expect(page.url()).toBe(url)
+    const navigationsBefore = navigations.length
+
+    // No element has a destination that the browser can follow.
+    expect(await region(page).locator('a[href]').count()).toBe(0)
     expect(
-      await page.evaluate(
-        () => (globalThis as unknown as { openedLinks?: string[] }).openedLinks,
+      await region(page).evaluate((root) =>
+        [...root.querySelectorAll<HTMLElement>('a, img')].every(
+          (element) => element.draggable === false,
+        ),
       ),
-    ).toEqual(['https://example.com/safe'])
+    ).toBe(true)
+
+    const link = region(page).getByRole('link', { name: 'drag me' })
+    await link.scrollIntoViewIfNeeded()
+    await link.click()
+    await link.click({ modifiers: ['Control'] })
+    await link.click({ modifiers: ['Meta'] })
+    await link.click({ modifiers: ['Shift'] })
+    await link.click({ button: 'middle' })
+    await link.focus()
+    await page.keyboard.press('Enter')
+    // A drag and drop of the link onto the page.
+    await link.dragTo(region(page).getByRole('heading', { level: 1 }))
+    await link.dragTo(page.locator('body'), { targetPosition: { x: 4, y: 4 } })
+    await page.waitForTimeout(300)
+
+    expect(popups).toEqual([])
+    expect(page.url()).toBe(url)
+    expect(navigations.length).toBe(navigationsBefore)
+    expect(targetRequests).toEqual([])
+    // The click, the three clicks with a modifier, and Enter activate the
+    // link: the host decides. The middle click and the drag do not.
+    expect(
+      (
+        await page.evaluate(
+          () =>
+            (globalThis as unknown as { openedLinks?: string[] }).openedLinks,
+        )
+      )?.filter((opened) => opened.includes('link-target.test')),
+    ).toHaveLength(5)
+  })
+
+  test('a loaded image cannot be dragged out to navigate the window', async ({
+    page,
+  }) => {
+    const popups: string[] = []
+    page.context().on('page', (popup) => popups.push(popup.url()))
+    const requests = await countRemoteRequests(page)
+    await page.goto(story('hostile'))
+    await region(page).waitFor()
+    await update(page, 'hostile', { remoteImages: true })
+    await region(page).evaluate((element) => element.scrollTo(0, 1e6))
+    const image = region(page).getByRole('img', { name: 'dragged' })
+    await expect(image).toBeVisible()
+    await expect
+      .poll(() => requests.filter((p) => p === '/dragged.png').length)
+      .toBe(1)
+    const url = page.url()
+    await image.dragTo(region(page).getByRole('heading', { level: 1 }))
+    await image.dragTo(page.locator('body'), { targetPosition: { x: 4, y: 4 } })
+    await page.waitForTimeout(300)
+    expect(popups).toEqual([])
+    expect(page.url()).toBe(url)
+    // No second request: the window did not open the image.
+    expect(requests.filter((p) => p === '/dragged.png')).toHaveLength(1)
+  })
+
+  test('a link opens with the keyboard, and the safe link calls onOpenLink', async ({
+    page,
+  }) => {
+    await page.goto(story('hostile'))
+    await region(page).waitFor()
+    const link = region(page).getByRole('link', { name: 'safe link' })
+    // The link is in the tab order.
+    await link.focus()
+    await expect(link).toBeFocused()
+    await page.keyboard.press('Enter')
+    expect(
+      (
+        await page.evaluate(
+          () =>
+            (globalThis as unknown as { openedLinks?: string[] }).openedLinks,
+        )
+      )?.includes('https://example.com/safe'),
+    ).toBe(true)
+  })
+
+  test('two previews on one page do not share an id, and a footnote moves only its own preview', async ({
+    page,
+  }) => {
+    await page.goto(story('two-previews'))
+    await region(page).first().waitFor()
+    const duplicates = await page.evaluate(() => {
+      const seen = new Map<string, number>()
+      for (const element of document.querySelectorAll('[id]'))
+        seen.set(element.id, (seen.get(element.id) ?? 0) + 1)
+      return [...seen].filter(([, count]) => count > 1).map(([id]) => id)
+    })
+    expect(duplicates).toEqual([])
+
+    const [first, second] = [region(page).nth(0), region(page).nth(1)]
+    await first.locator('a[data-footnote-ref]').first().click()
+    await expect(first.locator(':focus')).toHaveCount(1)
+    expect(await second.locator(':focus').count()).toBe(0)
+    expect(await second.evaluate((element) => element.scrollTop)).toBe(0)
+    expect(
+      await first.evaluate((element) => element.scrollTop),
+    ).toBeGreaterThan(0)
+    // The note that has the label of the section is its own note.
+    await second.locator('a[data-footnote-ref]').nth(1).click()
+    await expect(second.locator(':focus')).toHaveCount(1)
+    expect(await first.locator(':focus').count()).toBe(0)
+    // The reference of a label that looks like an id finds its own note.
+    const noteId = await second.locator(':focus').getAttribute('id')
+    expect(noteId).toMatch(/fn-user-content-fn-1$/)
+  })
+
+  test('an image that failed gets a new try when its URL changes', async ({
+    page,
+  }) => {
+    await page.goto(story('image-url-change'))
+    await region(page).waitFor()
+    await expect(
+      region(page).getByRole('img', { name: './photo.jpg' }),
+    ).toBeVisible()
+    await page.getByRole('button', { name: 'Fix the image' }).click()
+    const image = region(page).locator('img')
+    await expect(image).toBeVisible()
+    await expect
+      .poll(() =>
+        image.evaluate((element: HTMLImageElement) => element.naturalWidth),
+      )
+      .toBe(640)
   })
 })
 
@@ -162,7 +333,7 @@ test.describe('the document', () => {
     await expect(
       preview.getByRole('heading', { level: 1, name: 'Release notes' }),
     ).toBeVisible()
-    await expect(preview.getByRole('table')).toBeVisible()
+    await expect(preview.getByRole('table').first()).toBeVisible()
     await expect(preview.locator('del')).toHaveText('strikethrough')
     await expect(
       preview.getByRole('img', { name: 'Done', exact: true }),
