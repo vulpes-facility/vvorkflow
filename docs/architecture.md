@@ -72,8 +72,9 @@ The receiver checks each message against the schema, at run time.
 11. Over Tauri IPC, the web UI gives the app core one channel.\
     On it, the app core sends each event as JSON and each binary frame as bytes, in the order of the connection.
 12. The web UI writes the frames to its terminal in their order, one after the end of the other, and tells the app core the bytes that the terminal took.\
-    The app core keeps at most 1 MiB of frames that the terminal did not take yet.\
-    At that limit it stops to read the connection, so that the limits of the engine apply, and no queue of the app grows without a limit.
+    The app core counts the bytes of the frames that the terminal did not take yet, also those that are on their way to the web UI.\
+    When the count is 1 MiB or more, it stops to read the connection, so that the limits of the engine apply, and no queue of the app grows without a limit.\
+    One frame can take the count above 1 MiB, and a frame has at most 32 MiB and 21 bytes, so the count stays below 33 MiB and 21 bytes.
 13. When the connection of the app core to the engine ends, each open request fails, and the app core sends the event `connection.closed` on the channel:\
     after the last frame of that connection, and before the first frame of the next connection.\
     The attachments of that connection are gone: the web UI attaches again, and the next request opens a new connection.\
@@ -139,7 +140,7 @@ The engine process stops on a root that is not correct, and the app shows its me
    The engine reads a message of at most 1 MiB.\
    It runs each request on a blocking thread, at most 8 requests of all clients at a time, and reads the next message also while a request waits.\
    The requests of a terminal session that keep their order are the exception: the engine does them on the connection, and they never wait.\
-   A client that does not take a frame for 30 seconds loses its connection.\
+   A client that takes no byte for 30 seconds loses its connection; a large frame that moves is not a reason.\
    When a connection ends, its queued requests end too, and a request on a blocking thread keeps its place until it finishes.
 8. The engine stops when a client sends `shutdown`, or when no client is connected for a time ([Memory limits](#memory-limits)).
 9. The desktop app finds `vvorkflow-server` next to its own executable.\
@@ -185,7 +186,7 @@ Kill (menu) / end of the shell ──► the session ends
    The shell gets the environment that the engine started with, without the variables that hold a secret of the engine, and with `TERM=xterm-256color`, `COLORTERM=truecolor`, and `TERM_PROGRAM=vvorkflow`.
 4. The id of a session is 16 characters, each one an ASCII digit or a lowercase letter from `a` to `f`, from a random number.\
    So an id of an engine that stopped does not name a session of the next engine.
-5. A size has 2 to 1,000 columns and 1 to 500 rows; the engine refuses another size (`invalidArgument`).\
+5. A size has 2 to 500 columns and 1 to 200 rows; the engine refuses another size (`invalidArgument`).\
    The engine keeps at most 64 sessions (`failedPrecondition` for one more).
 6. `session.list` answers each session in the order of its start: its id, its title, its folder, and its size.\
    The title is the last title that the program set (OSC 0 or OSC 2), cut to 1,024 bytes, or the name of the shell program before that.\
@@ -211,11 +212,14 @@ Kill (menu) / end of the shell ──► the session ends
    The screen bytes then end with the bytes of that part, so that the next output continues it.\
    The engine keeps at most 4 KiB of such a part.\
    For a longer part, which is a string sequence such as an OSC, the screen bytes end with the start of that kind of sequence, so that the terminal reads the rest of the string as a string and not as text.
-4. The screen bytes have at most 8 MiB.\
-   When they would be larger, the engine leaves out the oldest lines of the scrollback.
-5. Known limits of the state, which are also the limits of the terminal that it uses:\
+4. The screen bytes have at most 32 MiB.\
+   When they would be larger, the engine leaves out the oldest lines of the scrollback.\
+   That is always sufficient: a cell keeps at most 32 bytes of text, so the two screens of the largest size, with each style on each cell, and the other state without the scrollback, are less than 32 MiB.\
+   A test makes the screen bytes of that largest state.
+5. Known limits of the state:\
+   a cell keeps the combining characters only up to its 32 bytes;\
    the tab stops and the character sets come back at their defaults;\
-   images are not kept.\
+   links (OSC 8) and images are not kept.\
    M4 names each other part that the engine cannot bring back, here.
 6. A query of the program, such as the cursor position or the colors, gets its answer from the terminal of an attached client, because that terminal has the keyboard and the colors that the answer tells.\
    While no client is attached, the engine answers the queries for the cursor position and the device attributes, and no other query.\
@@ -223,10 +227,11 @@ Kill (menu) / end of the shell ──► the session ends
 
 ### Attach, output, and input
 
-1. `session.attach` adds the connection to the attached clients of the session, and answers the session.\
-   In the same step, under the lock of the session, the engine puts one screen frame in the queue of that client.\
-   So the client gets the screen, then each byte of output after it, with no byte lost and no byte twice.\
-   `session.attach` on an attached session sends the screen again.\
+1. `session.attach` adds the connection to the attached clients of the session, asks for a screen for that client, and answers the session.\
+   A screen that a client waits for is a mark, not bytes: while the mark is set, the engine queues no output of that session for that client.\
+   When the writer of the connection is ready for it, the engine makes the screen frame from the state of that moment and takes the mark away, in one step under the lock of the session; the output after that moment goes to the queue.\
+   So the client gets the screen, then each byte of output after it, with no byte lost and no byte twice, and the engine keeps at most one screen frame for a client at a time.\
+   `session.attach` on an attached session asks for the screen again.\
    A session that ended answers `notFound`, and sends nothing.
 2. `session.detach`, and the end of the connection, remove the client; the session continues.
 3. Terminal output is a binary frame.\
@@ -236,8 +241,7 @@ Kill (menu) / end of the shell ──► the session ends
    The client sets its terminal to that size, resets it, and then writes the screen bytes.
 4. Each attached client has an output queue for each session, with a limit of 1 MiB for its output frames.\
    The thread that reads the pseudo-terminal never waits for a client.\
-   When a queue is full, the engine discards it; the frames that the writer of the connection already took stay in their order.\
-   The next frame of that session to that client is then a screen, which the engine makes when the writer is ready for it, and the output after that screen follows it.\
+   When a queue is full, the engine discards it, and asks for a screen for that client, as an attach does; the frames that the writer of the connection already took stay in their order.\
    A screen frame does not count for the limit.
 5. `session.write` sends input to the program.\
    Its `data` is the input bytes in Base64 (RFC 4648, with padding): the web UI encodes the text of the keyboard as UTF-8, and takes each character of binary input, such as an old mouse report, as one byte.\
@@ -284,10 +288,10 @@ A setting changes each one.
 | Requests | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message to the engine has at most 1 MiB. | - |
 | Sessions | The engine keeps a limited number of sessions. | 64 sessions |
 | Session screen | The engine keeps the screen and the scrollback of each session. Its title, and the part of an escape sequence that is not complete, have a limit too. | 5,000 lines; 1,024 bytes; 4 KiB |
-| Screen frame | The engine leaves the oldest lines of the scrollback out of a screen frame that would be larger than the limit. | 8 MiB |
+| Screen frame | The engine leaves the oldest lines of the scrollback out of a screen frame that would be larger than the limit. A cell keeps a limited number of bytes of text. | 32 MiB; 32 bytes |
 | Engine output | The engine sends output only for attached sessions. Each client has an output queue for each session, with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | 1 MiB |
 | Session input | The input of a session waits in a queue with a limit. The engine refuses a write to a full queue. | 1 MiB |
-| App terminal output | The app core keeps a limited number of bytes that the terminal of the web UI did not take yet, and then stops to read the connection. | 1 MiB |
+| App terminal output | The app core stops to read the connection when the bytes that the terminal of the web UI did not take yet reach the limit. One frame can go above it. | 1 MiB |
 | App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |
 | Media and previews | The engine reads a large file in ranges, not all at once. A hidden media tab stops playback and decoding. | 1 MB ranges |
 | Explorer | The web UI reads only the open folders, and drops the folders that it does not use. A large folder scrolls virtually. | 5 minutes |
