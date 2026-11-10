@@ -5,6 +5,7 @@
 //! or an [`EngineError`].
 
 mod git;
+pub mod screen;
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;

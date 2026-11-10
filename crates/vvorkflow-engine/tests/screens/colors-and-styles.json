@@ -1,0 +1,19 @@
+{
+  "columns": 40,
+  "description": "The SGR colors (16, 256, and RGB) and styles, an underline color, and an erase with a background color.",
+  "limits": {},
+  "output": "plain \u001b[1mbold\u001b[22m \u001b[2mdim\u001b[0m \u001b[3;4mitalic underline\u001b[0m\r\n\u001b[4:3;58;2;255;0;0mcurly\u001b[4:2;58;5;33mdouble\u001b[0;4:4mdotted\u001b[4:5mdashed\u001b[24m\r\n\u001b[7minverse\u001b[27m \u001b[8mhidden\u001b[28m \u001b[9mstrike\u001b[29m\r\n\u001b[31mred\u001b[92mbright\u001b[38;5;208mi256\u001b[38;2;10;20;30mrgb\u001b[39m\r\n\u001b[41mbg\u001b[103mbright\u001b[48;5;17mi256\u001b[48;2;1;2;3mrgb\u001b[K\u001b[0m\r\n\u001b[44m\u001b[2K\u001b[0mafter a blue line\r\n\u001b[1;3;31;44mbold italic red on blue\u001b[0m \u001b[2;38;5;196mdim 196\u001b[0m",
+  "positions": [
+    226,
+    247,
+    318,
+    401
+  ],
+  "rows": 8,
+  "screens": {
+    "226": "cGxhaW4gG1swOzFtYm9sZBtbMG0gG1swOzJtZGltG1swbSAbWzA7Mzs0bWl0YWxpYyB1bmRlcmxpbmUbWzBtDQobWzA7NDozOzU4OzI7MjU1OzA7MG1jdXJseRtbMDs0OjI7NTg7NTszM21kb3VibGUbWzA7NDo0bWRvdHRlZBtbMDs0OjVtZGFzaGVkG1swbQ0KG1swOzdtaW52ZXJzZRtbMG0gG1swOzhtaGlkZGVuG1swbSAbWzA7OW1zdHJpa2UbWzBtDQobWzA7MzFtcmVkG1swOzkybWJyaWdodBtbMDszODs1OzIwOG1pMjU2G1swbQ0KDQoNCg0KG1swOzM4OzU7MjA4bRtbNDsxNEgbWzM4Ow==",
+    "247": "cGxhaW4gG1swOzFtYm9sZBtbMG0gG1swOzJtZGltG1swbSAbWzA7Mzs0bWl0YWxpYyB1bmRlcmxpbmUbWzBtDQobWzA7NDozOzU4OzI7MjU1OzA7MG1jdXJseRtbMDs0OjI7NTg7NTszM21kb3VibGUbWzA7NDo0bWRvdHRlZBtbMDs0OjVtZGFzaGVkG1swbQ0KG1swOzdtaW52ZXJzZRtbMG0gG1swOzhtaGlkZGVuG1swbSAbWzA7OW1zdHJpa2UbWzBtDQobWzA7MzFtcmVkG1swOzkybWJyaWdodBtbMDszODs1OzIwOG1pMjU2G1swOzM4OzI7MTA7MjA7MzBtcmdiG1swbQ0KDQoNCg0KG1s1OzFI",
+    "318": "cGxhaW4gG1swOzFtYm9sZBtbMG0gG1swOzJtZGltG1swbSAbWzA7Mzs0bWl0YWxpYyB1bmRlcmxpbmUbWzBtDQobWzA7NDozOzU4OzI7MjU1OzA7MG1jdXJseRtbMDs0OjI7NTg7NTszM21kb3VibGUbWzA7NDo0bWRvdHRlZBtbMDs0OjVtZGFzaGVkG1swbQ0KG1swOzdtaW52ZXJzZRtbMG0gG1swOzhtaGlkZGVuG1swbSAbWzA7OW1zdHJpa2UbWzBtDQobWzA7MzFtcmVkG1swOzkybWJyaWdodBtbMDszODs1OzIwOG1pMjU2G1swOzM4OzI7MTA7MjA7MzBtcmdiG1swbQ0KG1swOzQxbWJnG1swOzEwM21icmlnaHQbWzA7NDg7NTsxN21pMjU2G1swOzQ4OzI7MTsyOzNtcmdiG1tLG1swbQ0KG1swOzQ0bRtbSxtbMG0NCg0KG1s2OzFI",
+    "401": "cGxhaW4gG1swOzFtYm9sZBtbMG0gG1swOzJtZGltG1swbSAbWzA7Mzs0bWl0YWxpYyB1bmRlcmxpbmUbWzBtDQobWzA7NDozOzU4OzI7MjU1OzA7MG1jdXJseRtbMDs0OjI7NTg7NTszM21kb3VibGUbWzA7NDo0bWRvdHRlZBtbMDs0OjVtZGFzaGVkG1swbQ0KG1swOzdtaW52ZXJzZRtbMG0gG1swOzhtaGlkZGVuG1swbSAbWzA7OW1zdHJpa2UbWzBtDQobWzA7MzFtcmVkG1swOzkybWJyaWdodBtbMDszODs1OzIwOG1pMjU2G1swOzM4OzI7MTA7MjA7MzBtcmdiG1swbQ0KG1swOzQxbWJnG1swOzEwM21icmlnaHQbWzA7NDg7NTsxN21pMjU2G1swOzQ4OzI7MTsyOzNtcmdiG1tLG1swbQ0KYWZ0ZXIgYSBibHVlIGxpbmUbWzA7NDRtG1tLG1swbQ0KG1swOzE7MzszMTs0NG1ib2xkIGl0YWxpYyByZWQgb24gYmx1ZRtbMG0gG1swOzI7Mzg7NTsxOTZtZGltIDE5NhtbMG0NChtbNzszMkg="
+  }
+}

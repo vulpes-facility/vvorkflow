@@ -1,3 +1,11 @@
 [workspace]
 resolver = "3"
 members = ["apps/desktop/src-tauri", "crates/vvorkflow-engine", "crates/vvorkflow-protocol", "crates/vvorkflow-server"]
+
+# The terminal state reads each byte of the output of a session: without
+# optimization, a test or a development build reads output many times slower.
+[profile.dev.package.alacritty_terminal]
+opt-level = 3
+
+[profile.dev.package.vte]
+opt-level = 3
