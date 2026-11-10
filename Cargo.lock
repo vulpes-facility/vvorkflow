@@ -4067,8 +4067,8 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-log",
- "vvorkflow-engine",
  "vvorkflow-protocol",
+ "vvorkflow-server",
 ]
 
 [[package]]

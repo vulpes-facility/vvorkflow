@@ -1,37 +1,49 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::process::Command;
 
 use tauri::State;
-use vvorkflow_engine::{Engine, projects_root_from_env};
-use vvorkflow_protocol::{EngineError, ErrorCode, Request, Response};
+use vvorkflow_protocol::{EngineError, ErrorCode, Request};
+use vvorkflow_server::{Endpoint, EngineClient};
 
 /// The folders of the command line, which the app opens at start.
 struct StartupFolders(Vec<String>);
 
-/// The engine, or the error that stopped it at start, for example a projects
-/// root that is not a folder. Each request then answers that error.
-type EngineState = Result<Arc<Engine>, EngineError>;
+/// The client of the engine process, or the reason why the app has none.
+/// Each request then answers that reason.
+type EngineState = Result<EngineClient, EngineError>;
 
-/// Sends one request to the engine, on a blocking thread, because the engine
-/// waits for the file system and for git, and the main thread draws the
-/// window.
+/// The client of the engine process of this user. The app starts
+/// `vvorkflow-server` from the folder of its own executable when no engine
+/// listens; the process gets the environment of the app, such as
+/// `VVORKFLOW_ROOT`.
+fn engine_client() -> EngineState {
+    let refused = |message: String| EngineError {
+        code: ErrorCode::FailedPrecondition,
+        message,
+    };
+    let endpoint = Endpoint::of_user().map_err(refused)?;
+    let program = std::env::current_exe()
+        .map_err(|error| refused(format!("The app cannot find its own folder: {error}.")))?
+        .with_file_name(format!("vvorkflow-server{}", std::env::consts::EXE_SUFFIX));
+    Ok(EngineClient::new(endpoint, move || Command::new(&program)))
+}
+
+/// Sends one request of the web UI to the engine process, with an id.
 ///
-/// Returns the value of the request, or its error. When the engine did not
-/// start, returns the error that stopped it.
+/// Returns the value of the request, or its error. When no engine can start,
+/// returns why, for example the message of a projects root that is not
+/// correct.
 #[tauri::command]
 async fn request(
     engine: State<'_, EngineState>,
     request: Request,
-) -> Result<Response, EngineError> {
-    let engine = Arc::clone(engine.inner().as_ref().map_err(Clone::clone)?);
-    tauri::async_runtime::spawn_blocking(move || engine.handle(request))
+) -> Result<serde_json::Value, EngineError> {
+    engine
+        .inner()
+        .as_ref()
+        .map_err(Clone::clone)?
+        .request(request)
         .await
-        .unwrap_or_else(|error| {
-            Err(EngineError {
-                code: ErrorCode::FailedPrecondition,
-                message: format!("The engine stopped: {error}"),
-            })
-        })
 }
 
 /// The folders to open at start: each argument of the command line, as an
@@ -53,9 +65,7 @@ pub fn run() {
         .collect();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage::<EngineState>(
-            projects_root_from_env().and_then(|root| Engine::new(&root).map(Arc::new)),
-        )
+        .manage(engine_client())
         .manage(StartupFolders(folders))
         .invoke_handler(tauri::generate_handler![request, startup_folders])
         .setup(|app| {

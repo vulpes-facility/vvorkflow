@@ -18,6 +18,7 @@ The desktop app has its design tokens, its window shell, the Welcome tab, the te
 - `docs/conventions/engine.md` - The rules that keep each request of the engine in the opened folders, and their known limit.
 - `docs/conventions/tooling.md` - The tool rules that differ from the `vulpes-conventions` plugin: oxlint, the shadcn folder, the Node.js and Rust versions, and the Turborepo settings.
 - `apps/desktop/` - The desktop app: the React web UI in `src/`, and the Tauri 2 shell in `src-tauri/`.
+- `apps/desktop/scripts/build-server.mjs` - Builds the engine process `vvorkflow-server` before `tauri dev` and `tauri build`, and copies it as the sidecar of the bundle.
 - `apps/desktop/src/app/styles/tokens.css` - The design tokens, the only source of design values, for the light and the dark theme.
 - `apps/desktop/src/pages/workbench/` - The window shell: the activity bar, the side bar, the title bar, the editor area, the status bar, the Welcome tab, the Explorer tree, and the terminal tabs.
 - `apps/desktop/stories/` - The Storybook stories of the screens and the tokens, which the screen capture uses.

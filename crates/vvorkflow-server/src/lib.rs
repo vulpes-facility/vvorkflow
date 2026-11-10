@@ -3,6 +3,7 @@
 //! WebSocket frames; a text frame holds one JSON message of the envelope of
 //! `vvorkflow-protocol`. `docs/architecture.md` gives the rules.
 
+mod client;
 mod connection;
 mod endpoint;
 
@@ -12,6 +13,7 @@ use std::time::Duration;
 use tokio::sync::{Notify, Semaphore, watch};
 use vvorkflow_engine::Engine;
 
+pub use client::EngineClient;
 pub use endpoint::{ClientStream, Endpoint, Listener, ServerStream};
 
 /// The largest message that the engine reads, which is far more than a

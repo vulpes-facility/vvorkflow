@@ -7,6 +7,10 @@ use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
 
+/// The start of the message of an engine that stops because another engine
+/// listens on its endpoint.
+pub(crate) const BUSY: &str = "Another engine already listens in";
+
 /// The local endpoint of one engine process.
 #[derive(Clone, Debug)]
 pub struct Endpoint {
@@ -136,10 +140,23 @@ impl Endpoint {
     /// Returns the lock, which the process keeps until it stops. Refuses when
     /// another engine holds it.
     pub fn lock(&self) -> Result<File, String> {
-        let path = self
-            .check()
-            .map_err(|error| error.to_string())?
-            .join("engine.lock");
+        self.try_lock("engine.lock")?
+            .ok_or_else(|| format!("{BUSY} {}.", self.folder.display()))
+    }
+
+    /// Takes the turn of the endpoint, so that only one app at a time starts
+    /// or replaces its engine.
+    ///
+    /// Returns the turn, which ends when the caller drops it, or `None` while
+    /// another app holds it.
+    pub fn turn(&self) -> Result<Option<File>, String> {
+        self.try_lock("engine.turn")
+    }
+
+    /// Opens the file `name` in the folder, and locks it. Returns `None` when
+    /// another holder has the lock.
+    fn try_lock(&self, name: &str) -> Result<Option<File>, String> {
+        let path = self.check().map_err(|error| error.to_string())?.join(name);
         let file = File::options()
             .create(true)
             .truncate(false)
@@ -147,11 +164,8 @@ impl Endpoint {
             .open(&path)
             .map_err(|error| format!("The engine cannot open {}: {error}.", path.display()))?;
         match file.try_lock() {
-            Ok(()) => Ok(file),
-            Err(std::fs::TryLockError::WouldBlock) => Err(format!(
-                "Another engine already listens in {}.",
-                self.folder.display()
-            )),
+            Ok(()) => Ok(Some(file)),
+            Err(std::fs::TryLockError::WouldBlock) => Ok(None),
             Err(std::fs::TryLockError::Error(error)) => Err(format!(
                 "The engine cannot lock {}: {error}.",
                 path.display()
