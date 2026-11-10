@@ -1,4 +1,4 @@
-import type { TerminalSession } from '../src/pages/workbench'
+import type { TerminalSession, TerminalSink } from '../src/pages/workbench'
 
 const esc = '\u001b['
 const reset = `${esc}0m`
@@ -10,18 +10,35 @@ const dim = (text: string) => color(90, text)
 const prompt = (path: string, branch: string) =>
   `${color(34, path)} ${color(35, branch)}\r\n${color(32, '❯')} `
 
-/** A session that writes a fixed transcript, as a running process would. */
+/**
+ * A session that shows a fixed transcript, as the engine shows the screen of
+ * a session. It takes each size that its terminal proposes, as a session
+ * with one client does.
+ */
 function transcript(
   id: string,
   title: string,
+  folder: string,
   lines: string[],
 ): TerminalSession {
+  const data = new TextEncoder().encode(lines.join('\r\n'))
+  let sink: TerminalSink | undefined
+  let size = { columns: 80, rows: 24 }
   return {
     id,
     title,
-    subscribe(onData) {
-      onData(lines.join('\r\n'))
-      return () => {}
+    folder,
+    attach(next) {
+      sink = next
+      void next.screen({ ...size, data })
+      return () => {
+        if (sink === next) sink = undefined
+      }
+    },
+    write() {},
+    resize(columns, rows) {
+      size = { columns, rows }
+      sink?.resized(columns, rows)
     },
   }
 }
@@ -54,10 +71,25 @@ const shellLines = [
   `${prompt('~/code/vvorkflow.terminal-tabs', 'feat/terminal-tabs')}`,
 ]
 
+/** A new session with a prompt, as a shell that just started. */
+export function newTerminal(number: number): TerminalSession {
+  return transcript(`shell-new-${number}`, 'zsh', '/home/me/code/vvorkflow', [
+    prompt('~/code/vvorkflow', 'main'),
+  ])
+}
+
 /** Two terminal sessions; the last one is the active tab. */
 export const terminals: TerminalSession[] = [
-  transcript('agent-explorer', 'codex · feat/explorer', [
-    `${prompt('~/code/vvorkflow.explorer', 'feat/explorer')}codex`,
-  ]),
-  transcript('shell-terminal-tabs', 'zsh · feat/terminal-tabs', shellLines),
+  transcript(
+    'agent-explorer',
+    'codex · feat/explorer',
+    '/home/me/code/vvorkflow.explorer',
+    [`${prompt('~/code/vvorkflow.explorer', 'feat/explorer')}codex`],
+  ),
+  transcript(
+    'shell-terminal-tabs',
+    'zsh · feat/terminal-tabs',
+    '/home/me/code/vvorkflow.terminal-tabs',
+    shellLines,
+  ),
 ]

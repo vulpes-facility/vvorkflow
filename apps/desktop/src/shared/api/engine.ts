@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { z } from 'zod'
+import { toBase64 } from './frame.ts'
 import { protocol } from './protocol.gen.ts'
 
 // The types come from `protocol.gen.ts`, which `pnpm generate:protocol` makes
@@ -50,6 +51,7 @@ export type Project = z.infer<typeof types.project>
 export type Repository = z.infer<typeof types.repository>
 export type DirectoryEntry = z.infer<typeof types.directory_entry>
 export type ChangedPath = z.infer<typeof types.changed_path>
+export type Session = z.infer<typeof types.session>
 export type EngineErrorCode = z.infer<typeof types.engine_error>['code']
 
 /** A request that the engine refused or could not do. */
@@ -149,6 +151,98 @@ export function listDirectory(
  */
 export function readStatus(worktree: string): Promise<ChangedPath[]> {
   return request('git.status', { worktree })
+}
+
+/**
+ * Lists the terminal sessions of the engine, in the order of their start.
+ */
+export function listSessions(): Promise<Session[]> {
+  return request('session.list', {})
+}
+
+/**
+ * Starts the shell of the user in a new terminal session.
+ *
+ * @param worktree The open worktree where the shell starts; without it, the
+ *   projects root.
+ * @returns The session. Throws `failedPrecondition` when the shell does not
+ *   start, or when the engine has 64 sessions.
+ */
+export function createSession(
+  columns: number,
+  rows: number,
+  worktree?: string,
+): Promise<Session> {
+  return request('session.create', { worktree, columns, rows })
+}
+
+/**
+ * Attaches this app to a session: its screen comes as a frame on the stream
+ * of the engine, and then its output. A second attach brings the screen
+ * again.
+ *
+ * @returns The session. Throws `notFound` for a session that ended.
+ */
+export function attachSession(session: string): Promise<Session> {
+  return request('session.attach', { session })
+}
+
+/** Detaches this app from a session; the session continues in the engine. */
+export async function detachSession(session: string): Promise<void> {
+  await request('session.detach', { session })
+}
+
+/**
+ * Sends input bytes to the program of a session. The answer tells that the
+ * engine has the bytes, not that the program read them.
+ *
+ * @throws `failedPrecondition` when the input queue of the session is full;
+ *   the engine then took none of the bytes.
+ */
+export async function writeSession(
+  session: string,
+  data: Uint8Array,
+): Promise<void> {
+  await request('session.write', { session, data: toBase64(data) })
+}
+
+/** Sets the size of a session, for each client that is attached to it. */
+export async function resizeSession(
+  session: string,
+  columns: number,
+  rows: number,
+): Promise<void> {
+  await request('session.resize', { session, columns, rows })
+}
+
+/** Ends a session: its shell and the program in its terminal. */
+export async function killSession(session: string): Promise<void> {
+  await request('session.kill', { session })
+}
+
+/**
+ * Tells if an engine of another protocol version listens. Such an engine
+ * refuses to stop while it has sessions; `stopEngine` stops it.
+ */
+export async function otherEngine(): Promise<boolean> {
+  return (await invoke('other_engine')) === true
+}
+
+/**
+ * Stops the engine that listens, with its sessions. The next request starts
+ * a new engine.
+ *
+ * @throws {EngineRequestError} When the engine does not stop.
+ */
+export async function stopEngine(): Promise<void> {
+  try {
+    await invoke('stop_engine')
+  } catch (thrown) {
+    const refused = types.engine_error.safeParse(thrown)
+    if (refused.success)
+      throw new EngineRequestError(refused.data.code, refused.data.message)
+    throw new EngineRequestError('invalidResponse', String(thrown))
+  }
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Files, Search, type LucideIcon } from 'lucide-react'
+import { Files, Search, SquareTerminal, type LucideIcon } from 'lucide-react'
 
 /** One view of the side bar, which the activity bar selects. */
 export interface Activity {
@@ -13,6 +13,7 @@ export interface Activity {
 export const views = [
   { id: 'explorer', label: 'Explorer', icon: Files, shortcut: 'mod+shift+e' },
   { id: 'search', label: 'Search', icon: Search, shortcut: 'mod+shift+f' },
+  { id: 'terminals', label: 'Terminals', icon: SquareTerminal },
 ] as const satisfies readonly Activity[]
 
 export type ViewId = (typeof views)[number]['id']

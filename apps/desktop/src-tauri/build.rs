@@ -3,7 +3,14 @@ fn main() {
     // capability file allows it (`allow-<command>`), as the plugin commands.
     tauri_build::try_build(
         tauri_build::Attributes::new().app_manifest(
-            tauri_build::AppManifest::new().commands(&["request", "startup_folders"]),
+            tauri_build::AppManifest::new().commands(&[
+                "request",
+                "subscribe",
+                "acknowledge",
+                "other_engine",
+                "stop_engine",
+                "startup_folders",
+            ]),
         ),
     )
     .expect("the Tauri build step runs");

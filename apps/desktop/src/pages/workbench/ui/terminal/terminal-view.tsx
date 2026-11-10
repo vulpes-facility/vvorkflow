@@ -9,7 +9,12 @@ import {
   readToken,
   type Platform,
 } from '@/shared/lib'
-import type { TerminalSession } from '../../model/terminal'
+import {
+  binaryInput,
+  sessionSize,
+  type TerminalSession,
+  type TerminalSink,
+} from '../../model/terminal'
 import { terminalKeyTarget } from '../../model/terminal-keys'
 
 /** The theme of the terminal, from the color tokens of the current scheme. */
@@ -44,15 +49,34 @@ function terminalTheme(): ITheme {
 interface TerminalViewProps {
   session: TerminalSession
   platform: Platform
+  /** Called with each title that the program sets. */
+  onTitle?: (title: string) => void
 }
+
+/** The time that the terminal waits for the last change of its room before it proposes a size. */
+const PROPOSE_TIME = 100
 
 /**
  * The terminal of a session: an xterm.js terminal with the DOM renderer, in
- * the colors of the design tokens.
+ * the colors of the design tokens. It attaches to the session while it
+ * shows, and detaches when it goes away; the session continues.
+ *
+ * The session owns the size: the terminal proposes the size that fits its
+ * room, and takes the size that the session tells. So two terminals of one
+ * session show the same lines.
  */
-export function TerminalView({ session, platform }: TerminalViewProps) {
+export function TerminalView({
+  session,
+  platform,
+  onTitle,
+}: TerminalViewProps) {
   const host = useRef<HTMLDivElement>(null)
   const hint = useId()
+  // The last handler, so that a new one does not make a new terminal.
+  const title = useRef(onTitle)
+  useEffect(() => {
+    title.current = onTitle
+  }, [onTitle])
 
   useEffect(() => {
     const element = host.current
@@ -97,18 +121,52 @@ export function TerminalView({ session, platform }: TerminalViewProps) {
     })
     scheme.observe(document.documentElement, { attributeFilter: ['class'] })
 
-    const input = terminal.onData((data) => session.write?.(data))
-    const size = terminal.onResize(({ cols, rows }) =>
-      session.resize?.(cols, rows),
-    )
+    const encoder = new TextEncoder()
+    const input = terminal.onData((data) => session.write(encoder.encode(data)))
+    const binary = terminal.onBinary((data) => session.write(binaryInput(data)))
+    const titled = terminal.onTitleChange((next) => title.current?.(next))
 
+    // A write of xterm.js ends in a callback, which never comes after the
+    // terminal is gone: then the promise of the sink settles with the end.
+    let end: () => void = () => {}
+    const ended = new Promise<void>((resolve) => {
+      end = resolve
+    })
+    const written = (data: Uint8Array) =>
+      Promise.race([
+        new Promise<void>((resolve) => terminal.write(data, resolve)),
+        ended,
+      ])
+    const sink: TerminalSink = {
+      screen: ({ columns, rows, data }) => {
+        terminal.resize(columns, rows)
+        terminal.reset()
+        return written(data)
+      },
+      output: written,
+      resized: (columns, rows) => terminal.resize(columns, rows),
+    }
     // Take the output from the start. Until the terminal opens, its buffer
     // keeps the output, within the scrollback limit.
-    let opened = false
-    const unsubscribe = session.subscribe((data) => terminal.write(data))
+    const detach = session.attach(sink)
+
+    // Propose the size that fits the room, after the room stopped to change.
+    let proposal: ReturnType<typeof setTimeout> | undefined
+    let proposed = ''
+    function propose() {
+      clearTimeout(proposal)
+      proposal = setTimeout(() => {
+        const room = fit.proposeDimensions()
+        const size = sessionSize(room?.cols, room?.rows)
+        if (!size || `${size.columns}x${size.rows}` === proposed) return
+        proposed = `${size.columns}x${size.rows}`
+        session.resize(size.columns, size.rows)
+      }, PROPOSE_TIME)
+    }
 
     // Open only with the real font and a visible host: the font sets the
     // width of the cells, and a hidden host has no size to fit.
+    let opened = false
     let fontReady = false
     let disposed = false
     function openWhenReady() {
@@ -118,13 +176,13 @@ export function TerminalView({ session, platform }: TerminalViewProps) {
       opened = true
       terminal.open(element)
       terminal.textarea?.setAttribute('aria-describedby', hint)
-      fit.fit()
+      propose()
     }
-    // A hidden tab has no size; a fit would squeeze the grid to 2 columns.
+    // A hidden tab has no size; a proposal would squeeze the grid to 2 columns.
     const resize = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect
       if (!width || !height) return
-      if (opened) fit.fit()
+      if (opened) propose()
       else openWhenReady()
     })
     resize.observe(element)
@@ -138,11 +196,14 @@ export function TerminalView({ session, platform }: TerminalViewProps) {
 
     return () => {
       disposed = true
-      unsubscribe()
+      clearTimeout(proposal)
+      detach()
+      end()
       scheme.disconnect()
       resize.disconnect()
       input.dispose()
-      size.dispose()
+      binary.dispose()
+      titled.dispose()
       terminal.dispose()
     }
   }, [session, platform, hint])

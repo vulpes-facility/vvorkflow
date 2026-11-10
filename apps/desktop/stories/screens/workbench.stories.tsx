@@ -33,6 +33,8 @@ const meta = {
     onCreateProject: createProject,
     onOpenFolder: fn(),
     onAddWorktree: fn(),
+    onNewTerminal: fn(),
+    onKillTerminal: fn(),
     onOpenProject: fn(),
     onOpenSettings: fn(),
     commandPaletteShortcut: 'mod+shift+p',
@@ -95,6 +97,8 @@ export const AppStart: Story = {
     onCreateProject: undefined,
     onOpenFolder: undefined,
     onAddWorktree: undefined,
+    onNewTerminal: undefined,
+    onKillTerminal: undefined,
     onOpenProject: undefined,
     onOpenSettings: undefined,
     commandPaletteShortcut: undefined,
@@ -155,6 +159,33 @@ export const ExplorerLight: Story = {
  */
 export const Terminal: Story = {
   args: { repositories, expandedPaths, terminals },
+}
+
+/**
+ * The Terminals view, which the screen capture selects in the activity bar:
+ * each session of the engine, also one whose tab is closed.
+ */
+export const Terminals: Story = {
+  args: { repositories, expandedPaths, terminals },
+}
+
+/** The Terminals view with no session. */
+export const TerminalsEmpty: Story = {}
+
+/**
+ * An engine of another version that has terminal sessions: the Welcome tab
+ * shows its refusal, and the action that stops it. The screen capture opens
+ * the question of that action.
+ */
+export const StopEngine: Story = {
+  args: {
+    projects: [],
+    engineError:
+      'The engine has 2 terminal sessions. It does not stop while they run.',
+    onStopEngine: fn(),
+    context: undefined,
+    status: undefined,
+  },
 }
 
 /** The same terminal tabs in the light theme. */

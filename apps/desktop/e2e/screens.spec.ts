@@ -10,6 +10,9 @@ const screens = [
   'screens-workbench--explorer-light',
   'screens-workbench--terminal',
   'screens-workbench--terminal-light',
+  'screens-workbench--terminals',
+  'screens-workbench--terminals-empty',
+  'screens-workbench--stop-engine',
   'screens-workbench--macos-dark',
   'screens-workbench--macos-light',
   'screens-workbench--windows-dark',
@@ -67,7 +70,10 @@ for (const id of screens) {
     await page.locator('#storybook-root > *').first().waitFor()
     await page.evaluate(() => document.fonts.ready)
     // A terminal opens after its font loads, so wait for its rows.
-    if (id.startsWith('screens-workbench--terminal')) {
+    if (
+      id.startsWith('screens-workbench--terminal') &&
+      !id.endsWith('-empty')
+    ) {
       await page
         .locator('.xterm-rows')
         .locator('visible=true')
@@ -97,6 +103,21 @@ for (const id of screens) {
             ].every((media) => media.readyState >= 1) &&
             [...document.images].every((image) => image.complete),
         )
+    }
+
+    // The Terminals screens show that view of the side bar.
+    if (id.startsWith('screens-workbench--terminals'))
+      await page.getByRole('tab', { name: 'Terminals', exact: true }).click()
+
+    // The Stop engine screen shows the question of the action.
+    if (id === 'screens-workbench--stop-engine') {
+      await page.getByRole('button', { name: 'Stop engine…' }).click()
+      await page.getByRole('dialog').waitFor()
+      await page.evaluate(() =>
+        Promise.allSettled(
+          document.getAnimations().map((animation) => animation.finished),
+        ),
+      )
     }
 
     // The error screens show the message of the engine in its tooltip.

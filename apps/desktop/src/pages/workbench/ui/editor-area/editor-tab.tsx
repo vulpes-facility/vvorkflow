@@ -4,7 +4,7 @@ import type {
   IDockviewPanelHeaderProps,
 } from 'dockview-react'
 import { SquareTerminal, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState } from 'react'
 import { cn } from '@/shared/lib'
 import {
   ContextMenu,
@@ -14,6 +14,7 @@ import {
   ContextMenuTrigger,
   LogoMark,
 } from '@/shared/ui'
+import { TerminalActions } from '../../model/terminal-actions'
 
 /** The parameters of an editor panel that its tab reads. */
 export interface EditorTabParams {
@@ -97,7 +98,11 @@ export function EditorTab({
           )
         }}
       >
-        <TabMenuItems api={api} editor={containerApi} />
+        <TabMenuItems
+          api={api}
+          editor={containerApi}
+          session={params.kind === 'terminal' ? params.sessionId : undefined}
+        />
       </ContextMenuContent>
     </ContextMenu>
   )
@@ -106,15 +111,20 @@ export function EditorTab({
 /**
  * The actions of a tab, which are also the way to move a tab without a drag
  * (WCAG 2.2 SC 2.5.7). It reads the groups when the menu opens, and it shows
- * only the actions that apply.
+ * only the actions that apply. The tab of a terminal can also end its
+ * session; Close only detaches from it.
  */
 function TabMenuItems({
   api,
   editor,
+  session,
 }: {
   api: DockviewPanelApi
   editor: DockviewApi
+  /** The terminal session of the tab, or none for another kind of tab. */
+  session?: string
 }) {
+  const { kill } = useContext(TerminalActions)
   const groups = editor.groups
   const index = groups.indexOf(api.group)
   const others = api.group.panels.filter((panel) => panel.api !== api)
@@ -153,6 +163,14 @@ function TabMenuItems({
         >
           Move to previous group
         </ContextMenuItem>
+      )}
+      {session && kill && (
+        <>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => kill(session)}>
+            Kill terminal
+          </ContextMenuItem>
+        </>
       )}
     </>
   )

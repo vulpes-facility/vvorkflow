@@ -24,3 +24,4 @@ tauri-plugin-log = "2"
 vvorkflow-protocol = { version = "0.1.0", path = "../../../crates/vvorkflow-protocol" }
 tauri-plugin-dialog = "2"
 vvorkflow-server = { version = "0.1.0", path = "../../../crates/vvorkflow-server" }
+tokio = { version = "1.54.1", default-features = false, features = ["sync"] }

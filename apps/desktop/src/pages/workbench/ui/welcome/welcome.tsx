@@ -4,11 +4,14 @@ import {
   FolderOpen,
   GitBranchPlus,
   Plus,
+  Power,
+  SquareTerminal,
   type LucideIcon,
 } from 'lucide-react'
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { Platform } from '@/shared/lib'
-import { ErrorMark, LogoMark, Shortcut } from '@/shared/ui'
+import { ErrorMark, IconButton, LogoMark, Shortcut } from '@/shared/ui'
+import { ConfirmDialog } from '../confirm/confirm-dialog'
 
 /** A folder in the projects root of the engine. */
 export interface WelcomeProject {
@@ -37,7 +40,13 @@ interface WelcomeProps {
   onNewProject?: () => void
   onOpenFolder?: () => void
   onAddWorktree?: () => void
+  onNewTerminal?: () => void
   onOpenProject?: (project: WelcomeProject) => void
+  /**
+   * Stops an engine of another version, with its terminal sessions. With it,
+   * a button next to the engine error asks the user, and then calls it.
+   */
+  onStopEngine?: () => void
   /** The shortcut of the command palette, such as `mod+shift+p`, for the hint at the bottom. */
   commandPaletteShortcut?: string
 }
@@ -57,9 +66,13 @@ export function Welcome({
   onNewProject,
   onOpenFolder,
   onAddWorktree,
+  onNewTerminal,
   onOpenProject,
+  onStopEngine,
   commandPaletteShortcut,
 }: WelcomeProps) {
+  const [stopOpen, setStopOpen] = useState(false)
+  const stopButton = useRef<HTMLButtonElement>(null)
   const actions: StartAction[] = [
     onNewProject && {
       label: 'New project…',
@@ -77,6 +90,12 @@ export function Welcome({
       label: 'Add worktree…',
       icon: GitBranchPlus,
       onSelect: onAddWorktree,
+    },
+    onNewTerminal && {
+      label: 'New terminal',
+      icon: SquareTerminal,
+      shortcut: 'mod+shift+t',
+      onSelect: onNewTerminal,
     },
   ].filter((action): action is StartAction => Boolean(action))
 
@@ -190,6 +209,16 @@ export function Welcome({
                     onBlur={leave}
                   />
                 )}
+                {engineError && onStopEngine && (
+                  <IconButton
+                    icon={Power}
+                    ref={stopButton}
+                    label="Stop engine…"
+                    onClick={() => setStopOpen(true)}
+                    onFocus={() => (focusedProject.current = ERROR_MARK)}
+                    onBlur={leave}
+                  />
+                )}
               </div>
               {engineError ? null : (
                 <ul className="flex flex-col">
@@ -208,6 +237,22 @@ export function Welcome({
             </section>
           )}
         </div>
+
+        {onStopEngine && (
+          <ConfirmDialog
+            open={stopOpen}
+            onOpenChange={setStopOpen}
+            title="Stop the engine and its terminals?"
+            action="Stop engine"
+            onConfirm={onStopEngine}
+            // The button goes away with the error of the engine that stops.
+            finalFocus={() =>
+              stopButton.current?.isConnected
+                ? stopButton.current
+                : region.current
+            }
+          />
+        )}
 
         {commandPaletteShortcut && (
           <p className="flex items-center gap-2 px-2 text-xs text-muted-foreground">

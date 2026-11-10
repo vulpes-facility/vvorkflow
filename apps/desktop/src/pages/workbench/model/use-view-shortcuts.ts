@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import type { Platform } from '@/shared/lib'
 import { isDialogKey } from './dialog-keys'
-import { views, type ViewId } from './views'
+import { views, type Activity, type ViewId } from './views'
 
 /**
  * Selects a view of the side bar when the user presses its shortcut, and
@@ -24,7 +24,7 @@ export function useViewShortcuts(
       }
       if (!event.shiftKey) return
       const view = views.find(
-        (candidate) => candidate.shortcut === `mod+shift+${key}`,
+        (candidate: Activity) => candidate.shortcut === `mod+shift+${key}`,
       )
       if (!view) return
       event.preventDefault()

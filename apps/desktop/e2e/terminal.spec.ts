@@ -100,11 +100,19 @@ test('a terminal keeps its output while another tab is open', async ({
     .locator('[data-terminal]')
     .filter({ hasText: '~/code/vvorkflow.explorer' })
   await expect(agent).toBeVisible()
-  const [screenWidth, hostWidth] = await agent.evaluate((element) => [
-    element.querySelector('.xterm-screen')?.getBoundingClientRect().width ?? 0,
-    element.getBoundingClientRect().width,
-  ])
-  expect(screenWidth).toBeGreaterThan(hostWidth * 0.9)
+  // The terminal proposes the size of its room, and takes it when the
+  // session tells it.
+  await expect
+    .poll(() =>
+      agent.evaluate((element) => {
+        const screen = element.querySelector('.xterm-screen')
+        return (
+          (screen?.getBoundingClientRect().width ?? 0) /
+          element.getBoundingClientRect().width
+        )
+      }),
+    )
+    .toBeGreaterThan(0.9)
   await page.getByRole('tab', { name: /^zsh · feat\/terminal-tabs/ }).click()
   // The same terminal comes back, with its output; it was not made again.
   await expect(page.locator('[data-terminal][data-probe]')).toBeVisible()

@@ -5,6 +5,8 @@ import {
   hello,
   isTauri,
   listProjects,
+  otherEngine,
+  stopEngine,
   type Project,
 } from '@/shared/api'
 
@@ -14,13 +16,18 @@ import {
  *
  * @returns The projects in name order, the message of the engine when it
  *   did not start or cannot read the root, and, when the engine answers, the
- *   action that makes a project and lists the projects again. Outside Tauri,
- *   no projects and no action.
+ *   action that makes a project and lists the projects again. When `hello`
+ *   fails and an engine of another version listens, which keeps its place
+ *   because it has terminal sessions, also the action that stops that engine
+ *   and starts again. Outside Tauri, no projects and no action.
  */
 export function useEngineProjects(): {
   projects: WelcomeProject[]
   engineError?: string
+  /** True when the engine answered `hello`. */
+  engineReady: boolean
   createProject?: (name: string) => Promise<Project>
+  stopEngine?: () => void
 } {
   const queryClient = useQueryClient()
   const welcome = useQuery({
@@ -34,7 +41,23 @@ export function useEngineProjects(): {
     queryFn: listProjects,
     enabled: welcome.isSuccess,
   })
+  const other = useQuery({
+    queryKey: ['engine', 'other'],
+    queryFn: otherEngine,
+    enabled: welcome.isError,
+  })
   return {
+    engineReady: welcome.isSuccess,
+    stopEngine:
+      welcome.isError && other.data
+        ? () =>
+            void stopEngine()
+              // The engine that does not stop tells why in the next `hello`.
+              .catch(() => {})
+              .then(() =>
+                queryClient.invalidateQueries({ queryKey: ['engine'] }),
+              )
+        : undefined,
     projects: (listed.data ?? []).map(({ path, name, git }) => ({
       id: path,
       name,

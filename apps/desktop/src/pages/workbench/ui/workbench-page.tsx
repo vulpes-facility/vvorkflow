@@ -3,7 +3,14 @@ import type {
   DockviewReadyEvent,
   IDockviewPanelProps,
 } from 'dockview-react'
-import { FolderOpen, Keyboard, Search, Settings } from 'lucide-react'
+import {
+  FolderOpen,
+  Keyboard,
+  Plus,
+  Search,
+  Settings,
+  SquareTerminal,
+} from 'lucide-react'
 import {
   createContext,
   useCallback,
@@ -17,6 +24,7 @@ import { readPixelToken, type Platform } from '@/shared/lib'
 import {
   Button,
   EmptyState,
+  IconButton,
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -30,13 +38,15 @@ import type { EditorTabParams } from './editor-area/editor-tab'
 import { SideBar } from './side-bar/side-bar'
 import { NewProjectDialog } from './new-project/new-project-dialog'
 import { TerminalView } from './terminal/terminal-view'
+import { TerminalsView } from './terminals/terminals-view'
 import { StatusBar, type StatusItem } from './status-bar/status-bar'
 import { TitleBar, type WindowContext } from './title-bar/title-bar'
 import { Welcome, type WelcomeProject } from './welcome/welcome'
 import { isDialogKey } from '../model/dialog-keys'
 import { useLayout } from '../model/layout'
 import type { ExplorerRepository, ExplorerSource } from '../model/explorer'
-import type { TerminalSession } from '../model/terminal'
+import { HIDDEN_TERMINAL_TIME, type TerminalSession } from '../model/terminal'
+import { TerminalActions } from '../model/terminal-actions'
 import { useActionShortcuts } from '../model/use-action-shortcuts'
 import { useEditorShortcuts } from '../model/use-editor-shortcuts'
 import { useFocusRescue } from '../model/use-focus-rescue'
@@ -65,8 +75,22 @@ interface WorkbenchPageProps {
   explorer?: ExplorerSource
   /** The worktree and folder ids that the Explorer shows open at the start. */
   expandedPaths?: string[]
-  /** The terminal sessions, such as agents. Each one opens as a tab of the editor area. */
+  /**
+   * The terminal sessions of the engine, such as agents. Each one opens as a
+   * tab of the editor area when it first shows here. A tab that the user
+   * closes detaches from its session, which stays in the Terminals view. The
+   * tab of a session that leaves this list closes.
+   */
   terminals?: TerminalSession[]
+  /** Starts a terminal session. Without it, the window has no New terminal action. */
+  onNewTerminal?: () => void
+  /** Ends a terminal session. Without it, a terminal has no Kill action. */
+  onKillTerminal?: (id: string) => void
+  /**
+   * Stops an engine of another version, with its sessions, after the user
+   * said yes. The Welcome tab shows the action next to the engine error.
+   */
+  onStopEngine?: () => void
   onOpenFile?: (id: string) => void
   /**
    * Makes a project with the name that the user gave. When it rejects, the
@@ -88,7 +112,12 @@ interface WorkbenchPageProps {
  * for the panels of the editor area, which dockview renders.
  */
 const PageProps = createContext<
-  (WorkbenchPageProps & { onNewProject?: () => void }) | null
+  | (WorkbenchPageProps & {
+      onNewProject?: () => void
+      /** Called with each title that the program of a session sets. */
+      onTerminalTitle: (id: string, title: string) => void
+    })
+  | null
 >(null)
 
 /**
@@ -120,6 +149,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const narrow = useNarrowWindow(setSideBarOpen)
   useActionShortcuts(platform, {
     onNewProject,
+    onNewTerminal: props.onNewTerminal,
     onOpenFolder: props.onOpenFolder,
     onOpenSettings,
   })
@@ -158,26 +188,74 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   useEditorShortcuts(platform, getEditor)
   useTabMenuKeys()
   useRegionShortcuts(root, getEditor)
-  // Each session opens as a tab once; the last one is the active tab.
+  // Each session opens as a tab once, when it first shows; the last one is
+  // the active tab. A tab that the user closed stays closed, and the tab of
+  // a session that ended closes.
   const terminals = props.terminals
   const latestTerminals = useRef(terminals)
-  const onEditorReady = useCallback((event: DockviewReadyEvent) => {
-    editor.current = event.api
-    openWelcome(event)
-    openTerminals(event.api, latestTerminals.current ?? [])
+  const shown = useRef(new Set<string>())
+  const syncTerminals = useCallback((api: DockviewApi) => {
+    const sessions = latestTerminals.current ?? []
+    const ids = new Set(sessions.map(({ id }) => id))
+    for (const id of shown.current) {
+      if (ids.has(id)) continue
+      shown.current.delete(id)
+      api.getPanel(terminalPanelId(id))?.api.close()
+    }
+    for (const session of sessions) {
+      if (shown.current.has(session.id)) continue
+      shown.current.add(session.id)
+      openTerminal(api, session)
+    }
   }, [])
+  const onEditorReady = useCallback(
+    (event: DockviewReadyEvent) => {
+      editor.current = event.api
+      openWelcome(event)
+      syncTerminals(event.api)
+    },
+    [syncTerminals],
+  )
   useEffect(() => {
     latestTerminals.current = terminals
     const api = editor.current
-    if (api) openTerminals(api, terminals ?? [])
-  }, [terminals])
+    if (api) syncTerminals(api)
+  }, [terminals, syncTerminals])
+  // The titles that the programs set, for the tabs and the Terminals view.
+  const [terminalTitles, setTerminalTitles] = useState<Record<string, string>>(
+    {},
+  )
+  const onTerminalTitle = useCallback((id: string, title: string) => {
+    setTerminalTitles((titles) =>
+      titles[id] === title ? titles : { ...titles, [id]: title },
+    )
+    editor.current?.getPanel(terminalPanelId(id))?.api.setTitle(title)
+  }, [])
+  // Shows the tab of a session, and makes it again after the user closed it.
+  const showTerminal = useCallback(
+    (id: string) => {
+      const api = editor.current
+      const session = latestTerminals.current?.find(
+        (candidate) => candidate.id === id,
+      )
+      if (!api || !session) return
+      const panel = api.getPanel(terminalPanelId(id))
+      if (panel) panel.api.setActive()
+      else openTerminal(api, session, terminalTitles[id])
+    },
+    [terminalTitles],
+  )
 
   const activeView =
     views.find((candidate) => candidate.id === view) ?? views[0]
   const explorer = props.explorer
   const hasTree = Boolean(explorer) && (repositories?.length ?? 0) > 0
   // A tree takes the focus itself, so its scroll area is not a second tab stop.
-  const contentFocusable = !(view === 'explorer' && hasTree)
+  const hasTerminals = (terminals?.length ?? 0) > 0
+  const contentFocusable = !(
+    (view === 'explorer' && hasTree) ||
+    (view === 'terminals' && hasTerminals)
+  )
   useFocusRescue(root, { sideBarOpen, drawer, view, contentFocusable })
   // While a terminal has the focus, the status bar tells the way out of it.
   const [terminalFocused, setTerminalFocused] = useState(false)
@@ -204,8 +282,38 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       {view === 'search' && (
         <EmptyState icon={Search} title="Nothing to search" />
       )}
+      {view === 'terminals' &&
+        (hasTerminals ? (
+          <TerminalsView
+            sessions={(terminals ?? []).map(({ id, title, folder }) => ({
+              id,
+              title: terminalTitles[id] ?? title,
+              folder,
+            }))}
+            onOpen={showTerminal}
+            onKill={props.onKillTerminal}
+          />
+        ) : (
+          <EmptyState icon={SquareTerminal} title="No terminals">
+            {props.onNewTerminal && (
+              <Button size="sm" onClick={props.onNewTerminal}>
+                New terminal
+              </Button>
+            )}
+          </EmptyState>
+        ))}
     </>
   )
+  // The actions of the view, at the right of its title.
+  const sideBarActions = view === 'terminals' &&
+    hasTerminals &&
+    props.onNewTerminal && (
+      <IconButton
+        icon={Plus}
+        label="New terminal"
+        onClick={props.onNewTerminal}
+      />
+    )
   const sideBar = (
     <SideBar
       platform={platform}
@@ -213,6 +321,7 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       id={sideBarId}
       title={activeView.label}
       contentFocusable={contentFocusable}
+      actions={sideBarActions}
       onWidth={(width) =>
         sideBarPanel.current?.resize(
           {
@@ -235,124 +344,131 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       id={sideBarId}
       title={activeView.label}
       contentFocusable={contentFocusable}
+      actions={sideBarActions}
     >
       {sideBarContent}
     </SideBar>
   )
 
   return (
-    <PageProps.Provider value={{ ...props, onNewProject }}>
-      <TooltipProvider delay={600}>
-        <div
-          ref={root}
-          className="relative flex h-full bg-chrome text-foreground"
-          data-platform={platform}
-          onFocus={(event) =>
-            setTerminalFocused(event.target.closest('[data-terminal]') !== null)
-          }
-          onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget))
-              setTerminalFocused(false)
-          }}
-        >
-          <ActivityBar
-            platform={platform}
-            activities={[...views]}
-            activeId={view}
-            open={sideBarOpen}
-            onSelect={(id) => selectView(id as typeof view)}
-            onNavigate={(id) => showView(id as typeof view)}
-            panelId={sideBarId}
-            footer={
-              onOpenSettings && (
-                <ActivityAction
-                  platform={platform}
-                  label="Settings"
-                  icon={Settings}
-                  shortcut="mod+,"
-                  onClick={onOpenSettings}
-                />
+    <PageProps.Provider value={{ ...props, onNewProject, onTerminalTitle }}>
+      <TerminalActions.Provider value={{ kill: props.onKillTerminal }}>
+        <TooltipProvider delay={600}>
+          <div
+            ref={root}
+            className="relative flex h-full bg-chrome text-foreground"
+            data-platform={platform}
+            onFocus={(event) =>
+              setTerminalFocused(
+                event.target.closest('[data-terminal]') !== null,
               )
             }
-          />
-          {drawer && (
-            // The drawer starts under the header row, so that the window buttons stay usable.
-            <div
-              data-drawer
-              className="absolute top-titlebar bottom-0 left-(--vv-activitybar-w) z-30 w-[min(var(--vv-sidebar-w),calc(100%-var(--vv-activitybar-w)))] border-r border-hairline shadow-overlay"
-            >
-              {sideBarDrawer}
-            </div>
-          )}
-          <div className="flex min-w-0 flex-1">
-            <ResizablePanelGroup
-              orientation="horizontal"
-              className="min-w-0 flex-1"
-            >
-              <ResizablePanel
-                panelRef={sideBarPanel}
-                disabled={narrow}
-                collapsible
-                collapsedSize={0}
-                onResize={(size) => {
-                  // In a narrow window the panel stays collapsed under the drawer.
-                  if (!narrow) setSideBarOpen(size.inPixels > 0)
-                }}
-                defaultSize={readPixelToken('--vv-sidebar-w', 300)}
-                minSize={readPixelToken('--vv-sidebar-min-w', 240)}
-                maxSize={readPixelToken('--vv-sidebar-max-w', 560)}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget))
+                setTerminalFocused(false)
+            }}
+          >
+            <ActivityBar
+              platform={platform}
+              activities={[...views]}
+              activeId={view}
+              open={sideBarOpen}
+              onSelect={(id) => selectView(id as typeof view)}
+              onNavigate={(id) => showView(id as typeof view)}
+              panelId={sideBarId}
+              footer={
+                onOpenSettings && (
+                  <ActivityAction
+                    platform={platform}
+                    label="Settings"
+                    icon={Settings}
+                    shortcut="mod+,"
+                    onClick={onOpenSettings}
+                  />
+                )
+              }
+            />
+            {drawer && (
+              // The drawer starts under the header row, so that the window buttons stay usable.
+              <div
+                data-drawer
+                className="absolute top-titlebar bottom-0 left-(--vv-activitybar-w) z-30 w-[min(var(--vv-sidebar-w),calc(100%-var(--vv-activitybar-w)))] border-r border-hairline shadow-overlay"
               >
-                {!narrow && sideBar}
-              </ResizablePanel>
-              {/* The line starts at the border of the header row, so that the header row looks like one row. */}
-              <ResizableHandle
-                // In a narrow window the side bar is a drawer, so the separator does nothing.
-                disabled={narrow}
-                withHandle={!narrow}
-                className="w-px bg-transparent before:absolute before:inset-x-0 before:top-[calc(var(--vv-titlebar-h)-var(--vv-hairline-w))] before:bottom-0 before:bg-hairline before:transition-colors before:delay-(--vv-delay-sash) before:duration-(--vv-duration-fast) after:w-2 data-[separator=active]:before:bg-indicator data-[separator=hover]:before:bg-indicator"
-              />
-              <ResizablePanel
-                className="flex min-w-0 flex-col"
-                // The side bar cannot squeeze the editor area below a usable width.
-                minSize={
-                  narrow ? undefined : readPixelToken('--vv-editor-min-w', 320)
-                }
+                {sideBarDrawer}
+              </div>
+            )}
+            <div className="flex min-w-0 flex-1">
+              <ResizablePanelGroup
+                orientation="horizontal"
+                className="min-w-0 flex-1"
               >
-                <TitleBar
-                  platform={platform}
-                  context={context}
-                  windowControls={windowControls}
-                  besideWindowButtons={platform === 'macos' && !docked}
+                <ResizablePanel
+                  panelRef={sideBarPanel}
+                  disabled={narrow}
+                  collapsible
+                  collapsedSize={0}
+                  onResize={(size) => {
+                    // In a narrow window the panel stays collapsed under the drawer.
+                    if (!narrow) setSideBarOpen(size.inPixels > 0)
+                  }}
+                  defaultSize={readPixelToken('--vv-sidebar-w', 300)}
+                  minSize={readPixelToken('--vv-sidebar-min-w', 240)}
+                  maxSize={readPixelToken('--vv-sidebar-max-w', 560)}
+                >
+                  {!narrow && sideBar}
+                </ResizablePanel>
+                {/* The line starts at the border of the header row, so that the header row looks like one row. */}
+                <ResizableHandle
+                  // In a narrow window the side bar is a drawer, so the separator does nothing.
+                  disabled={narrow}
+                  withHandle={!narrow}
+                  className="w-px bg-transparent before:absolute before:inset-x-0 before:top-[calc(var(--vv-titlebar-h)-var(--vv-hairline-w))] before:bottom-0 before:bg-hairline before:transition-colors before:delay-(--vv-delay-sash) before:duration-(--vv-duration-fast) after:w-2 data-[separator=active]:before:bg-indicator data-[separator=hover]:before:bg-indicator"
                 />
-                {/* Under the drawer, the editor area and the status bar are inert. */}
-                <div inert={drawer} className="flex min-h-0 flex-1 flex-col">
-                  <div className="min-h-0 flex-1">
-                    <EditorArea
-                      components={components}
-                      onReady={onEditorReady}
+                <ResizablePanel
+                  className="flex min-w-0 flex-col"
+                  // The side bar cannot squeeze the editor area below a usable width.
+                  minSize={
+                    narrow
+                      ? undefined
+                      : readPixelToken('--vv-editor-min-w', 320)
+                  }
+                >
+                  <TitleBar
+                    platform={platform}
+                    context={context}
+                    windowControls={windowControls}
+                    besideWindowButtons={platform === 'macos' && !docked}
+                  />
+                  {/* Under the drawer, the editor area and the status bar are inert. */}
+                  <div inert={drawer} className="flex min-h-0 flex-1 flex-col">
+                    <div className="min-h-0 flex-1">
+                      <EditorArea
+                        components={components}
+                        onReady={onEditorReady}
+                      />
+                    </div>
+                    <StatusBar
+                      start={status?.start}
+                      end={
+                        terminalFocused
+                          ? [terminalKeysHint, ...(status?.end ?? [])]
+                          : status?.end
+                      }
                     />
                   </div>
-                  <StatusBar
-                    start={status?.start}
-                    end={
-                      terminalFocused
-                        ? [terminalKeysHint, ...(status?.end ?? [])]
-                        : status?.end
-                    }
-                  />
-                </div>
-              </ResizablePanel>
-            </ResizablePanelGroup>
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            </div>
           </div>
-        </div>
-        {onCreateProject && (
-          <NewProjectDialog
-            open={newProjectOpen}
-            onOpenChange={setNewProjectOpen}
-            onCreate={onCreateProject}
-          />
-        )}
-      </TooltipProvider>
+          {onCreateProject && (
+            <NewProjectDialog
+              open={newProjectOpen}
+              onOpenChange={setNewProjectOpen}
+              onCreate={onCreateProject}
+            />
+          )}
+        </TooltipProvider>
+      </TerminalActions.Provider>
     </PageProps.Provider>
   )
 }
@@ -366,6 +482,8 @@ function WelcomePanel() {
       projects={props.projects}
       engineError={props.engineError}
       onNewProject={props.onNewProject}
+      onNewTerminal={props.onNewTerminal}
+      onStopEngine={props.onStopEngine}
       onOpenFolder={props.onOpenFolder}
       onAddWorktree={props.onAddWorktree}
       onOpenProject={props.onOpenProject}
@@ -383,14 +501,48 @@ const terminalKeysHint: StatusItem = {
     'The terminal takes the Tab key. F6 and Shift+F6 move the focus to the other parts of the window.',
 }
 
-function TerminalPanel({ params }: IDockviewPanelProps<EditorTabParams>) {
+/**
+ * The panel of a terminal session. A tab that is hidden for 5 minutes drops
+ * its terminal and detaches from the session; the terminal comes back, with
+ * the screen of the session, when the tab shows again.
+ */
+function TerminalPanel({ api, params }: IDockviewPanelProps<EditorTabParams>) {
   const props = useContext(PageProps)
   if (!props) throw new Error('TerminalPanel renders only inside WorkbenchPage')
+  const [kept, setKept] = useState(true)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    function follow(visible: boolean) {
+      clearTimeout(timer)
+      if (visible) setKept(true)
+      else timer = setTimeout(() => setKept(false), HIDDEN_TERMINAL_TIME)
+    }
+    follow(api.isVisible)
+    const subscription = api.onDidVisibilityChange((event) =>
+      follow(event.isVisible),
+    )
+    return () => {
+      clearTimeout(timer)
+      subscription.dispose()
+    }
+  }, [api])
   const session = props.terminals?.find(
     (candidate) => candidate.id === params.sessionId,
   )
-  return session ? (
-    <TerminalView session={session} platform={props.platform} />
+  const { onTerminalTitle } = props
+  const sessionId = session?.id
+  const onTitle = useCallback(
+    (title: string) => {
+      if (sessionId) onTerminalTitle(sessionId, title)
+    },
+    [sessionId, onTerminalTitle],
+  )
+  return session && kept ? (
+    <TerminalView
+      session={session}
+      platform={props.platform}
+      onTitle={onTitle}
+    />
   ) : null
 }
 
@@ -403,18 +555,18 @@ const components: Record<
   terminal: TerminalPanel,
 }
 
-function openTerminals(api: DockviewApi, sessions: TerminalSession[]) {
-  for (const session of sessions) {
-    const id = `terminal:${session.id}`
-    if (api.getPanel(id)) continue
-    const params: EditorTabParams = { kind: 'terminal', sessionId: session.id }
-    api.addPanel({
-      id,
-      component: 'terminal',
-      title: session.title,
-      params,
-    })
-  }
+const terminalPanelId = (session: string) => `terminal:${session}`
+
+/** Opens the tab of a session, as the active tab. */
+function openTerminal(
+  api: DockviewApi,
+  session: TerminalSession,
+  title = session.title,
+) {
+  const id = terminalPanelId(session.id)
+  if (api.getPanel(id)) return
+  const params: EditorTabParams = { kind: 'terminal', sessionId: session.id }
+  api.addPanel({ id, component: 'terminal', title, params })
 }
 
 function openWelcome(event: DockviewReadyEvent) {
