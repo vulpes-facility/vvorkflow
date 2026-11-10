@@ -1,6 +1,11 @@
 import { z } from 'zod'
 
 export const protocol = z.object({
+  attach_session: z
+    .object({ session: z.string() })
+    .describe(
+      'Attaches the connection to a session: the screen of the session comes as\na binary frame, and then each byte of its output. A second attach sends\nthe screen again.',
+    ),
   changed_path: z
     .object({
       path: z.string(),
@@ -27,6 +32,34 @@ export const protocol = z.object({
     .describe(
       'Makes a project: a new, empty folder directly in the projects root.',
     ),
+  create_session: z
+    .object({
+      columns: z.number().int().gte(2).lte(500),
+      rows: z.number().int().gte(1).lte(200),
+      worktree: z
+        .union([
+          z
+            .string()
+            .describe(
+              'The absolute path of an open worktree, where the shell starts. None\nis the projects root.',
+            ),
+          z
+            .null()
+            .describe(
+              'The absolute path of an open worktree, where the shell starts. None\nis the projects root.',
+            ),
+        ])
+        .describe(
+          'The absolute path of an open worktree, where the shell starts. None\nis the projects root.',
+        )
+        .default(null),
+    })
+    .describe(
+      'Starts the shell of the user in a new pseudo-terminal. The request has no\ncommand: the user types each command (core value 6).',
+    ),
+  detach_session: z
+    .object({ session: z.string() })
+    .describe('Detaches the connection from a session; the session continues.'),
   directory_entry: z
     .object({ kind: z.enum(['file', 'folder']), name: z.string() })
     .describe('An entry of a folder.'),
@@ -48,9 +81,130 @@ export const protocol = z.object({
       message: z.string().describe('A sentence for the user.'),
     })
     .describe('A refused or failed request.'),
+  event: z
+    .any()
+    .superRefine((x, ctx) => {
+      const schemas = [
+        z
+          .object({
+            event: z.literal('session.ended'),
+            params: z
+              .object({
+                exitCode: z
+                  .union([
+                    z
+                      .number()
+                      .int()
+                      .gte(0)
+                      .describe(
+                        'The exit code of the shell, or none when a signal ended it.',
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        'The exit code of the shell, or none when a signal ended it.',
+                      ),
+                  ])
+                  .describe(
+                    'The exit code of the shell, or none when a signal ended it.',
+                  )
+                  .optional(),
+                session: z.string(),
+                signal: z
+                  .union([
+                    z
+                      .number()
+                      .int()
+                      .describe(
+                        'The signal that ended the shell, or none. Always none on Windows.',
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        'The signal that ended the shell, or none. Always none on Windows.',
+                      ),
+                  ])
+                  .describe(
+                    'The signal that ended the shell, or none. Always none on Windows.',
+                  )
+                  .optional(),
+              })
+              .describe('The end of the shell of a session.'),
+          })
+          .describe(
+            'The shell of a session ended. No frame of that session follows.',
+          ),
+        z
+          .object({
+            event: z.literal('session.resized'),
+            params: z
+              .object({
+                columns: z.number().int().gte(2).lte(500),
+                rows: z.number().int().gte(1).lte(200),
+                session: z.string(),
+              })
+              .describe('The new size of a session.'),
+          })
+          .describe('A session has a new size, from the output that follows.'),
+        z
+          .object({
+            event: z.literal('connection.closed'),
+            params: z
+              .record(z.string(), z.any())
+              .describe(
+                'The end of the connection of the app core to the engine.',
+              ),
+          })
+          .describe(
+            'The connection of the app core to the engine ended. Only the app core\nsends it, after the last frame of that connection.',
+          ),
+      ]
+      const { errors, failed } = schemas.reduce<{
+        errors: z.core.$ZodIssue[]
+        failed: number
+      }>(
+        ({ errors, failed }, schema) =>
+          ((result) =>
+            result.error
+              ? {
+                  errors: [...errors, ...result.error.issues],
+                  failed: failed + 1,
+                }
+              : { errors, failed })(schema.safeParse(x)),
+        { errors: [], failed: 0 },
+      )
+      const passed = schemas.length - failed
+      if (passed !== 1) {
+        ctx.addIssue(
+          errors.length
+            ? {
+                path: [],
+                code: 'invalid_union',
+                errors: [errors],
+                message:
+                  'Invalid input: Should pass single schema. Passed ' + passed,
+              }
+            : {
+                path: [],
+                code: 'custom',
+                errors: [errors],
+                message:
+                  'Invalid input: Should pass single schema. Passed ' + passed,
+              },
+        )
+      }
+    })
+    .describe(
+      'A message without an id, which the engine can send at any time after\n`hello`, between the answers. The engine sends the events of a session\nonly to its attached clients.',
+    ),
   hello: z
     .object({ protocol: z.number().int().gte(0) })
     .describe('Starts a connection with the protocol version of the client.'),
+  kill_session: z
+    .object({ session: z.string() })
+    .describe(
+      'Ends a session: the shell and its foreground job get SIGHUP, and SIGKILL\nafter 3 seconds.',
+    ),
   list_directory: z
     .object({
       path: z
@@ -66,6 +220,9 @@ export const protocol = z.object({
   list_projects: z
     .record(z.string(), z.any())
     .describe('Lists the projects: the folders directly in the projects root.'),
+  list_sessions: z
+    .record(z.string(), z.any())
+    .describe('Lists the terminal sessions of the engine.'),
   open_folder: z
     .object({
       path: z
@@ -215,13 +372,129 @@ export const protocol = z.object({
           .describe('Answers each [`ChangedPath`] of the worktree.'),
         z
           .object({
-            method: z.literal('shutdown'),
+            method: z.literal('session.list'),
             params: z
               .record(z.string(), z.any())
+              .describe('Lists the terminal sessions of the engine.'),
+          })
+          .describe(
+            'Answers each [`Session`] of the engine, in the order of its start.',
+          ),
+        z
+          .object({
+            method: z.literal('session.create'),
+            params: z
+              .object({
+                columns: z.number().int().gte(2).lte(500),
+                rows: z.number().int().gte(1).lte(200),
+                worktree: z
+                  .union([
+                    z
+                      .string()
+                      .describe(
+                        'The absolute path of an open worktree, where the shell starts. None\nis the projects root.',
+                      ),
+                    z
+                      .null()
+                      .describe(
+                        'The absolute path of an open worktree, where the shell starts. None\nis the projects root.',
+                      ),
+                  ])
+                  .describe(
+                    'The absolute path of an open worktree, where the shell starts. None\nis the projects root.',
+                  )
+                  .default(null),
+              })
+              .describe(
+                'Starts the shell of the user in a new pseudo-terminal. The request has no\ncommand: the user types each command (core value 6).',
+              ),
+          })
+          .describe(
+            'Starts the shell of the user in a new pseudo-terminal. Answers its\n[`Session`].',
+          ),
+        z
+          .object({
+            method: z.literal('session.attach'),
+            params: z
+              .object({ session: z.string() })
+              .describe(
+                'Attaches the connection to a session: the screen of the session comes as\na binary frame, and then each byte of its output. A second attach sends\nthe screen again.',
+              ),
+          })
+          .describe(
+            'Sends the screen and then the output of a session to this connection.\nAnswers the [`Session`].',
+          ),
+        z
+          .object({
+            method: z.literal('session.detach'),
+            params: z
+              .object({ session: z.string() })
+              .describe(
+                'Detaches the connection from a session; the session continues.',
+              ),
+          })
+          .describe(
+            'Stops the output of a session to this connection. Answers [`Done`].',
+          ),
+        z
+          .object({
+            method: z.literal('session.write'),
+            params: z
+              .object({
+                data: z
+                  .string()
+                  .describe(
+                    'The input bytes in Base64 (RFC 4648, with padding).',
+                  ),
+                session: z.string(),
+              })
+              .describe('Sends input to the program of a session.'),
+          })
+          .describe(
+            'Puts input bytes in the input queue of a session. Answers [`Done`].',
+          ),
+        z
+          .object({
+            method: z.literal('session.resize'),
+            params: z
+              .object({
+                columns: z.number().int().gte(2).lte(500),
+                rows: z.number().int().gte(1).lte(200),
+                session: z.string(),
+              })
+              .describe(
+                'Changes the size of the pseudo-terminal and of the kept screen.',
+              ),
+          })
+          .describe('Changes the size of a session. Answers [`Done`].'),
+        z
+          .object({
+            method: z.literal('session.kill'),
+            params: z
+              .object({ session: z.string() })
+              .describe(
+                'Ends a session: the shell and its foreground job get SIGHUP, and SIGKILL\nafter 3 seconds.',
+              ),
+          })
+          .describe(
+            'Ends a session as the close of a terminal window does. Answers\n[`Done`]; the event `session.ended` follows.',
+          ),
+        z
+          .object({
+            method: z.literal('shutdown'),
+            params: z
+              .object({
+                force: z
+                  .boolean()
+                  .describe(
+                    'False, or not set: an engine with sessions refuses to stop. True: the\nengine ends each session, and then stops.',
+                  )
+                  .default(false),
+              })
               .describe('Stops the engine process.'),
           })
           .describe(
-            'Stops the engine process. Answers [`Done`], then the process stops.\nIt is valid before `hello`, and its shape never changes, so that each\napp can stop an engine of an older version.',
+            'Stops the engine process. Answers [`Done`], then the process stops.\nIt is valid before `hello`, and its shape never changes from protocol\n3, so that each app can stop an engine of another version.',
           ),
       ]
       const { errors, failed } = schemas.reduce<{
@@ -260,7 +533,46 @@ export const protocol = z.object({
       }
     })
     .describe('A request to the engine: its method, and its params.'),
-  shutdown: z.record(z.string(), z.any()).describe('Stops the engine process.'),
+  resize_session: z
+    .object({
+      columns: z.number().int().gte(2).lte(500),
+      rows: z.number().int().gte(1).lte(200),
+      session: z.string(),
+    })
+    .describe(
+      'Changes the size of the pseudo-terminal and of the kept screen.',
+    ),
+  session: z
+    .object({
+      columns: z.number().int().gte(2).lte(500),
+      folder: z
+        .string()
+        .describe('The absolute path of the folder where the shell started.'),
+      id: z
+        .string()
+        .describe(
+          '16 characters, each a digit or a lowercase letter from `a` to `f`.',
+        ),
+      rows: z.number().int().gte(1).lte(200),
+      title: z
+        .string()
+        .describe(
+          'The last title that the program set, or the name of the shell.',
+        ),
+    })
+    .describe(
+      'A terminal session: a pseudo-terminal with the shell of the user in it.',
+    ),
+  shutdown: z
+    .object({
+      force: z
+        .boolean()
+        .describe(
+          'False, or not set: an engine with sessions refuses to stop. True: the\nengine ends each session, and then stops.',
+        )
+        .default(false),
+    })
+    .describe('Stops the engine process.'),
   welcome: z
     .object({
       protocol: z.number().int().gte(0),
@@ -269,4 +581,12 @@ export const protocol = z.object({
     .describe(
       'The answer to [`Hello`] when the engine speaks the protocol of the client.',
     ),
+  write_session: z
+    .object({
+      data: z
+        .string()
+        .describe('The input bytes in Base64 (RFC 4648, with padding).'),
+      session: z.string(),
+    })
+    .describe('Sends input to the program of a session.'),
 })

@@ -281,7 +281,7 @@ impl EngineClient {
             if let Ok(mut socket) = self.handshake().await {
                 let shutdown = ClientMessage {
                     id: 0,
-                    request: Request::Shutdown(Shutdown {}),
+                    request: Request::Shutdown(Shutdown { force: false }),
                 };
                 if send(&mut socket, &shutdown).await.is_ok() {
                     let _ = receive(&mut socket).await;

@@ -151,6 +151,18 @@ impl Engine {
                     "Only the engine process can stop.".to_owned(),
                 ));
             }
+            Request::ListSessions(_)
+            | Request::CreateSession(_)
+            | Request::AttachSession(_)
+            | Request::DetachSession(_)
+            | Request::WriteSession(_)
+            | Request::ResizeSession(_)
+            | Request::KillSession(_) => {
+                return Err(error(
+                    ErrorCode::FailedPrecondition,
+                    "This engine has no terminal sessions yet.".to_owned(),
+                ));
+            }
         })
     }
 
