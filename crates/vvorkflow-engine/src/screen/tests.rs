@@ -75,6 +75,56 @@ fn the_alternate_screen_and_the_normal_screen_under_it() {
     round_trip(20, 5, output.as_bytes(), each_position(output.as_bytes()));
 }
 
+/// A resize changes both screens, the lines that wrap, the cursor, and the
+/// saved cursor: the screen bytes after it draw that state, at each
+/// position of the output after it.
+#[test]
+fn a_resize_on_the_normal_and_the_alternate_screen() {
+    let mut lines = String::new();
+    for line in 0..8 {
+        lines.push_str(&format!("\x1b[3{}mline {line} ", line % 8));
+        lines.push_str(&"x".repeat(line * 3));
+        lines.push_str("\x1b[0m\r\n");
+    }
+    let normal = format!("{lines}wide 日本 e\u{301}\x1b7\x1b[2;3H");
+    let alternate = format!("{normal}\x1b[?1049h\x1b[2Jalt\x1b[3;3H\x1b[44mthree\x1b[0m");
+    let cases = [
+        (normal.as_str(), "after\r\nmore \x1b8saved"),
+        (
+            alternate.as_str(),
+            "more\x1b[?1049lback\r\nnormal again \x1b8saved",
+        ),
+    ];
+    for (before, after) in cases {
+        for (columns, rows) in [(30, 8), (8, 3), (12, 5)] {
+            let start = || {
+                let mut screen = Screen::new(12, 4);
+                screen.feed(before.as_bytes());
+                screen.resize(columns, rows);
+                screen
+            };
+            let mut whole = start();
+            whole.feed(after.as_bytes());
+            let expected = whole.describe();
+            for position in each_position(after.as_bytes()) {
+                let mut screen = start();
+                screen.feed(&after.as_bytes()[..position]);
+                let bytes = screen.bytes();
+                let mut copy = Screen::new(columns, rows);
+                copy.feed(&bytes);
+                assert_eq!(
+                    copy.describe(),
+                    screen.describe(),
+                    "{columns}x{rows}, at {position}: {:?}",
+                    String::from_utf8_lossy(&bytes)
+                );
+                copy.feed(&after.as_bytes()[position..]);
+                assert_eq!(copy.describe(), expected, "{columns}x{rows}, at {position}");
+            }
+        }
+    }
+}
+
 #[test]
 fn a_scroll_region_and_the_origin_mode() {
     let output = "1\r\n2\r\n3\r\n4\r\n5\r\n6\x1b[2;4r\x1b[4Hx\r\ny\r\nz\r\n\x1b[?6h\x1b[1;1Ho\x1b[2;2Hp\

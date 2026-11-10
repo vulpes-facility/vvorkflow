@@ -592,6 +592,120 @@ mod unix {
         place.engine.stop(true).unwrap();
     }
 
+    /// Whether a program is on the `PATH`.
+    fn installed(program: &str) -> bool {
+        std::env::var_os("PATH").is_some_and(|path| {
+            std::env::split_paths(&path).any(|folder| folder.join(program).is_file())
+        })
+    }
+
+    /// Takes the messages of both viewers until each one got `text`, and
+    /// then the rest of that output.
+    fn follow_both(viewers: [(&Viewer, &mut Mirror); 2], text: &str) {
+        for (viewer, mirror) in viewers {
+            follow_until(viewer, mirror, |mirror| mirror.recently(text));
+            // A program can write its last bytes after the text, in a
+            // second read of the engine.
+            while let Some(item) = viewer.next(Instant::now() + Duration::from_millis(200)) {
+                mirror.take(item);
+            }
+        }
+    }
+
+    /// A shell with colors and wide and combining characters, `less` on the
+    /// alternate screen, a resize, and `less` again: a client that attaches
+    /// while `less` shows, and a client that attaches at the end, get the
+    /// state of the client that saw all the output.
+    #[test]
+    fn a_real_program_and_a_resize_give_each_client_the_same_screen() {
+        if !installed("less") {
+            eprintln!("skipped: less is not installed");
+            return;
+        }
+        let place = place();
+        let mut text = String::new();
+        for line in 1..=100 {
+            let color = line % 8;
+            let long = "x".repeat(line);
+            text.push_str(&format!(
+                "\x1b[3{color}m{line:03}\x1b[0m \u{6f22}\u{5b57} e\u{301} {long}\n"
+            ));
+        }
+        std::fs::write(place._base.path().join("sample.txt"), text).unwrap();
+
+        let first = Viewer::new(&place.engine);
+        let session = create(&place.engine, &first.client, 80, 24);
+        attach(&place.engine, &first, &session.id);
+        let mut from_start = Mirror::default();
+        follow_until(&first, &mut from_start, |mirror| mirror.screen.is_some());
+        // The prompt of `less` is the last output of each of its pictures:
+        // the file name and the number of the bottom line, which are not in
+        // the typed text.
+        write(
+            &place.engine,
+            &first.client,
+            &session.id,
+            "v() { LESSCHARSET=utf-8 LESSHISTFILE=- less -R -Ps'[%f %lb]' sample.txt; }; \
+             printf '\\033[1;31mred\\033[0m \\346\\274\\242\\345\\255\\227 e\\314\\201\\n'; \
+             v; printf 'pa%s\\n' used; read x; v; printf 'fin%s\\n' ished; read x; exit\r",
+        );
+        follow_until(&first, &mut from_start, |mirror| {
+            mirror.recently("[sample.txt 23]")
+        });
+        // `less` can miss a resize, or lose a key, while it handles a
+        // resize: the resize comes while the shell waits in `read`.
+        write(&place.engine, &first.client, &session.id, "q");
+        follow_until(&first, &mut from_start, |mirror| mirror.recently("paused"));
+        request(
+            &place.engine,
+            &first.client,
+            Request::ResizeSession(ResizeSession {
+                session: session.id.clone(),
+                columns: 100,
+                rows: 30,
+            }),
+        );
+        write(&place.engine, &first.client, &session.id, "\r");
+        follow_until(&first, &mut from_start, |mirror| {
+            mirror.recently("[sample.txt 29]")
+        });
+
+        // A client attaches while `less` shows the alternate screen.
+        let late = Viewer::new(&place.engine);
+        attach(&place.engine, &late, &session.id);
+        let mut late_mirror = Mirror::default();
+        follow_until(&late, &mut late_mirror, |mirror| mirror.screen.is_some());
+        // One line further: `less` scrolls, and the other lines stay as the
+        // screen frame drew them.
+        write(&place.engine, &first.client, &session.id, "j");
+        follow_both(
+            [(&first, &mut from_start), (&late, &mut late_mirror)],
+            "[sample.txt 30]",
+        );
+        assert!(from_start.describe().contains("alternate"));
+        assert_eq!(late_mirror.describe(), from_start.describe());
+
+        // Back on the normal screen, with the output of the shell under it.
+        write(&place.engine, &first.client, &session.id, "q");
+        follow_both(
+            [(&first, &mut from_start), (&late, &mut late_mirror)],
+            "finished",
+        );
+        assert!(from_start.text().contains("red"));
+        assert_eq!(late_mirror.describe(), from_start.describe());
+        let end = Viewer::new(&place.engine);
+        attach(&place.engine, &end, &session.id);
+        let mut end_mirror = Mirror::default();
+        end_mirror.take(end.next(Instant::now() + WAIT).expect("a screen"));
+        assert_eq!(end_mirror.describe(), from_start.describe());
+
+        write(&place.engine, &first.client, &session.id, "\r");
+        assert_eq!(
+            ended(&place.engine, &first, &mut from_start, &session.id).exit_code,
+            Some(0)
+        );
+    }
+
     #[test]
     fn the_title_and_the_queries_without_a_client() {
         let place = place();
