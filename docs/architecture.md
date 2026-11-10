@@ -181,7 +181,8 @@ Kill (menu) / end of the shell ──► the session ends
 2. `session.create` makes a session with a size in columns and rows.\
    Its folder is an open worktree, or the projects root when the request names no worktree.\
    The request has no command: the program is always the shell of the user, and the user types each command (value 6).\
-   When the shell does not start, the request fails (`failedPrecondition`), and no session stays.
+   When the shell does not start, the request fails (`failedPrecondition`), and no session stays.\
+   When a step after the start of the shell fails, such as the start of a thread of the session, the engine ends the shell and reaps it, and the request fails the same way.
 3. The shell is the program that `$SHELL` names, or `/bin/sh` when the variable is not set or is empty.\
    On macOS it starts as a login shell, because an app there does not get the environment of the profile.\
    On Windows it is `pwsh.exe`, `powershell.exe`, or the program that `%COMSPEC%` names, the first that the engine finds.\

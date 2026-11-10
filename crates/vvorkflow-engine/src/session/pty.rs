@@ -105,39 +105,74 @@ pub(crate) fn spawn(shell: &Path, folder: &Path, columns: u16, rows: u16) -> io:
         .slave
         .spawn_command(command)
         .map_err(io::Error::other)?;
+    #[cfg(test)]
+    super::tests::spawned(child.process_id());
     // The shell holds the other side; the end of the shell then ends it.
     drop(pair.slave);
     let master = pair.master;
+    match finish(&*master, &*child) {
+        Ok((reader, writer, process)) => Ok(Spawned {
+            master,
+            child,
+            reader,
+            writer,
+            process,
+        }),
+        Err(error) => {
+            abandon(child);
+            Err(error)
+        }
+    }
+}
+
+/// The steps after the start of the shell: the read, the write, and the
+/// process of the session.
+fn finish(
+    master: &dyn MasterPty,
+    child: &(dyn Child + Send + Sync),
+) -> io::Result<(Reader, Writer, Arc<Process>)> {
+    #[cfg(test)]
+    if super::tests::fails("pty") {
+        return Err(io::Error::other("a test makes the step fail"));
+    }
     #[cfg(unix)]
     {
-        let io = Arc::new(unix::Io::new(&*master)?);
+        let io = Arc::new(unix::Io::new(master)?);
         let pid = child
             .process_id()
             .and_then(|pid| i32::try_from(pid).ok())
             .ok_or_else(|| io::Error::other("the shell has no process id"))?;
-        Ok(Spawned {
-            master,
-            child,
-            reader: Reader(Arc::clone(&io)),
-            writer: Writer(Arc::clone(&io)),
-            process: Arc::new(Process::new(System { pid, io })),
-        })
+        Ok((
+            Reader(Arc::clone(&io)),
+            Writer(Arc::clone(&io)),
+            Arc::new(Process::new(System { pid, io })),
+        ))
     }
     #[cfg(windows)]
     {
         let reader = master.try_clone_reader().map_err(io::Error::other)?;
         let writer = master.take_writer().map_err(io::Error::other)?;
         let killer = child.clone_killer();
-        Ok(Spawned {
-            master,
-            child,
-            reader: Reader(reader),
-            writer: Writer(writer),
-            process: Arc::new(Process::new(System {
+        Ok((
+            Reader(reader),
+            Writer(writer),
+            Arc::new(Process::new(System {
                 killer: Mutex::new(killer),
             })),
-        })
+        ))
     }
+}
+
+/// Ends a shell that no session waits for, and reaps it. Nothing else reaped
+/// it, so its process id is still this shell.
+pub(crate) fn abandon(mut child: Box<dyn Child + Send + Sync>) {
+    #[cfg(unix)]
+    if let Some(pid) = child.process_id().and_then(|pid| i32::try_from(pid).ok()) {
+        unix::signal(pid, libc::SIGKILL);
+    }
+    #[cfg(windows)]
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// The folder in the form that Windows takes for the current folder of a

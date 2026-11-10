@@ -14,7 +14,7 @@ mod pty;
 mod tests;
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak, mpsc};
 use std::time::{Duration, Instant};
 
 use base64::Engine as _;
@@ -49,13 +49,22 @@ const READ_SIZE: usize = 64 * 1024;
 /// Gets the number of sessions after each change.
 type Watch = Box<dyn Fn(usize) + Send + Sync>;
 
+/// The shell of a session, for its waiter.
+type Child = Box<dyn portable_pty::Child + Send + Sync>;
+
 /// A session whose shell started, with what its threads take.
-type Started = (
-    Arc<Live>,
-    Reader,
-    Writer,
-    Box<dyn portable_pty::Child + Send + Sync>,
-);
+type Started = (Arc<Live>, Reader, Writer, Child);
+
+/// A session whose three threads started, and wait for the word to run.
+/// Until then, the session owns its shell, and a failure ends and reaps
+/// it.
+struct Parked {
+    live: Arc<Live>,
+    child: Child,
+    waiter: mpsc::Sender<Child>,
+    reader: mpsc::Sender<()>,
+    writer: mpsc::Sender<()>,
+}
 
 /// The sessions of an engine, in the order of their start.
 pub(crate) struct Sessions {
@@ -204,6 +213,24 @@ impl Live {
     }
 }
 
+impl Parked {
+    /// Lets the threads run: the waiter gets the shell first.
+    fn run(self) {
+        if let Err(mpsc::SendError(child)) = self.waiter.send(self.child) {
+            pty::abandon(child);
+            return;
+        }
+        let _ = self.reader.send(());
+        let _ = self.writer.send(());
+    }
+
+    /// Ends the threads, which did nothing, and ends and reaps the shell.
+    fn abandon(self) {
+        drop((self.waiter, self.reader, self.writer));
+        pty::abandon(self.child);
+    }
+}
+
 impl Input {
     fn new() -> Input {
         Input {
@@ -300,27 +327,26 @@ impl Sessions {
             }
             inner.starting += 1;
         }
-        let started = self.start(folder, columns, rows);
+        let parked = self
+            .start(folder, columns, rows)
+            .and_then(|started| self.park(started));
         let mut inner = self.inner();
         inner.starting -= 1;
-        let (live, reader, writer, child) = started?;
-        let closing = inner.closing;
-        if !closing {
-            inner.list.push(Arc::clone(&live));
-            inner.changed();
-        }
-        drop(inner);
-        let info = live.info();
-        self.run(Arc::clone(&live), reader, writer, child);
-        if closing {
+        let parked = parked?;
+        if inner.closing {
             // The engine began to stop while the shell started.
-            live.hang_up();
-            live.process.kill(Foreground::default());
+            drop(inner);
+            parked.abandon();
             return Err(error(
                 ErrorCode::FailedPrecondition,
                 "The engine stops, and starts no session.",
             ));
         }
+        inner.list.push(Arc::clone(&parked.live));
+        inner.changed();
+        drop(inner);
+        let info = parked.live.info();
+        parked.run();
         Ok(info)
     }
 
@@ -329,12 +355,8 @@ impl Sessions {
         let refused = |reason: String| error(ErrorCode::FailedPrecondition, reason);
         let shell: PathBuf =
             pty::shell().ok_or_else(|| refused("The engine finds no shell.".to_owned()))?;
-        let spawned = pty::spawn(&shell, folder, columns, rows).map_err(|error| {
-            refused(format!(
-                "The shell {} does not start: {error}.",
-                shell.display()
-            ))
-        })?;
+        // The id comes first, so that no step after the start of the shell
+        // can fail.
         let id = loop {
             let number = getrandom::u64()
                 .map_err(|error| refused(format!("The engine has no random number: {error}.")))?;
@@ -343,6 +365,12 @@ impl Sessions {
                 break id;
             }
         };
+        let spawned = pty::spawn(&shell, folder, columns, rows).map_err(|error| {
+            refused(format!(
+                "The shell {} does not start: {error}.",
+                shell.display()
+            ))
+        })?;
         let live = Arc::new(Live {
             core: Arc::new(Core {
                 id,
@@ -364,40 +392,75 @@ impl Sessions {
         Ok((live, spawned.reader, spawned.writer, spawned.child))
     }
 
-    /// Starts the three threads of a session.
-    fn run(
+    /// Starts the three threads of a session, which wait for the word to
+    /// run. When a thread does not start, the threads that started end, and
+    /// the shell ends and is reaped.
+    fn park(
         self: &Arc<Self>,
-        live: Arc<Live>,
-        reader: Reader,
-        writer: Writer,
-        child: Box<dyn portable_pty::Child + Send + Sync>,
-    ) {
+        (live, reader, writer, child): Started,
+    ) -> Result<Parked, EngineError> {
         let spawn = |name: &str, work: Box<dyn FnOnce() + Send>| {
+            #[cfg(test)]
+            if tests::fails(name) {
+                return Err(std::io::Error::other("a test makes the thread fail"));
+            }
             std::thread::Builder::new()
                 .name(name.to_owned())
                 .spawn(work)
-                .is_ok()
+                .map(drop)
         };
-        let reads = Arc::clone(&live);
-        let writes = Arc::clone(&live);
+        let (to_waiter, waiter_gets) = mpsc::channel::<Child>();
+        let (to_reader, reader_gets) = mpsc::channel::<()>();
+        let (to_writer, writer_gets) = mpsc::channel::<()>();
         let sessions = Arc::clone(self);
         let waits = Arc::clone(&live);
-        // The waiter first: it ends the session also when a thread after it
-        // does not start.
+        let reads = Arc::clone(&live);
+        let writes = Arc::clone(&live);
         let started = spawn(
             "session-waiter",
-            Box::new(move || sessions.wait_end(&waits, child)),
-        ) && spawn(
-            "session-reader",
-            Box::new(move || read_output(&reads, reader)),
-        ) && spawn(
-            "session-writer",
-            Box::new(move || write_input(&writes, writer)),
-        );
-        if !started {
-            // Without its threads, the session cannot run: end its shell.
-            live.hang_up();
-            live.process.kill(Foreground::default());
+            Box::new(move || {
+                if let Ok(child) = waiter_gets.recv() {
+                    sessions.wait_end(&waits, child);
+                }
+            }),
+        )
+        .and_then(|()| {
+            spawn(
+                "session-reader",
+                Box::new(move || {
+                    if reader_gets.recv().is_ok() {
+                        read_output(&reads, reader);
+                    }
+                }),
+            )
+        })
+        .and_then(|()| {
+            spawn(
+                "session-writer",
+                Box::new(move || {
+                    if writer_gets.recv().is_ok() {
+                        write_input(&writes, writer);
+                    }
+                }),
+            )
+        });
+        match started {
+            Ok(()) => Ok(Parked {
+                live,
+                child,
+                waiter: to_waiter,
+                reader: to_reader,
+                writer: to_writer,
+            }),
+            Err(reason) => {
+                // The threads that started end when their channels close.
+                drop((to_waiter, to_reader, to_writer));
+                pty::abandon(child);
+                Err(error(
+                    ErrorCode::FailedPrecondition,
+                    format!("The engine cannot start a thread of the session: {reason}."),
+                ))
+            }
         }
     }
 
