@@ -144,7 +144,7 @@ type Requests = {
   }[]
 }
 
-test('an answer that comes after the dialog closed does not close the next dialog', async ({
+test('an answer that comes after the close does nothing, also while the dialog fades out', async ({
   page,
 }) => {
   await withSlowEngine(page)
@@ -155,23 +155,36 @@ test('an answer that comes after the dialog closed does not close the next dialo
   await name.fill('first')
   await page.keyboard.press('Enter')
   await expect(dialog.getByRole('button', { name: 'Create' })).toBeDisabled()
-  await page.keyboard.press('Escape')
-  await expect(dialog).toBeHidden()
 
-  await action.click()
+  // The signal aborts with the close, before the dialog is gone.
+  await page.keyboard.press('Escape')
+  expect(
+    await page.evaluate(() =>
+      (window as unknown as Requests).requests[0].aborted(),
+    ),
+  ).toBe(true)
+
+  // The dialog opens again at once, with a new form.
+  await action.dispatchEvent('click')
+  await expect(name).toHaveValue('')
+  await expect(name).not.toHaveAttribute('readonly')
   await name.fill('second')
-  const first = await page.evaluate(() => {
-    const [request] = (window as unknown as Requests).requests
-    const told = { name: request.name, aborted: request.aborted() }
-    request.finish()
-    return told
-  })
-  // The app knows that the user closed the dialog of the first project.
-  expect(first).toEqual({ name: 'first', aborted: true })
-  await page.waitForTimeout(200)
+  await page.evaluate(() =>
+    (window as unknown as Requests).requests[0].finish(),
+  )
+  await page.waitForTimeout(300)
   await expect(dialog).toBeVisible()
   await expect(name).toHaveValue('second')
   await expect(dialog.getByRole('button', { name: 'Create' })).toBeEnabled()
+
+  // The answer to the open dialog closes it.
+  await page.keyboard.press('Enter')
+  await page.evaluate(() => {
+    const [, second] = (window as unknown as Requests).requests
+    if (second.aborted()) throw new Error('the open dialog is aborted')
+    second.finish()
+  })
+  await expect(dialog).toBeHidden()
 })
 
 test('the name cannot change while the engine works, so a refusal is about the name on the screen', async ({

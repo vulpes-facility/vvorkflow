@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import {
   Button,
   Dialog,
@@ -35,12 +35,39 @@ export function NewProjectDialog({
   onOpenChange,
   onCreate,
 }: NewProjectDialogProps) {
+  // Each opening has its own form and its own signal, also when the dialog
+  // opens again while the last one still fades out.
+  const [opening, setOpening] = useState(() => ({
+    open,
+    id: 0,
+    closed: new AbortController(),
+  }))
+  if (open && !opening.open)
+    setOpening({ open, id: opening.id + 1, closed: new AbortController() })
+  if (!open && opening.open) setOpening({ ...opening, open })
+
+  // The signal aborts in the same moment as the close, before the dialog
+  // fades out, so that an answer in that time does nothing.
+  function close() {
+    opening.closed.abort()
+    onOpenChange(false)
+  }
+  // A close that does not come from the dialog itself aborts too.
+  useEffect(() => {
+    if (!open) opening.closed.abort()
+  }, [open, opening])
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => (next ? onOpenChange(true) : close())}
+    >
       <DialogContent showCloseButton={false}>
         <NewProjectForm
+          key={opening.id}
+          signal={opening.closed.signal}
           onCreate={onCreate}
-          onDone={() => onOpenChange(false)}
+          onDone={close}
         />
       </DialogContent>
     </Dialog>
@@ -48,9 +75,12 @@ export function NewProjectDialog({
 }
 
 function NewProjectForm({
+  signal,
   onCreate,
   onDone,
 }: {
+  /** Aborts when this opening of the dialog closes. */
+  signal: AbortSignal
   onCreate: (name: string, signal: AbortSignal) => Promise<void>
   onDone: () => void
 }) {
@@ -60,17 +90,9 @@ function NewProjectForm({
   const field = useId()
   const alert = useId()
 
-  // The form goes away when the dialog closes. An answer that comes after
-  // that is not about the dialog that is open then.
-  const closed = useRef(new AbortController())
-  useEffect(() => {
-    const controller = new AbortController()
-    closed.current = controller
-    return () => controller.abort()
-  }, [])
-
+  // An answer that comes after the close is not about the dialog that is
+  // open then.
   async function create() {
-    const { signal } = closed.current
     setPending(true)
     setError(undefined)
     try {
