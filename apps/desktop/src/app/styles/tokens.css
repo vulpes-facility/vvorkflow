@@ -91,6 +91,8 @@
   /* Sizes: a compact desktop density on a 4 px grid. */
   --vv-titlebar-h: 36px;
   --vv-tab-h: 34px;
+  /* The widest tab: a longer title is cut, as a program can set a long one. */
+  --vv-tab-max-w: 240px;
   --vv-row-h: 24px;
   --vv-statusbar-h: 24px;
   --vv-activitybar-w: 48px;

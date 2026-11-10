@@ -41,7 +41,7 @@ export function EditorTab({
     <ContextMenu>
       <ContextMenuTrigger
         ref={trigger}
-        className="group flex h-full min-w-0 items-center gap-2 pr-1.5 pl-3 text-ui"
+        className="group flex h-full max-w-(--vv-tab-max-w) min-w-0 items-center gap-2 pr-1.5 pl-3 text-ui"
         onAuxClick={(event) => {
           // The middle button closes the tab, as in browsers.
           if (event.button === 1) api.close()

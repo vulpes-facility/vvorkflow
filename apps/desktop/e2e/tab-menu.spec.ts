@@ -22,10 +22,12 @@ test('a right-click on a tab opens its menu, which splits and moves the tab', as
   await agentTab(page).click({ button: 'right' })
   const menu = page.getByRole('menu')
   await expect(menu).toBeVisible()
+  // A terminal tab can also end its session.
   await expect(menu.getByRole('menuitem')).toHaveText([
     'Close',
     'Close others',
     'Split right',
+    'Kill terminal',
   ])
 
   // The menu passes the WCAG 2.2 A and AA rules, and each item is 24 px high or more.
@@ -53,6 +55,7 @@ test('a right-click on a tab opens its menu, which splits and moves the tab', as
   await expect(menu.getByRole('menuitem')).toHaveText([
     'Close',
     'Move to previous group',
+    'Kill terminal',
   ])
   await menu.getByRole('menuitem', { name: 'Move to previous group' }).click()
   await expect(page.locator('.dv-groupview')).toHaveCount(1)

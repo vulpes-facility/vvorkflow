@@ -51,6 +51,11 @@ interface TerminalViewProps {
   platform: Platform
   /** Called with each title that the program sets. */
   onTitle?: (title: string) => void
+  /**
+   * Asked once, when the terminal opens: true gives the terminal the focus,
+   * for a terminal that the user just asked for.
+   */
+  takesFocus?: () => boolean
 }
 
 /** The time that the terminal waits for the last change of its room before it proposes a size. */
@@ -69,14 +74,17 @@ export function TerminalView({
   session,
   platform,
   onTitle,
+  takesFocus,
 }: TerminalViewProps) {
   const host = useRef<HTMLDivElement>(null)
   const hint = useId()
   // The last handler, so that a new one does not make a new terminal.
   const title = useRef(onTitle)
+  const focus = useRef(takesFocus)
   useEffect(() => {
     title.current = onTitle
-  }, [onTitle])
+    focus.current = takesFocus
+  }, [onTitle, takesFocus])
 
   useEffect(() => {
     const element = host.current
@@ -176,6 +184,7 @@ export function TerminalView({
       opened = true
       terminal.open(element)
       terminal.textarea?.setAttribute('aria-describedby', hint)
+      if (focus.current?.()) terminal.focus()
       propose()
     }
     // A hidden tab has no size; a proposal would squeeze the grid to 2 columns.
@@ -210,7 +219,7 @@ export function TerminalView({
 
   return (
     <div
-      data-terminal
+      data-terminal={session.id}
       className="h-full min-h-0 bg-terminal py-1 pl-3 font-mono"
     >
       <div ref={host} className="h-full" />

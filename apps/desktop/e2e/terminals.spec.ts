@@ -134,6 +134,49 @@ test('on Linux, the shortcut of New terminal works from a terminal', async ({
   await expect(rows(page)).toHaveCount(3)
 })
 
+test('a new terminal takes the focus, and a session that ends gives it to the tab that is left', async ({
+  page,
+}) => {
+  await openTerminals(page)
+  await page.getByRole('button', { name: 'New terminal' }).click()
+  const input = page.getByRole('textbox', { name: 'Terminal input' })
+  await expect(input).toBeFocused()
+  await expect(page.getByText('F6 leaves the terminal')).toBeVisible()
+
+  // Each session ends, as when the engine stops them: the tabs close.
+  await page.evaluate(() => {
+    const preview = (
+      window as unknown as {
+        __STORYBOOK_PREVIEW__: {
+          channel: { emit: (event: string, data: unknown) => void }
+        }
+      }
+    ).__STORYBOOK_PREVIEW__
+    preview.channel.emit('updateStoryArgs', {
+      storyId: 'screens-workbench--terminals',
+      updatedArgs: { terminals: [] },
+    })
+  })
+  await expect(page.getByText('No terminals')).toBeVisible()
+  await expect(editorTab(page, 'Welcome')).toBeFocused()
+  await expect(page.getByText('F6 leaves the terminal')).toBeHidden()
+})
+
+test('the tab of a session that the view shows takes the keys', async ({
+  page,
+}) => {
+  await openTerminals(page)
+  await rows(page).first().focus()
+  await page.keyboard.press('Enter')
+  await expect(editorTab(page, /^codex/)).toHaveAttribute(
+    'aria-selected',
+    'true',
+  )
+  await expect(
+    page.getByRole('textbox', { name: 'Terminal input' }),
+  ).toBeFocused()
+})
+
 test('the Welcome tab starts a terminal, and the empty view too', async ({
   page,
 }) => {

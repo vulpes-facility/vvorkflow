@@ -114,8 +114,12 @@ interface WorkbenchPageProps {
 const PageProps = createContext<
   | (WorkbenchPageProps & {
       onNewProject?: () => void
+      /** Starts a terminal session, whose terminal then takes the focus. */
+      onNewTerminal?: () => void
       /** Called with each title that the program of a session sets. */
       onTerminalTitle: (id: string, title: string) => void
+      /** True once for the session whose terminal takes the focus when it opens. */
+      takeTerminalFocus: (id: string) => boolean
     })
   | null
 >(null)
@@ -147,9 +151,24 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const toggleSideBar = useLayout((state) => state.toggleSideBar)
   useViewShortcuts(platform, showView, toggleSideBar)
   const narrow = useNarrowWindow(setSideBarOpen)
+  // The user asked for a terminal: the next new session takes the focus.
+  // A session that only shows here, as at the start, does not.
+  const asked = useRef(false)
+  const focusNext = useRef<string | null>(null)
+  const propsNewTerminal = props.onNewTerminal
+  const askForTerminal = useCallback(() => {
+    asked.current = true
+    propsNewTerminal?.()
+  }, [propsNewTerminal])
+  const onNewTerminal = propsNewTerminal ? askForTerminal : undefined
+  const takeTerminalFocus = useCallback((id: string) => {
+    if (focusNext.current !== id) return false
+    focusNext.current = null
+    return true
+  }, [])
   useActionShortcuts(platform, {
     onNewProject,
-    onNewTerminal: props.onNewTerminal,
+    onNewTerminal,
     onOpenFolder: props.onOpenFolder,
     onOpenSettings,
   })
@@ -194,6 +213,11 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   const terminals = props.terminals
   const latestTerminals = useRef(terminals)
   const shown = useRef(new Set<string>())
+  // While a terminal has the focus, the status bar tells the way out of it.
+  // The session of that terminal stays known after the terminal is gone,
+  // because an element that goes away sends no blur.
+  const [terminalFocused, setTerminalFocused] = useState(false)
+  const focusedTerminal = useRef<string | null>(null)
   const syncTerminals = useCallback((api: DockviewApi) => {
     const sessions = latestTerminals.current ?? []
     const ids = new Set(sessions.map(({ id }) => id))
@@ -201,10 +225,29 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       if (ids.has(id)) continue
       shown.current.delete(id)
       api.getPanel(terminalPanelId(id))?.api.close()
+      // The terminal of a session that ended went away with the focus in
+      // it: the focus moves to the tab that is active after it, or to the
+      // activity bar when no tab is left (WCAG 2.2 SC 2.4.3).
+      if (focusedTerminal.current !== id) continue
+      focusedTerminal.current = null
+      setTerminalFocused(false)
+      if (document.activeElement !== document.body) continue
+      const next =
+        root.current?.querySelector<HTMLElement>(
+          '.dv-active-group [role="tab"][aria-selected="true"]',
+        ) ??
+        root.current?.querySelector<HTMLElement>(
+          'nav [role="tab"][tabindex="0"]',
+        )
+      next?.focus()
     }
     for (const session of sessions) {
       if (shown.current.has(session.id)) continue
       shown.current.add(session.id)
+      if (asked.current) {
+        asked.current = false
+        focusNext.current = session.id
+      }
       openTerminal(api, session)
     }
   }, [])
@@ -240,8 +283,19 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
       )
       if (!api || !session) return
       const panel = api.getPanel(terminalPanelId(id))
-      if (panel) panel.api.setActive()
-      else openTerminal(api, session, terminalTitles[id])
+      if (!panel) {
+        focusNext.current = id
+        openTerminal(api, session, terminalTitles[id])
+        return
+      }
+      panel.api.setActive()
+      // The terminal of the tab takes the keys; one that was dropped takes
+      // the focus when it opens again.
+      const input = panel.view.content.element.querySelector<HTMLElement>(
+        '.xterm-helper-textarea',
+      )
+      if (input) input.focus()
+      else focusNext.current = id
     },
     [terminalTitles],
   )
@@ -257,8 +311,6 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
     (view === 'terminals' && hasTerminals)
   )
   useFocusRescue(root, { sideBarOpen, drawer, view, contentFocusable })
-  // While a terminal has the focus, the status bar tells the way out of it.
-  const [terminalFocused, setTerminalFocused] = useState(false)
   const sideBarContent = (
     <>
       {view === 'explorer' &&
@@ -295,8 +347,8 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
           />
         ) : (
           <EmptyState icon={SquareTerminal} title="No terminals">
-            {props.onNewTerminal && (
-              <Button size="sm" onClick={props.onNewTerminal}>
+            {propsNewTerminal && (
+              <Button size="sm" onClick={askForTerminal}>
                 New terminal
               </Button>
             )}
@@ -307,12 +359,8 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   // The actions of the view, at the right of its title.
   const sideBarActions = view === 'terminals' &&
     hasTerminals &&
-    props.onNewTerminal && (
-      <IconButton
-        icon={Plus}
-        label="New terminal"
-        onClick={props.onNewTerminal}
-      />
+    propsNewTerminal && (
+      <IconButton icon={Plus} label="New terminal" onClick={askForTerminal} />
     )
   const sideBar = (
     <SideBar
@@ -351,19 +399,30 @@ export function WorkbenchPage(props: WorkbenchPageProps) {
   )
 
   return (
-    <PageProps.Provider value={{ ...props, onNewProject, onTerminalTitle }}>
+    <PageProps.Provider
+      value={{
+        ...props,
+        onNewProject,
+        onNewTerminal,
+        onTerminalTitle,
+        takeTerminalFocus,
+      }}
+    >
       <TerminalActions.Provider value={{ kill: props.onKillTerminal }}>
         <TooltipProvider delay={600}>
           <div
             ref={root}
             className="relative flex h-full bg-chrome text-foreground"
             data-platform={platform}
-            onFocus={(event) =>
-              setTerminalFocused(
-                event.target.closest('[data-terminal]') !== null,
-              )
-            }
+            onFocus={(event) => {
+              const terminal = event.target.closest('[data-terminal]')
+              focusedTerminal.current =
+                terminal?.getAttribute('data-terminal') ?? null
+              setTerminalFocused(terminal !== null)
+            }}
             onBlur={(event) => {
+              // A focus that goes to another window keeps its terminal.
+              if (event.relatedTarget) focusedTerminal.current = null
               if (!event.currentTarget.contains(event.relatedTarget))
                 setTerminalFocused(false)
             }}
@@ -529,7 +588,7 @@ function TerminalPanel({ api, params }: IDockviewPanelProps<EditorTabParams>) {
   const session = props.terminals?.find(
     (candidate) => candidate.id === params.sessionId,
   )
-  const { onTerminalTitle } = props
+  const { onTerminalTitle, takeTerminalFocus } = props
   const sessionId = session?.id
   const onTitle = useCallback(
     (title: string) => {
@@ -542,6 +601,7 @@ function TerminalPanel({ api, params }: IDockviewPanelProps<EditorTabParams>) {
       session={session}
       platform={props.platform}
       onTitle={onTitle}
+      takesFocus={() => takeTerminalFocus(session.id)}
     />
   ) : null
 }

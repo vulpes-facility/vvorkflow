@@ -128,9 +128,9 @@ export function TerminalsView({
               strokeWidth={1.75}
               className="size-icon-sm shrink-0 text-subtle-foreground"
             />
-            <span className="min-w-0 truncate">{session.title}</span>
+            <span className="min-w-0 flex-1 truncate">{session.title}</span>
             {session.folder && (
-              <span className="min-w-0 flex-1 truncate text-right text-xs text-muted-foreground">
+              <span className="max-w-1/2 shrink-0 truncate text-xs text-muted-foreground">
                 {nameOf(session.folder)}
               </span>
             )}
