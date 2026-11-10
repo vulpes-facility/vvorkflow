@@ -221,7 +221,8 @@ Kill (menu) / end of the shell ──► the session ends
 3. The engine can make the screen bytes in the middle of an escape sequence or of a character of more than one byte.\
    The screen bytes then end with the bytes of that part, so that the next output continues it.\
    The engine keeps at most 4 KiB of such a part.\
-   For a longer part, which is a string sequence such as an OSC, the screen bytes end with the start of that kind of sequence, so that the terminal reads the rest of the string as a string and not as text.
+   For a longer part, which is a string sequence such as an OSC, the screen bytes end with the start of that kind of sequence, so that the terminal reads the rest of the string as a string and not as text.\
+   For a longer CSI sequence, they end with `ESC [0?`, which makes the terminal ignore the rest of that sequence, so that the rest cannot make another one.
 4. The screen bytes have at most 32 MiB.\
    When they would be larger, the engine leaves out the oldest lines of the scrollback.\
    That is always sufficient: a cell keeps at most 32 bytes of text, so the two screens of the largest size, with each style on each cell, and the other state without the scrollback, are less than 32 MiB.\
@@ -231,7 +232,7 @@ Kill (menu) / end of the shell ──► the session ends
    the tab stops and the character sets come back at their defaults;\
    links (OSC 8) and images are not kept.\
    The engine does not keep blink and overline (SGR 5 and 53), and a title comes back without the spaces at its start and its end.\
-   An OSC string that a screen frame cuts after 4 KiB (rule 3) has no effect in the terminal.\
+   An OSC string or a CSI sequence that a screen frame cuts after 4 KiB (rule 3) has no effect in the terminal, also when the sequence would move the cursor.\
    The engine does not do these sequences of xterm.js: the insert and the delete of columns (DECIC, DECDC), the scroll to the left and to the right (SL, SR), the soft reset (DECSTR), the selective erase (DECSCA, DECSED, DECSEL), and the C1 controls as UTF-8 characters (U+0080 to U+009F).\
    In the reverse wraparound mode (45), a backspace in the first column does not go to the line above, as it does in xterm.js.\
    The flag that a line continues the line above can differ after an insert or a delete of lines, a scroll in a scroll region, or an IND (ESC D).\

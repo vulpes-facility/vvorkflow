@@ -216,11 +216,17 @@ impl Sequence {
             // the terminal reads the rest as that kind, for example the rest
             // of an OSC string as a string and not as text.
             self.long = true;
-            let kind = match self.part.get(1) {
-                Some(b'[' | b']' | b'P' | b'X' | b'^' | b'_') => 2,
-                _ => 1,
-            };
-            self.part.truncate(kind);
+            match self.part.get(1) {
+                // A CSI loses its parameters, so the rest could make another
+                // sequence: a parameter and `?` make xterm.js and `vte`
+                // ignore the rest of it.
+                Some(b'[') => {
+                    self.part.clear();
+                    self.part.extend_from_slice(b"\x1b[0?");
+                }
+                Some(b']' | b'P' | b'X' | b'^' | b'_') => self.part.truncate(2),
+                _ => self.part.truncate(1),
+            }
         }
     }
 }
@@ -497,9 +503,13 @@ mod tests {
         assert!(parsed.ends_with(b"\x07after"));
         assert_eq!(parsed.len(), MAX_PART + 1 + b"\x07after".len());
 
+        // A CSI becomes one that the terminal ignores to its end.
         let mut csi = b"\x1b[".to_vec();
         csi.resize(MAX_PART + 1, b'1');
-        assert_eq!(follow(&[&csi]).1, b"\x1b[");
+        assert_eq!(follow(&[&csi]).1, b"\x1b[0?");
+        let mut private = b"\x1b[?".to_vec();
+        private.resize(MAX_PART + 1, b';');
+        assert_eq!(follow(&[&private]).1, b"\x1b[0?");
         let mut escape = b"\x1b".to_vec();
         escape.resize(MAX_PART + 1, b' ');
         assert_eq!(follow(&[&escape]).1, b"\x1b");
