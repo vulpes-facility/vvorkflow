@@ -305,10 +305,15 @@ M5 adds three error codes: `conflict`, the state is not the state that the clien
 1. The `worktree` of a request is the path of an open worktree on the machine of the engine, as `folder.open` answered it; a client never reads it as a path of its own machine.\
    Each other path is a plain relative path in that worktree, as [`conventions/engine.md`](conventions/engine.md) says, and it MUST NOT be empty.\
    The engine does each request through the handle of the worktree, and never opens a path of the request as an absolute path.
-2. The engine refuses each request of this section for the `.git` entry of a worktree and for each path in it (`permissionDenied`).\
-   It compares the name without the letter case, and it also refuses a path that leads there through a symbolic link: it resolves the links of the path in the worktree first.
-3. On Windows, the engine refuses a name with a colon, which can name another stream of a file, and the name of a device (`invalidArgument`).
-4. A request reads and writes only a regular file, and lists, makes, renames, and deletes only files, folders, and symbolic links.\
+2. Each path and each name in the protocol is the exact name, as UTF-8.\
+   A listing leaves out a name that is not valid UTF-8, and `folder.open` refuses a folder whose path is not valid UTF-8 (`invalidArgument`).\
+   The engine never puts a replacement character in a name, so two entries never have one name in the protocol.
+3. The engine refuses each request of this section for the `.git` entry of a worktree and for each path in it (`permissionDenied`).\
+   The check is on the entries that the request reaches through its handles, and not only on its names:\
+   the engine refuses when the entry, or a folder above it in the worktree, is the same entry of the file system as `.git`.\
+   So a name in another letter case, a symbolic link, and another name of the file system for that folder, such as a short name on Windows, are refused too.
+4. On Windows, the engine refuses a name with a colon, which can name another stream of a file, and the name of a device (`invalidArgument`).
+5. A request reads and writes only a regular file, and lists, makes, renames, and deletes only files, folders, and symbolic links.\
    The engine refuses each other kind, such as a pipe or a device (`invalidArgument`).
 
 ### Text
@@ -354,7 +359,8 @@ M5 adds three error codes: `conflict`, the state is not the state that the clien
    It reads a file of each size.
 2. The revision is an opaque text that changes when the file is another file, has another size, or has another time of change.\
    It is not a hash, so the first part of a large file comes at once.\
-   A request with a `revision` that is not the revision of the file now answers `conflict`.\
+   The engine gets the size, the revision, and the bytes through one open handle of the file, and checks the revision before and after the read.\
+   A request with a `revision` that is not the revision of the file, before or after the read, answers `conflict`.\
    Known limit: a write that keeps the size and the time of change is not seen.
 3. The web UI gets an image, a video, or a sound from a URL of the app core, in a scheme of its own (`vvfile`).\
    The URL names the worktree, the path, and the revision, which the web UI reads first with a `file.readRange` of length 0.\
@@ -448,7 +454,7 @@ A setting changes each one.
 | Installs | The app does not run installs for the user. | Done |
 | Commands | The app types a command in the terminal, and the user presses Enter. A session has no command of its own: its program is the shell of the user. | Next (M4) |
 | Previews | The Markdown preview removes HTML and scripts from the document. It blocks remote images by default, and the user can allow them for each document. | Planned (M5) |
-| Files | A request reads and writes only in the open worktrees, through their handles, never in a `.git` folder, and never a file with a second name. A write needs the version that the client read. A delete goes to the trash. A file from the file scheme of the app core is only an image or media, and never a document. | Planned (M5) |
+| Files | A request reads and writes only in the open worktrees, through their handles, and never in a `.git` folder; a write also refuses a file with a second name. A write needs the version that the client read. A delete goes to the trash. A file from the file scheme of the app core is only an image or media, and never a document. | Planned (M5) |
 | Sessions | A session runs as the user that runs the engine. Each client of the engine is the same owner and can use each session. So the token of a remote engine gives a shell as that user: the roots limit the requests for files and the folder where a session starts, not the commands in a shell. | Next (M4) |
 
 ## Roadmap
