@@ -72,9 +72,9 @@ The receiver checks each message against the schema, at run time.
 11. Over Tauri IPC, the web UI gives the app core one channel.\
     On it, the app core sends each event as JSON and each binary frame as bytes, in the order of the connection.
 12. The web UI writes the frames to its terminal in their order, one after the end of the other, and tells the app core the bytes that the terminal took.\
-    The app core counts the bytes of the frames that the terminal did not take yet, also those that are on their way to the web UI.\
+    It tells the bytes of an event when it has noted what the event asks for, before the requests that follow from it.\
+    The app core counts the bytes of the frames and the events that the web UI did not take yet, also those that are on their way to it.\
     When the count is 1 MiB or more, it stops to read the connection, so that the limits of the engine apply, and no queue of the app grows without a limit.\
-    It also counts an event, until it sends that event on the channel.\
     One frame can take the count above 1 MiB, and a frame has at most 32 MiB and 21 bytes, so the count stays below 33 MiB and 21 bytes.
 13. When the connection of the app core to the engine ends, each open request fails, and the app core sends the event `connection.closed` on the channel:\
     after the last frame of that connection, and before the first frame of the next connection.\
@@ -139,7 +139,7 @@ The engine process stops on a root that is not correct, and the app shows its me
    The engine locks `engine.lock`, then removes a socket that an old engine left, and then listens.
 7. The engine serves at most 32 clients, and closes the connection of a client after them at once.\
    A client has 10 seconds for the WebSocket handshake and `hello`.\
-   The engine reads a message of at most 1 MiB.\
+   The engine reads a message of at most 1 MiB, and from M5 of at most 32 MiB.\
    It runs each request on a blocking thread, at most 8 requests of all clients at a time, and reads the next message also while a request waits.\
    The requests of a terminal session that keep their order are the exception: the engine does them on the connection, and they never wait.\
    A client that takes no byte for 30 seconds loses its connection; a large frame that moves is not a reason.\
@@ -293,6 +293,150 @@ Kill (menu) / end of the shell ──► the session ends
 Status: done in the engine, the protocol, and the client of the app core (M4a).\
 The terminal tabs of the web UI on real sessions are next (M4b).
 
+## Files
+
+```text
+open a file ──► file.read: the text and its version
+save ──► file.write with that version: the engine refuses when the file changed
+a change on the disk ──► event worktree.changed ──► the web UI reads again
+an image, a video ──► the app core reads the file in ranges for the web UI
+```
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `file.read` | `{worktree, path}` | `{text, version}` |
+| `file.write` | `{worktree, path, text, expected?}` | `{version}` |
+| `git.show` | `{worktree, path}` | `{text, version}` |
+| `file.readRange` | `{worktree, path, offset, length, revision?}` | `{data, size, revision}` |
+| `directory.create` | `{worktree, path}` | `{}` |
+| `entry.rename` | `{worktree, from, to}` | `{}` |
+| `entry.delete` | `{worktree, path}` | `{}` |
+| `worktree.watch` | `{worktree}` | `{}` |
+| `worktree.unwatch` | `{worktree}` | `{}` |
+
+M5 adds three error codes: `conflict`, the state is not the state that the client read; `notText`, the file is not text; and `tooLarge`, the file is larger than the limit of the request.
+
+### Paths
+
+1. The `worktree` of a request is the path of an open worktree on the machine of the engine, as `folder.open` answered it; a client never reads it as a path of its own machine.\
+   Each other path is a plain relative path in that worktree, as [`conventions/engine.md`](conventions/engine.md) says, and it MUST NOT be empty.\
+   The engine does each request through the handle of the worktree, and never opens a path of the request as an absolute path.
+2. Each path and each name in the protocol is the exact name, as UTF-8.\
+   A listing leaves out a name that is not valid UTF-8, and `folder.open` refuses a folder whose path is not valid UTF-8 (`invalidArgument`).\
+   The engine never puts a replacement character in a name, so two entries never have one name in the protocol.
+3. The engine refuses each request of this section for the `.git` entry of a worktree and for each path in it (`permissionDenied`).\
+   The check is on the entries that the request reaches through its handles, and not only on its names:\
+   the engine refuses when the entry, or a folder above it in the worktree, is the same entry of the file system as `.git`.\
+   So a name in another letter case, a symbolic link, and another name of the file system for that folder, such as a short name on Windows, are refused too.
+4. On Windows, the engine refuses a name with a colon, which can name another stream of a file, and the name of a device (`invalidArgument`).
+5. A request reads and writes only a regular file, and lists, makes, renames, and deletes only files, folders, and symbolic links.\
+   The engine refuses each other kind, such as a pipe or a device (`invalidArgument`).
+
+### Text
+
+1. `file.read` answers the text of a file, and its version.\
+   The text is the bytes of the file as UTF-8, with nothing changed: the line endings and a byte order mark stay.\
+   The engine refuses a file that is not valid UTF-8 or that has a NUL byte (`notText`), a file of more than 4 MiB (`tooLarge`), and a path that does not exist (`notFound`).\
+   It stops to read at the limit, and does not read a larger file into memory first.
+2. The version is the SHA-256 of the bytes, as 64 lowercase hexadecimal characters.\
+   So a version tells the content, and not the time: a file that a program writes again with the same bytes keeps its version.
+3. `file.write` writes the text of a file.\
+   With `expected`, the engine opens the file, reads it through that handle, and writes through the same handle only when the version is `expected`.\
+   When it is not, or when the file is gone, the engine refuses with `conflict`, and changes nothing.\
+   With no `expected`, the engine makes a new file with an operation that fails when the name is there, also as a symbolic link with no target, and then answers `conflict`.\
+   The text has at most 4 MiB (`tooLarge`); the engine checks this, and each other rule, before it changes the file.
+4. The engine writes into the file that is there: it does not put a new file in its place.\
+   So the file keeps its mode and its owner, and a program that watches it sees a change and not a new file.\
+   It writes all the bytes, sets the length, and syncs the file to the disk before it answers.\
+   The engine does one write of this section at a time, so two requests cannot both pass the check of one file.
+5. The engine refuses to write a file that has more than one name (a hard link), because its other name can be outside the worktree (`permissionDenied`).\
+   It reads such a file.
+6. Known limits: between the check of the version and the write, a program that is not the engine can change the file, and that change is lost;\
+   and an error or a stop of the machine in the middle of a write can leave a part of the text.\
+   So the web UI keeps the unsaved text until a write answers with its version.
+7. The engine has no write that skips the check.\
+   The web UI keeps, for each open file, the version of the text that its edits started from, and a save sends that version as `expected`.\
+   A later read does not change that version while the file has unsaved edits.\
+   After a `conflict`, the web UI asks the user: to write over the file, it reads the file again and writes with the new version; to take the file of the disk, it drops the edits.\
+   An answer to a save is about the text of that request: the edits that the user made after it stay unsaved.
+8. A save with no edit writes the bytes that the engine read: the web UI keeps the line endings and a byte order mark of the text.
+9. From M5, a message to the engine has at most 32 MiB, because the JSON of a text of 4 MiB can have 24 MiB.\
+   Each reader of a connection takes a message of that size.
+10. `git.show` answers the text of a file in the commit `HEAD` of its worktree, and its version, for the diff.\
+    It has the limits and the errors of `file.read`.\
+    A file that is not in that commit, and a repository with no commit, answer `notFound`: the diff then shows each line as new.\
+    Each other error, such as `notText`, shows as an error in the place of the diff, and never as an empty text.
+
+### Ranges
+
+1. `file.readRange` answers a part of a regular file: the bytes from `offset`, at most `length` of them, in Base64 (RFC 4648, with padding), the size of the file, and a revision.\
+   `offset` and `size` are whole numbers of at most 2^53 − 1, and `length` is from 0 to 1,048,576.\
+   An offset at the size answers no bytes, an offset after it is refused (`invalidArgument`), and a part that goes over the end is cut at the end.\
+   It reads a file of each size.
+2. The revision is an opaque text that changes when the file is another file, has another size, or has another time of change.\
+   It is not a hash, so the first part of a large file comes at once.\
+   The engine gets the size, the revision, and the bytes through one open handle of the file, and checks the revision before and after the read.\
+   A request with a `revision` that is not the revision of the file, before or after the read, answers `conflict`.\
+   Known limit: a write that keeps the size and the time of change is not seen.
+3. The web UI gets an image, a video, or a sound from a URL of the app core, in a scheme of its own (`vvfile`).\
+   The URL names the worktree, the path, and the revision, which the web UI reads first with a `file.readRange` of length 0.\
+   So a URL is one state of one file: the app core gives the revision with each request, and a file that changed ends the load with an error, and never joins the parts of two files.\
+   After a change, the web UI makes a new URL.
+4. The app core answers only a read request for such a URL, only with `file.readRange`, and off the thread of the web UI.\
+   For a request with a range, it answers 206 with at most 1 MiB from the start of that range, and with `Content-Range`, `Accept-Ranges`, and the size, as the asset protocol of Tauri does; the web UI asks for the next part.\
+   For a range that is not in the file, it answers 416.\
+   For a request with no range, it answers the whole file when it has at most 64 MiB, and an error for a larger one.
+5. A file from this scheme is never a document and never active content.\
+   The app core answers with the media type of an image, a video, or a sound, from a list, by the name of the file; each other name gets `application/octet-stream` as an attachment.\
+   Each answer has `X-Content-Type-Options: nosniff` and a content security policy of its own with `sandbox` and `default-src 'none'`, so that a file that the webview shows as a document, such as an SVG image, runs no script and loads nothing.\
+   The web UI uses such a URL only in an image, a video, or a sound element: it does not go to one, and does not put one in a frame, an object, or an embed.\
+   The content security policy of the app lets the scheme in only for images and media, and lets in no object and no frame.\
+   A file of the scheme has no access to the IPC of Tauri.
+6. The policy of the app also lets in images from `https:`, for the remote images of a Markdown document; the preview decides for each document if it loads them.\
+   An image from `http:` stays blocked.
+7. M5 checks on WebKitGTK, WKWebView, and WebView2 that a video larger than one part starts and seeks from this scheme.\
+   On a webview that cannot do it, the app core gives the same answers from a listener on `127.0.0.1` with a random port and a random secret in each URL; the protocol of the engine stays the same.
+
+### Changes
+
+1. `worktree.watch` tells the engine that this connection watches an open worktree, and `worktree.unwatch` ends that; each one is safe to repeat.\
+   The end of the connection ends its watches.\
+   The web UI watches a worktree before it reads it, so that no change is lost between the read and the watch, and watches again after `connection.closed`.
+2. The engine watches a worktree while a connection watches it, with one watch of the system for all its connections.\
+   It does not watch the folders that git ignores.\
+   It does not follow a symbolic link out of the worktree.
+3. The engine collects the changes of 100 ms, and sends each connection that watches the worktree the event `worktree.changed` with `{worktree, paths}`.\
+   `paths` holds at most 256 changed paths, relative to the worktree.\
+   `paths` is `null` when each path can be new: for more than 256 paths, when the system lost changes, when a folder was made, renamed, or deleted, when an ignore rule changed, and when the path of the worktree no longer leads to its handle.
+4. A connection has at most one event that waits for each worktree: the engine adds the new paths to it, up to the limit, and never waits for a client.
+5. The engine also watches the git data of the worktree, in the folders that git names: `HEAD`, the index, the references, and `packed-refs`, but not the objects.\
+   A change there sends `worktree.changed` with `paths` as `null`.\
+   This watch gives a client no way to read the git data.
+6. After an event, the web UI reads again: the folders of the Explorer that the paths are in, the open files and diffs among them, and, 300 ms after the last event, the git status.\
+   For `paths` as `null`, it reads again each folder that the Explorer shows, each open file and diff, the worktrees of the repository, and the git status.\
+   It does these reads a few at a time, in the limit of 16 open requests, and one read of a thing stands for all the events before it.
+7. An open file with no unsaved edits takes the new text.\
+   An open file with unsaved edits keeps them, and shows that the file changed on the disk.
+8. Known limit: the system can refuse a watch, for example at the limit of inotify watches on Linux, and a change in an ignored folder sends no event.\
+   So the web UI also reads all again when the window gets the focus, and reads an open file again when its tab shows.\
+   The engine writes a refused watch to its log.
+
+### Entries
+
+1. `directory.create` makes a folder, and `file.write` with no `expected` makes a file.\
+   Each one refuses a name that is there (`conflict`).
+2. `entry.rename` gives a file, a folder, or a symbolic link a new path in the same worktree.\
+   It uses an operation of the system that cannot write over an entry, and refuses a new path that is another entry (`conflict`).\
+   A change of only the letter case of a name works.\
+   A new path on another file system is refused (`failedPrecondition`); the engine does not copy and delete.
+3. `entry.delete` moves a file, a folder, or a symbolic link to the trash of the machine of the engine: the freedesktop trash on Linux, also with no desktop, the Trash on macOS, and the Recycle Bin on Windows.\
+   When the trash cannot take the entry, the engine refuses (`failedPrecondition`), and deletes nothing.\
+   It never deletes for good.
+4. A rename and a delete act on the entry itself: for a symbolic link, on the link and not on its target.\
+   No request renames or deletes the worktree itself.
+
+Status: planned (M5).
+
 ## Memory limits
 
 Each part keeps its memory in a limit.\
@@ -302,7 +446,8 @@ A setting changes each one.
 | Part | Rule | Default |
 | --- | --- | --- |
 | Engine process | The engine process stops when no client is connected for a time. It does not stop while a session runs. | 5 minutes |
-| Requests | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message to the engine has at most 1 MiB. | - |
+| Requests | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message to the engine has at most 1 MiB, and from M5 at most 32 MiB. | - |
+| Text files | The engine reads and writes the text of a file up to a limit. | 4 MiB |
 | Sessions | The engine keeps a limited number of sessions. | 64 sessions |
 | Session screen | The engine keeps the screen and the scrollback of each session. Its title, and the part of an escape sequence that is not complete, have a limit too. | 5,000 lines; 1,024 bytes; 4 KiB |
 | Screen frame | The engine leaves the oldest lines of the scrollback out of a screen frame that would be larger than the limit. A cell keeps a limited number of bytes of text. | 32 MiB; 32 bytes |
@@ -310,10 +455,10 @@ A setting changes each one.
 | Session input | The input of a session waits in a queue with a limit. The engine refuses a write to a full queue. | 1 MiB |
 | App terminal output | The app core stops to read the connection when the bytes that the terminal of the web UI did not take yet reach the limit. One frame can go above it. | 1 MiB |
 | App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |
-| Media and previews | The engine reads a large file in ranges, not all at once. A hidden media tab stops playback and decoding. | 1 MB ranges |
+| Media and previews | The engine reads a large file in ranges, not all at once. The app core keeps a whole file in memory only for a request with no range. A hidden media tab stops playback and decoding. | 1 MiB ranges; 64 MiB |
 | Explorer | The web UI reads only the open folders, and drops the folders that it does not use. A large folder scrolls virtually. | 5 minutes |
-| File watch | The engine watches only the open roots, not the ignored folders, and sends the changes in batches. | 100 ms |
-| Git status | The engine reads the status again after a batch of changes. An ignored folder is one line. | 300 ms |
+| File watch | The engine watches only the worktrees that a connection watches, not the ignored folders, and sends the changes in batches. A connection has at most one event that waits for a worktree, with a limited number of paths. | 100 ms; 256 paths |
+| Git status | The web UI reads the status again after the last batch of changes. An ignored folder is one line. | 300 ms |
 
 ## Security
 
@@ -325,6 +470,7 @@ A setting changes each one.
 | Installs | The app does not run installs for the user. | Done |
 | Commands | The app types a command in the terminal, and the user presses Enter. A session has no command of its own: its program is the shell of the user. | Done in the engine (M4a) |
 | Previews | The Markdown preview removes HTML and scripts from the document. It blocks remote images by default, and the user can allow them for each document. | Planned (M5) |
+| Files | A request reads and writes only in the open worktrees, through their handles, and never in a `.git` folder; a write also refuses a file with a second name. A write needs the version that the client read. A delete goes to the trash. A file from the file scheme of the app core is only an image or media, and never a document. | Planned (M5) |
 | Sessions | A session runs as the user that runs the engine. Each client of the engine is the same owner and can use each session. So the token of a remote engine gives a shell as that user: the roots limit the requests for files and the folder where a session starts, not the commands in a shell. | Done (M4a) |
 
 ## Roadmap
