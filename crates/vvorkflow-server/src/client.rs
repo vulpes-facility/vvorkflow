@@ -438,6 +438,9 @@ impl Connection {
             end(&answers);
         });
         let answers = Arc::clone(&pending);
+        // The connection ends when the reader ends: the writer then stops
+        // too, so that the socket closes, and the engine has its place again.
+        let write = writer.abort_handle();
         let reader = tokio::spawn(async move {
             while let Some(Ok(message)) = source.next().await {
                 let Message::Text(text) = message else {
@@ -465,6 +468,7 @@ impl Connection {
                 }
             }
             end(&answers);
+            write.abort();
         });
         Connection {
             outbox,

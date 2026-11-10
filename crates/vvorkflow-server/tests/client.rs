@@ -125,35 +125,48 @@ fn older_engine(place: &Place) -> (JoinHandle<()>, mpsc::UnboundedReceiver<()>) 
 }
 
 /// An engine that welcomes the client, and then sends a text that is not an
-/// answer for each request. It keeps the connection open.
-fn engine_without_answers(place: &Place) -> JoinHandle<()> {
+/// answer to its request. It keeps its side of the connection open, and tells
+/// when the client left the connection.
+fn engine_without_answers(place: &Place) -> (JoinHandle<()>, mpsc::UnboundedReceiver<()>) {
     let endpoint = endpoint(place);
     endpoint.prepare().unwrap();
-    let _lock = endpoint.lock().unwrap();
+    let lock = endpoint.lock().unwrap();
     let mut listener = endpoint.bind().unwrap();
-    tokio::spawn(async move {
-        let _lock = _lock;
-        let mut sockets = Vec::new();
+    let (left, leaves) = mpsc::unbounded_channel();
+    let engine = tokio::spawn(async move {
+        let _lock = lock;
         loop {
             let stream = listener.accept().await.unwrap();
-            // A probe of the client that closes at once has no handshake.
-            let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
-                continue;
-            };
-            let Some(Ok(Message::Text(_))) = socket.next().await else {
-                continue;
-            };
-            let welcome = json!({"id": 0, "result": {"protocol": PROTOCOL_VERSION, "root": "/"}});
-            socket
-                .send(Message::text(welcome.to_string()))
-                .await
-                .unwrap();
-            if let Some(Ok(Message::Text(_))) = socket.next().await {
+            let left = left.clone();
+            tokio::spawn(async move {
+                // A probe of the client that closes at once has no handshake.
+                let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
+                    return;
+                };
+                let Some(Ok(Message::Text(_))) = socket.next().await else {
+                    return;
+                };
+                let welcome =
+                    json!({"id": 0, "result": {"protocol": PROTOCOL_VERSION, "root": "/"}});
+                socket
+                    .send(Message::text(welcome.to_string()))
+                    .await
+                    .unwrap();
+                let Some(Ok(Message::Text(_))) = socket.next().await else {
+                    return;
+                };
                 socket.send(Message::text("no answer")).await.unwrap();
-            }
-            sockets.push(socket);
+                // The engine does not close: only the client ends this.
+                while let Some(Ok(message)) = socket.next().await {
+                    if matches!(message, Message::Close(_)) {
+                        break;
+                    }
+                }
+                let _ = left.send(());
+            });
         }
-    })
+    });
+    (engine, leaves)
 }
 
 /// The answer to `hello`, as soon as the engine listens and has a place for
@@ -269,16 +282,21 @@ async fn the_client_replaces_an_engine_of_another_version() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_text_that_is_not_an_answer_ends_the_connection() {
     let place = place();
-    let engine = engine_without_answers(&place);
+    let (engine, mut leaves) = engine_without_answers(&place);
     let client = client_only(&place);
 
-    // Each request gets a new connection, because the last one ended.
+    // Each request gets a new connection, because the client left the last
+    // one, which the engine sees before the client asks again.
     for _ in 0..2 {
         let refused = tokio::time::timeout(Duration::from_secs(5), client.request(hello()))
             .await
             .expect("the request ends")
             .unwrap_err();
         assert_eq!(refused.message, "The engine stopped before it answered.");
+        tokio::time::timeout(Duration::from_secs(5), leaves.recv())
+            .await
+            .expect("the client leaves the connection")
+            .unwrap();
     }
     engine.abort();
 }
