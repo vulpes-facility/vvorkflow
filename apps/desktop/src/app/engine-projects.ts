@@ -1,18 +1,28 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { WelcomeProject } from '@/pages/workbench'
-import { hello, isTauri, listProjects } from '@/shared/api'
+import {
+  createProject,
+  hello,
+  isTauri,
+  listProjects,
+  type Project,
+} from '@/shared/api'
 
 /**
  * The projects of the engine: it starts the connection with `hello`, then
  * lists the projects root, again each time the window gets the focus.
  *
- * @returns The projects in name order, and the message of the engine when it
- *   did not start or cannot read the root. Outside Tauri, no projects.
+ * @returns The projects in name order, the message of the engine when it
+ *   did not start or cannot read the root, and, when the engine answers, the
+ *   action that makes a project and lists the projects again. Outside Tauri,
+ *   no projects and no action.
  */
 export function useEngineProjects(): {
   projects: WelcomeProject[]
   engineError?: string
+  createProject?: (name: string) => Promise<Project>
 } {
+  const queryClient = useQueryClient()
   const welcome = useQuery({
     queryKey: ['engine', 'hello'],
     queryFn: hello,
@@ -31,5 +41,14 @@ export function useEngineProjects(): {
       git,
     })),
     engineError: welcome.error?.message ?? listed.error?.message,
+    createProject: welcome.isSuccess
+      ? async (name) => {
+          const project = await createProject(name)
+          void queryClient.invalidateQueries({
+            queryKey: ['engine', 'projects'],
+          })
+          return project
+        }
+      : undefined,
   }
 }

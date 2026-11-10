@@ -14,9 +14,9 @@ use std::sync::{Arc, Mutex};
 use cap_std::ambient_authority;
 use cap_std::fs::Dir;
 use vvorkflow_protocol::{
-    ChangedPath, DirectoryEntry, EngineError, EntryKind, ErrorCode, Hello, ListDirectory,
-    ListProjects, OpenFolder, PROTOCOL_VERSION, Project, ReadStatus, Repository, Request, Response,
-    Welcome, Worktree,
+    ChangedPath, CreateProject, DirectoryEntry, EngineError, EntryKind, ErrorCode, Hello,
+    ListDirectory, ListProjects, OpenFolder, PROTOCOL_VERSION, Project, ReadStatus, Repository,
+    Request, Response, Welcome, Worktree,
 };
 
 /// The environment variable that names the projects root.
@@ -141,6 +141,7 @@ impl Engine {
         Ok(match request {
             Request::Hello(hello) => Response::Welcome(self.hello(hello)?),
             Request::ListProjects(list) => Response::Projects(self.list_projects(list)?),
+            Request::CreateProject(create) => Response::Project(self.create_project(create)?),
             Request::OpenFolder(open) => Response::Repository(self.open_folder(open)?),
             Request::ListDirectory(list) => Response::Entries(self.list_directory(list)?),
             Request::ReadStatus(read) => Response::Status(self.read_status(read)?),
@@ -203,6 +204,40 @@ impl Engine {
             .collect();
         list.sort_by_key(|project| project.name.to_lowercase());
         Ok(list)
+    }
+
+    /// Makes a project: a new, empty folder directly in the projects root.
+    ///
+    /// Returns the project, which `project.list` then also lists. Refuses a
+    /// name that is not one plain name, that starts with a dot, or that a
+    /// system does not accept as a file name (`invalidArgument`), and a name
+    /// that is in the root already (`failedPrecondition`). Fails when the
+    /// engine cannot write in the root (`failedPrecondition`).
+    pub fn create_project(&self, request: CreateProject) -> Result<Project, EngineError> {
+        let name = project_name(&request.name)?;
+        let root = &self.projects;
+        // The handle makes the folder in the root that the engine opened at
+        // start, also when its path leads to another folder now.
+        match root.dir.create_dir(name) {
+            Ok(()) => {}
+            Err(made) if made.kind() == std::io::ErrorKind::AlreadyExists => {
+                return Err(error(
+                    ErrorCode::FailedPrecondition,
+                    format!("{name} is in the projects root already."),
+                ));
+            }
+            Err(made) => {
+                return Err(error(
+                    ErrorCode::FailedPrecondition,
+                    format!("The engine cannot make {name} in the projects root: {made}."),
+                ));
+            }
+        }
+        Ok(Project {
+            name: name.to_owned(),
+            path: display(&root.path.join(name)),
+            git: false,
+        })
     }
 
     /// Opens a folder and adds it, and each worktree of its repository, to the
@@ -423,6 +458,54 @@ fn plain_relative(relative: &str) -> Result<&Path, EngineError> {
             format!("{relative} is not a plain relative path."),
         ))
     }
+}
+
+/// The names that Windows keeps for devices, with each extension.
+const DEVICE_NAMES: [&str; 22] = [
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// The name of a new project: one name that Linux, macOS, and Windows accept
+/// as a file name, so that a project has the same name on each machine. It
+/// does not start with a dot, because such a folder is not a project.
+fn project_name(name: &str) -> Result<&str, EngineError> {
+    let refused = |reason: &str| Err(error(ErrorCode::InvalidArgument, reason.to_owned()));
+    if name.is_empty() {
+        return refused("A project needs a name.");
+    }
+    if name.len() > 255 {
+        return refused("A project name has at most 255 bytes.");
+    }
+    if name.starts_with('.') {
+        return refused("A project name cannot start with a dot.");
+    }
+    if name.starts_with(' ') || name.ends_with([' ', '.']) {
+        return refused("A project name cannot start or end with a space, or end with a dot.");
+    }
+    if let Some(found) = name
+        .chars()
+        .find(|character| r#"/\<>:"|?*"#.contains(*character))
+    {
+        return Err(error(
+            ErrorCode::InvalidArgument,
+            format!("A project name cannot contain the character {found}."),
+        ));
+    }
+    if name.chars().any(char::is_control) {
+        return refused("A project name cannot contain a control character.");
+    }
+    let stem = name.split('.').next().unwrap_or(name).trim_end();
+    if DEVICE_NAMES
+        .iter()
+        .any(|device| device.eq_ignore_ascii_case(stem))
+    {
+        return Err(error(
+            ErrorCode::InvalidArgument,
+            format!("{name} is the name of a device on Windows."),
+        ));
+    }
+    Ok(name)
 }
 
 fn name_of(path: &Path) -> String {

@@ -16,6 +16,14 @@ export const projects: WelcomeProject[] = [
   { id: '/home/me/vvorkflow/vvorkflow', name: 'vvorkflow', git: true },
 ]
 
+/** Makes each project, as the engine does for a new name. */
+export const createProject = fn(async (_name: string) => {})
+
+/** Refuses each project, as the engine does for a name that the root has already. */
+export const refuseProject = fn((name: string) =>
+  Promise.reject<void>(new Error(`${name} is in the projects root already.`)),
+)
+
 export const windowContext: WindowContext = {
   project: 'vvorkflow',
   branch: 'feat/terminal-tabs',

@@ -54,7 +54,8 @@ The receiver checks each message against the schema, at run time.
    When the engine uses another version, it answers with the error `failedPrecondition`, and closes the connection.\
    A request before `hello` gets `failedPrecondition`, and the connection stays open.\
    The engine accepts `hello` again on the same connection.
-4. The protocol version changes at each change that an older client cannot read.
+4. The protocol version changes at each change that an older client or an older engine cannot read.\
+   A new method is such a change, because an older engine does not know it.
 5. `shutdown` stops the engine process: the engine stops to listen, answers `{}`, closes the connection, and stops.\
    It is valid before `hello`, and its shape never changes, so that each app can stop an engine of an older version.
 6. A message that is not a request with an `id` closes the connection.\
@@ -77,12 +78,17 @@ The events come with the terminal sessions (M4).
 3. A project is a folder directly in the root.\
    A name that starts with `.`, or that is not UTF-8, is not a project.\
    A symbolic link that leads out of the root is not a project, because the engine reads the root through a directory handle.
-4. The worktrees of one repository are in one group in the Explorer.
-5. The desktop app can also open other folders on its own computer, as in VS Code.\
+4. `project.create` makes a project: a new, empty folder in the root, through the same handle.\
+   Its name is one name that Linux, macOS, and Windows accept as a file name, and it does not start with `.`.\
+   The engine refuses a name that is in the root already, and does not change that folder.\
+   The engine does not run `git init`: the user does that in a terminal.
+5. The worktrees of one repository are in one group in the Explorer.
+6. The desktop app can also open other folders on its own computer, as in VS Code.\
    A remote client can open only the projects in the root.
 
-Status: done (M3), with the method `project.list`.\
+Status: done (M3), with the methods `project.list` and `project.create`.\
 The Welcome tab shows the projects, or the message of a root that is not correct.\
+Its New project action asks for a name in a dialog, makes the project, and opens it.\
 The engine process stops on a root that is not correct, and the app shows its message.
 
 [`conventions/engine.md`](conventions/engine.md) gives the rules that keep each request in these folders.

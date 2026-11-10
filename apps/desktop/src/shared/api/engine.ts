@@ -7,7 +7,7 @@ import { protocol } from './protocol.gen.ts'
 const types = protocol.shape
 
 /** The protocol version of this client, which `hello` sends to the engine. */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 
 /**
  * The params and the value of each method of the engine. The generator types
@@ -20,6 +20,7 @@ export const methods = {
     params: types.list_projects,
     result: types.project.array(),
   },
+  'project.create': { params: types.create_project, result: types.project },
   'folder.open': { params: types.open_folder, result: types.repository },
   'directory.list': {
     params: types.list_directory,
@@ -97,6 +98,16 @@ export function hello(): Promise<Welcome> {
  */
 export function listProjects(): Promise<Project[]> {
   return request('project.list', {})
+}
+
+/**
+ * Makes a project: a new, empty folder in the projects root.
+ *
+ * @returns The project. Throws `invalidArgument` for a name that is not one
+ *   plain name, and `failedPrecondition` for a name that the root has already.
+ */
+export function createProject(name: string): Promise<Project> {
+  return request('project.create', { name })
 }
 
 /**

@@ -9,8 +9,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// The version of this protocol. It changes at each change that an older
-/// client or engine cannot read.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// client or engine cannot read, also a new method.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// A request to the engine: its method, and its params.
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
@@ -22,6 +22,9 @@ pub enum Request {
     /// Answers each [`Project`] in the projects root.
     #[serde(rename = "project.list")]
     ListProjects(ListProjects),
+    /// Makes a folder in the projects root. Answers its [`Project`].
+    #[serde(rename = "project.create")]
+    CreateProject(CreateProject),
     /// Answers a [`Repository`].
     #[serde(rename = "folder.open")]
     OpenFolder(OpenFolder),
@@ -68,6 +71,7 @@ pub enum ServerMessage<R = Response> {
 pub enum Response {
     Welcome(Welcome),
     Projects(Vec<Project>),
+    Project(Project),
     Repository(Repository),
     Entries(Vec<DirectoryEntry>),
     Status(Vec<ChangedPath>),
@@ -114,6 +118,15 @@ pub struct Project {
     pub path: String,
     /// True when the folder has a `.git` entry.
     pub git: bool,
+}
+
+/// Makes a project: a new, empty folder directly in the projects root.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateProject {
+    /// The name of the folder: one name that each system accepts, which does
+    /// not start with a dot.
+    pub name: String,
 }
 
 /// Opens a folder: a git repository, or a plain folder.
@@ -244,6 +257,7 @@ pub fn schema() -> schemars::Schema {
         hello: Hello,
         welcome: Welcome,
         list_projects: ListProjects,
+        create_project: CreateProject,
         shutdown: Shutdown,
         done: Done,
         project: Project,

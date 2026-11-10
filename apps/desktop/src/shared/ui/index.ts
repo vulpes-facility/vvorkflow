@@ -6,7 +6,21 @@ export {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from './context-menu'
+export {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
+} from './dialog'
 export { EmptyState } from './empty-state'
+export { ErrorMark } from './error-mark'
+export { Input } from './input'
 export { Kbd, KbdGroup } from './kbd'
 export { LogoMark } from './logo'
 export { Shortcut } from './shortcut'

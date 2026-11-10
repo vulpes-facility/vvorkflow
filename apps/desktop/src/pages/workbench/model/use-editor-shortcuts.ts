@@ -1,10 +1,12 @@
 import type { DockviewApi } from 'dockview-react'
 import { useEffect } from 'react'
 import type { Platform } from '@/shared/lib'
+import { isDialogKey } from './dialog-keys'
 
 /**
  * Closes the active tab of the editor area on `mod+W`. It is the keyboard way
  * to close a tab, because the close icon of a tab is a pointer target only.
+ * It does nothing from a dialog.
  */
 export function useEditorShortcuts(
   platform: Platform,
@@ -17,7 +19,8 @@ export function useEditorShortcuts(
         !mod ||
         event.shiftKey ||
         event.altKey ||
-        event.key.toLowerCase() !== 'w'
+        event.key.toLowerCase() !== 'w' ||
+        isDialogKey(event)
       )
         return
       const panel = editor()?.activePanel

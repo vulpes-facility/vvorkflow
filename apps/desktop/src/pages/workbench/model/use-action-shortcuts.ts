@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { Platform } from '@/shared/lib'
+import { isDialogKey } from './dialog-keys'
 
 interface Actions {
   onNewProject?: () => void
@@ -10,7 +11,8 @@ interface Actions {
 /**
  * Runs the actions on the shortcuts that the interface shows: `mod+N` and
  * `mod+O` on the Welcome tab, and `mod+,` on the settings button. A shortcut
- * works only when its action has a handler, as only those actions show.
+ * works only when its action has a handler, as only those actions show, and
+ * not from a dialog.
  */
 export function useActionShortcuts(
   platform: Platform,
@@ -19,7 +21,7 @@ export function useActionShortcuts(
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const mod = platform === 'macos' ? event.metaKey : event.ctrlKey
-      if (!mod || event.shiftKey || event.altKey) return
+      if (!mod || event.shiftKey || event.altKey || isDialogKey(event)) return
       const actions: Record<string, (() => void) | undefined> = {
         n: onNewProject,
         o: onOpenFolder,

@@ -14,7 +14,7 @@ export function App() {
   const windowControls = useMemo(() => currentWindowControls(), [])
   const colorScheme = useSystemColorScheme()
   const { repositories, explorer, onOpenFolder, openPath } = useEngineExplorer()
-  const { projects, engineError } = useEngineProjects()
+  const { projects, engineError, createProject } = useEngineProjects()
 
   useEffect(
     () => applyColorScheme(document.documentElement, colorScheme),
@@ -28,6 +28,10 @@ export function App() {
       projects={projects}
       engineError={engineError}
       onOpenProject={(project) => openPath(project.id)}
+      onCreateProject={
+        createProject &&
+        (async (name) => openPath((await createProject(name)).path))
+      }
       repositories={repositories}
       explorer={explorer}
       onOpenFolder={onOpenFolder}
