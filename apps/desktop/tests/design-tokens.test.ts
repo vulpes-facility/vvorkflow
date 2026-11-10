@@ -226,6 +226,8 @@ const textPairs: [string, string[]][] = [
   ['card-foreground', ['card']],
   ['accent-foreground', ['accent']],
   ['muted-foreground', ['muted']],
+  // Code in the Markdown preview, on the muted surface.
+  ['foreground', ['muted']],
   ['secondary-foreground', ['secondary']],
   ['sidebar-foreground', ['sidebar', 'sidebar-accent']],
   ['primary-foreground', ['primary', 'primary-hover']],

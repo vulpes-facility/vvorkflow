@@ -124,6 +124,8 @@
   --color-window-close-hover-foreground: var(--window-close-hover-foreground);
 
   --shadow-overlay: var(--vv-shadow-overlay);
+
+  --container-measure: var(--vv-measure);
 }
 
 @layer base {
@@ -166,6 +168,19 @@
   padding-left: calc(
     var(--spacing-tree-pad) + var(--spacing-tree-indent) * (var(--level, 1) - 1)
   );
+}
+
+/* The checkerboard behind a transparent image: two quiet surface colors, one square each. */
+@utility checkerboard {
+  background-color: var(--muted);
+  background-image: conic-gradient(
+    var(--accent) 25%,
+    transparent 0 50%,
+    var(--accent) 0 75%,
+    transparent 0
+  );
+  background-size: calc(var(--vv-checker-size) * 2)
+    calc(var(--vv-checker-size) * 2);
 }
 
 /* WCAG 2.2 SC 2.3.3: no motion when the user asks for less motion. */
