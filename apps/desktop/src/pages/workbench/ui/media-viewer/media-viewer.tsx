@@ -2,6 +2,7 @@ import { FileAudio, Maximize2, Scan, ZoomIn, ZoomOut } from 'lucide-react'
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -50,28 +51,54 @@ export function MediaViewer({ kind, src, name, active }: MediaViewerProps) {
   const identity = `${kind}:${src}`
   const [failedIdentity, setFailedIdentity] = useState<string>()
   const failed = failedIdentity === identity
+  const viewerId = useId()
   const root = useRef<HTMLDivElement>(null)
-  const mark = useRef<HTMLButtonElement>(null)
-  // True when the viewer had the focus when the decode failed.
-  const hadFocus = useRef(false)
-  const fail = useCallback(() => {
-    hadFocus.current = Boolean(root.current?.contains(document.activeElement))
-    setFailedIdentity(identity)
-  }, [identity])
 
-  // The failed element goes away with its controls: the focus moves to the
-  // error icon, and does not fall to the document (WCAG 2.2 SC 2.4.3).
+  // A new kind, a new source, or a decode error replaces the content of the
+  // viewer, and the control that had the focus goes away with it. The label of
+  // that control is kept ('' for a control without a label, such as the scroll
+  // area), so that the new content can give the focus back (WCAG 2.2 SC
+  // 2.4.3). A viewer that did not have the focus does not take it.
+  const [seen, setSeen] = useState(identity)
+  const [refocus, setRefocus] = useState<string>()
+  const focusedLabel = () => {
+    const active = document.activeElement
+    return active?.closest(`[data-viewer="${viewerId}"]`)
+      ? (active.getAttribute('aria-label') ?? '')
+      : undefined
+  }
+  if (seen !== identity) {
+    setSeen(identity)
+    setRefocus(focusedLabel())
+  }
+  const fail = useCallback(() => {
+    setRefocus(focusedLabel())
+    setFailedIdentity(identity)
+    // oxlint-disable-next-line react/exhaustive-deps
+  }, [identity, viewerId])
+
   useLayoutEffect(() => {
-    if (failed && hadFocus.current) mark.current?.focus()
-    hadFocus.current = false
-  }, [failed])
+    if (refocus === undefined) return
+    setRefocus(undefined)
+    const container = root.current
+    if (!container) return
+    // The same control, when the new content has it; else the focus target of
+    // the content: the scroll area, the media element, or the error icon.
+    const same = [...container.querySelectorAll('button')].find(
+      (button) =>
+        refocus !== '' && button.getAttribute('aria-label') === refocus,
+    )
+    ;(
+      same ?? container.querySelector<HTMLElement>('[data-viewer-focus]')
+    )?.focus()
+  }, [refocus])
 
   let content: React.ReactNode
   if (failed) {
     content = (
       <div className="flex h-full items-center justify-center gap-2 bg-editor px-4">
         <ErrorMark
-          ref={mark}
+          data-viewer-focus
           label="File error"
           message={`${name} cannot be decoded.`}
           side="bottom"
@@ -104,7 +131,7 @@ export function MediaViewer({ kind, src, name, active }: MediaViewerProps) {
     )
   }
   return (
-    <div ref={root} className="h-full min-h-0">
+    <div ref={root} data-viewer={viewerId} className="h-full min-h-0">
       {content}
     </div>
   )
@@ -128,6 +155,7 @@ function ImageViewer({
   const area = useRef<HTMLDivElement>(null)
   // The point of the image in the middle of the view, to keep it there.
   const anchor = useRef<{ x: number; y: number }>(undefined)
+  const image = useRef<HTMLImageElement>(null)
 
   useEffect(() => {
     const element = area.current
@@ -151,25 +179,39 @@ function ImageViewer({
     zoom.kind === 'scale' ? zoom.scale : natural ? fitScale(natural, view) : 1
 
   function zoomTo(next: Zoom) {
-    const element = area.current
-    if (element && element.scrollWidth > 0 && element.scrollHeight > 0)
+    // The point of the image in the middle of the view, as fractions of the
+    // image itself: the padding and the margins are not part of it.
+    const bounds = image.current?.getBoundingClientRect()
+    const center = viewCenter()
+    if (bounds && center && bounds.width > 0 && bounds.height > 0)
       anchor.current = {
-        x: (element.scrollLeft + element.clientWidth / 2) / element.scrollWidth,
-        y:
-          (element.scrollTop + element.clientHeight / 2) / element.scrollHeight,
+        x: clamp((center.x - bounds.left) / bounds.width),
+        y: clamp((center.y - bounds.top) / bounds.height),
       }
     setZoom(next)
+  }
+
+  /** The middle of the view, in the coordinates of the window. */
+  function viewCenter() {
+    const element = area.current
+    if (!element) return undefined
+    const box = element.getBoundingClientRect()
+    return {
+      x: box.left + element.clientLeft + element.clientWidth / 2,
+      y: box.top + element.clientTop + element.clientHeight / 2,
+    }
   }
 
   // After a zoom, the same point of the image is in the middle of the view.
   useLayoutEffect(() => {
     const element = area.current
+    const bounds = image.current?.getBoundingClientRect()
+    const center = viewCenter()
     const point = anchor.current
     anchor.current = undefined
-    if (!element || !point) return
-    element.scrollLeft = point.x * element.scrollWidth - element.clientWidth / 2
-    element.scrollTop =
-      point.y * element.scrollHeight - element.clientHeight / 2
+    if (!element || !bounds || !center || !point) return
+    element.scrollLeft += bounds.left + point.x * bounds.width - center.x
+    element.scrollTop += bounds.top + point.y * bounds.height - center.y
   }, [scale])
 
   const actual = zoom.kind === 'scale' && zoom.scale === 1
@@ -232,10 +274,12 @@ function ImageViewer({
         role="group"
         aria-label={name}
         tabIndex={0}
+        data-viewer-focus
         className="min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
       >
         <div className="flex min-h-full w-fit min-w-full p-4">
           <img
+            ref={image}
             // An inactive tab gives up the source and its decoded data.
             src={active ? src : undefined}
             alt={name}
@@ -311,6 +355,8 @@ function PlayerViewer({
   const common = {
     ref: element,
     controls: true,
+    tabIndex: 0,
+    'data-viewer-focus': true,
     preload: 'metadata',
     'aria-label': name,
   } as const
@@ -341,4 +387,8 @@ function PlayerViewer({
       />
     </div>
   )
+}
+
+function clamp(value: number): number {
+  return Math.min(1, Math.max(0, value))
 }

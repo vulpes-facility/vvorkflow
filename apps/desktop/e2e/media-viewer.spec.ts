@@ -403,3 +403,150 @@ test('a deactivation before the metadata keeps the saved position (the race is f
     await video.evaluate((element: HTMLVideoElement) => element.paused),
   ).toBe(true)
 })
+
+test.describe('a new source or kind and the focus', () => {
+  const inside = (page: Page) => page.locator('#storybook-root :focus')
+
+  /** Adds a field outside the viewer, which takes the focus. */
+  async function focusOutside(page: Page) {
+    await page.evaluate(() => {
+      const input = document.createElement('input')
+      input.id = 'outside'
+      input.setAttribute('aria-label', 'Outside')
+      document.body.append(input)
+      input.focus()
+    })
+  }
+
+  test.beforeEach(async ({ page }) => {
+    await page.goto(story('photo'))
+    await page.getByRole('img', { name: 'photo.jpg' }).waitFor()
+  })
+
+  test('a new source keeps the focus on the same button', async ({ page }) => {
+    await page.getByRole('button', { name: 'Zoom in' }).focus()
+    await update(page, 'photo', {
+      src: '/media/transparent.png',
+      name: 'transparent.png',
+    })
+    await page.getByRole('img', { name: 'transparent.png' }).waitFor()
+    await expect(page.getByRole('button', { name: 'Zoom in' })).toBeFocused()
+  })
+
+  test('a new source keeps the focus in the scroll area', async ({ page }) => {
+    await page.getByRole('group', { name: 'photo.jpg' }).focus()
+    await update(page, 'photo', {
+      src: '/media/transparent.png',
+      name: 'transparent.png',
+    })
+    await page.getByRole('img', { name: 'transparent.png' }).waitFor()
+    await expect(
+      page.getByRole('group', { name: 'transparent.png' }),
+    ).toBeFocused()
+  })
+
+  test('a new kind moves the focus to the media element', async ({ page }) => {
+    await page.getByRole('button', { name: 'Zoom in' }).focus()
+    await update(page, 'photo', {
+      kind: 'audio',
+      src: '/media/tone.wav',
+      name: 'tone.wav',
+    })
+    await expect(page.locator('audio')).toBeFocused()
+  })
+
+  test('a new kind of a failing file moves the focus to the error icon', async ({
+    page,
+  }) => {
+    await page.getByRole('group', { name: 'photo.jpg' }).focus()
+    await update(page, 'photo', {
+      kind: 'image',
+      src: '/media/tone.wav',
+      name: 'tone.wav',
+    })
+    await expect(page.getByRole('button', { name: 'File error' })).toBeFocused()
+    // And a recovery with the focus on the error icon gives it to the player.
+    await update(page, 'photo', {
+      kind: 'audio',
+      src: '/media/tone.wav',
+      name: 'tone.wav',
+    })
+    await expect(page.locator('audio')).toBeFocused()
+  })
+
+  test('a new source or kind does not take the focus from outside the viewer', async ({
+    page,
+  }) => {
+    await focusOutside(page)
+    await update(page, 'photo', {
+      src: '/media/transparent.png',
+      name: 'transparent.png',
+    })
+    await page.getByRole('img', { name: 'transparent.png' }).waitFor()
+    await expect(page.locator('#outside')).toBeFocused()
+    await update(page, 'photo', {
+      kind: 'audio',
+      src: '/media/tone.wav',
+      name: 'tone.wav',
+    })
+    await page.locator('audio').waitFor()
+    await expect(page.locator('#outside')).toBeFocused()
+    expect(await inside(page).count()).toBe(0)
+  })
+})
+
+test('the zoom keeps the same point of the image in the middle of the view', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 480 })
+  await page.goto(story('photo'))
+  const image = page.getByRole('img', { name: 'photo.jpg' })
+  await image.waitFor()
+  const area = page.getByRole('group', { name: 'photo.jpg' })
+  await page.getByRole('button', { name: 'Actual size' }).click()
+
+  /** The point of the image under the middle of the view, as fractions. */
+  const point = async () =>
+    page.evaluate(() => {
+      const area = document.querySelector('[role="group"]') as HTMLElement
+      const image = document.querySelector('img') as HTMLImageElement
+      const box = area.getBoundingClientRect()
+      const rect = image.getBoundingClientRect()
+      const x = box.left + area.clientLeft + area.clientWidth / 2
+      const y = box.top + area.clientTop + area.clientHeight / 2
+      return {
+        fx: (x - rect.left) / rect.width,
+        fy: (y - rect.top) / rect.height,
+        width: rect.width,
+        height: rect.height,
+      }
+    })
+
+  // Pan to a place that is not the middle, then zoom through the steps.
+  await area.evaluate((element) => {
+    element.scrollLeft = 120
+    element.scrollTop = 40
+  })
+  await area.focus()
+  let before = await point()
+  for (const key of ['+', '+', '+', '+', '+', '+', '-', '-', '-', '+']) {
+    await page.keyboard.press(key)
+    const after = await point()
+    // The same point of the image is in the middle: within one pixel.
+    expect(Math.abs(after.fx - before.fx) * after.width).toBeLessThanOrEqual(1)
+    expect(Math.abs(after.fy - before.fy) * after.height).toBeLessThanOrEqual(1)
+    before = after
+  }
+
+  // At the left edge: the middle of the view is a point of the image, and
+  // 800 % to 1600 % keeps it.
+  await page.keyboard.press('0')
+  await page.getByRole('button', { name: 'Actual size' }).click()
+  for (let index = 0; index < 6; index++) await page.keyboard.press('+')
+  await area.evaluate((element) => (element.scrollLeft = 0))
+  before = await point()
+  await page.keyboard.press('+')
+  const after = await point()
+  expect(Math.abs(after.fx - before.fx) * after.width).toBeLessThanOrEqual(1)
+  await expect(image).toBeVisible()
+})
