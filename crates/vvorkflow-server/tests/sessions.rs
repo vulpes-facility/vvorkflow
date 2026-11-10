@@ -823,3 +823,45 @@ async fn the_engine_process_stops_while_a_request_still_runs() {
         stopped.elapsed()
     );
 }
+
+/// An engine that says that it stops, but still listens.
+fn engine_that_does_not_stop(place: &Place) -> JoinHandle<()> {
+    let endpoint = endpoint(place);
+    endpoint.prepare().unwrap();
+    let lock = endpoint.lock().unwrap();
+    let mut listener = endpoint.bind().unwrap();
+    tokio::spawn(async move {
+        let _lock = lock;
+        loop {
+            let stream = listener.accept().await.unwrap();
+            let Ok(mut socket) = tokio_tungstenite::accept_async(stream).await else {
+                continue;
+            };
+            let Some(Ok(Message::Text(text))) = socket.next().await else {
+                continue;
+            };
+            let id = serde_json::from_str::<Value>(&text).unwrap()["id"].clone();
+            let done = json!({"id": id, "result": {}});
+            let _ = socket.send(Message::text(done.to_string())).await;
+        }
+    })
+}
+
+/// `force_stop` succeeds only when the engine no longer listens: an engine
+/// that says that it stops but still listens is an error, and no engine is
+/// a success.
+#[tokio::test(flavor = "multi_thread")]
+async fn force_stop_fails_while_the_engine_still_listens() {
+    let place = place();
+    let (client, _deliveries) = client_only(&place);
+    client.force_stop().await.unwrap();
+
+    let engine = engine_that_does_not_stop(&place);
+    let refused = client.force_stop().await.unwrap_err();
+    assert_eq!(refused.code, ErrorCode::FailedPrecondition);
+    assert_eq!(
+        refused.message,
+        "The engine did not stop: it still listens."
+    );
+    engine.abort();
+}

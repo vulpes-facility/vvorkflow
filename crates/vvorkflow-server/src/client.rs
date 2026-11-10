@@ -439,19 +439,35 @@ impl EngineClient {
     /// `hello`, with `shutdown`, which each version understands, and waits
     /// until it no longer listens. Without `force`, an engine with sessions
     /// refuses: then this returns the refusal of that engine.
+    ///
+    /// Succeeds when no engine listens. Fails when the engine still listens
+    /// after its answer, or after no answer, a wrong one, or none in
+    /// [`ANSWER`], so that a caller never takes an engine that still runs for
+    /// a stopped one.
     async fn stop_other(&self, force: bool) -> Result<(), EngineError> {
         let answer = tokio::time::timeout(ANSWER, async {
-            let mut socket = self.handshake().await.ok()?;
+            let mut socket = match self.handshake().await {
+                Ok(socket) => socket,
+                Err(Refused::Absent) => return Err(()),
+                Err(_) => return Ok(None),
+            };
             let shutdown = ClientMessage {
                 id: 0,
                 request: Request::Shutdown(Shutdown { force }),
             };
-            send(&mut socket, &shutdown).await.ok()?;
-            receive(&mut socket).await
+            if send(&mut socket, &shutdown).await.is_err() {
+                return Ok(None);
+            }
+            Ok(receive(&mut socket).await)
         })
         .await;
-        if let Ok(Some(ServerMessage::Error { error, .. })) = answer {
-            return Err(error);
+        match answer {
+            // No engine listens.
+            Ok(Err(())) => return Ok(()),
+            Ok(Ok(Some(ServerMessage::Error { error, .. }))) => return Err(error),
+            // The engine said that it stops, or did not answer as it should:
+            // it stops only when it no longer listens.
+            _ => {}
         }
         for _ in 0..100 {
             if self.endpoint.connect().await.is_err() {
@@ -459,7 +475,9 @@ impl EngineClient {
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        Ok(())
+        Err(refused(
+            "The engine did not stop: it still listens.".to_owned(),
+        ))
     }
 
     /// Whether an engine of another protocol version listens: an engine
@@ -496,8 +514,10 @@ impl EngineClient {
     /// `force` on a connection of its own, before `hello`, and waits until
     /// the engine no longer listens. The next request starts a new engine.
     ///
-    /// Returns the error of the engine, or `failedPrecondition` when the turn
-    /// to replace the engine does not come.
+    /// Succeeds when no engine listens. Returns the error of the engine, or
+    /// `failedPrecondition` when the turn to replace the engine does not
+    /// come, or when the engine still listens after its answer, or after
+    /// none in time.
     pub async fn force_stop(&self) -> Result<(), EngineError> {
         {
             let _turn = self.turn().await?;

@@ -153,6 +153,7 @@ The engine process stops on a root that is not correct, and the app shows its me
    When `hello` fails because of the version, the app sends `shutdown`, and starts its own engine.\
    An engine with sessions refuses that `shutdown` ([Engine stop with sessions](#engine-stop-with-sessions)): the app then shows the refusal and starts no engine.\
    The app sends a `shutdown` on a connection of its own, before `hello`, and not on the connection of the requests.\
+   It takes an engine as stopped only when the engine no longer listens: an engine that still listens 2 seconds after its answer, or after no answer in 10 seconds, is an error, and an endpoint where no engine listens is a success.\
    Only one app at a time starts or replaces the engine: the app locks `engine.turn`, and says `hello` again before it does so.\
    Thus an app does not stop the engine that another app started a moment before.\
    An engine has 10 seconds to answer `hello`; after them the app shows an error, and the next request tries again.\
