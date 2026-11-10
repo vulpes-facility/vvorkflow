@@ -6,8 +6,6 @@ use std::cell::Cell;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use vvorkflow_protocol::ErrorCode;
-
 use super::Sessions;
 
 thread_local! {
@@ -69,6 +67,8 @@ fn the_watch_gets_each_count_under_the_lock_of_the_sessions() {
 #[cfg(unix)]
 #[test]
 fn a_start_that_fails_ends_and_reaps_the_shell() {
+    use vvorkflow_protocol::ErrorCode;
+
     let base = tempfile::tempdir().unwrap();
     for step in ["pty", "session-waiter", "session-reader", "session-writer"] {
         let sessions = Arc::new(Sessions::new());
