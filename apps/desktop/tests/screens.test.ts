@@ -202,6 +202,9 @@ describe.each(records)('the screen bytes of $name', ({ record }) => {
 
     const whole = terminal(record.columns, record.rows)
     await write(whole.terminal, output)
+    // The terminal at the position: the state that the screen bytes draw.
+    const before = terminal(record.columns, record.rows)
+    await write(before.terminal, output.subarray(0, position))
 
     // A terminal that showed other output, as the terminal of the web UI
     // after an overflow: it resets, and then writes the screen bytes.
@@ -210,8 +213,10 @@ describe.each(records)('the screen bytes of $name', ({ record }) => {
     copy.reset()
     copy.terminal.resize(record.columns, record.rows)
     await write(copy.terminal, Buffer.from(screen, 'base64'))
-    await write(copy.terminal, output.subarray(position))
+    // First the screen alone, so that later output cannot hide a fault.
+    expect(state(copy, skip)).toEqual(state(before, skip))
 
+    await write(copy.terminal, output.subarray(position))
     expect(state(copy, skip)).toEqual(state(whole, skip))
 
     await write(whole.terminal, probe)

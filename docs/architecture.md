@@ -214,7 +214,7 @@ Kill (menu) / end of the shell ──► the session ends
    xterm.js 6.0 has no other keyboard protocol, such as the one of kitty, so the engine keeps none.
 2. From this state the engine makes the screen bytes: bytes that draw the same state in a terminal that was reset to the size of the session.\
    The terminal of the web UI is xterm.js, so the measure is xterm.js:\
-   for each recorded output in `crates/vvorkflow-engine/tests/screens/`, a terminal that gets the screen bytes of a position and then the output after it MUST show the same as a terminal that gets all the output.\
+   for each recorded output in `crates/vvorkflow-engine/tests/screens/`, a terminal that gets the screen bytes of a position MUST show the same as a terminal that got the output up to that position, and after the output that follows, the same as a terminal that gets all the output.\
    A Rust test keeps the screen bytes of these records current, and a Vitest test compares the two terminals: each line of both buffers, the cursor with its style and its visibility, the modes, the mouse encoding, and the title.\
    A reset of xterm.js keeps a hidden cursor, the line feed mode, and the blink of mode 12, so the screen bytes set these three, also to their defaults.\
    The comparison leaves out the scrollback that rule 4 removes, and the differences of the known limits of rule 5.
