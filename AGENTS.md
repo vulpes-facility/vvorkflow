@@ -20,7 +20,7 @@ The desktop app has its design tokens, its window shell, the Welcome tab, the te
 - `apps/desktop/` - The desktop app: the React web UI in `src/`, and the Tauri 2 shell in `src-tauri/`.
 - `apps/desktop/scripts/build-server.mjs` - Builds the engine process `vvorkflow-server` before `tauri dev` and `tauri build`, and copies it as the sidecar of the bundle.
 - `apps/desktop/src/app/styles/tokens.css` - The design tokens, the only source of design values, for the light and the dark theme.
-- `apps/desktop/src/pages/workbench/` - The window shell: the activity bar, the side bar, the title bar, the editor area, the status bar, the Welcome tab, the New project dialog, the Explorer tree, the terminal tabs, the Markdown preview, and the media viewer.
+- `apps/desktop/src/pages/workbench/` - The window shell: the activity bar, the side bar, the title bar, the editor area, the status bar, the Welcome tab, the New project dialog, the Explorer tree, the terminal tabs, the code editor with its diff, the Markdown preview, and the media viewer.
 - `apps/desktop/stories/` - The Storybook stories of the screens and the tokens, which the screen capture uses.
 - `apps/desktop/fixtures/` - The sample data of the stories, which the code in `src/` never imports.
 - `apps/desktop/src/shared/api/engine.ts` - The client of the engine: each request through the Tauri IPC, with its answer parsed by the generated protocol.

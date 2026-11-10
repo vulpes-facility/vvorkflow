@@ -21,6 +21,22 @@ const screens = [
   'screens-workbench--new-project-light',
   'screens-workbench--new-project-error',
   'screens-workbench--new-project-error-reflow-320',
+  'screens-editor--type-script-dark',
+  'screens-editor--type-script-light',
+  'screens-editor--markdown',
+  'screens-editor--search-open',
+  'screens-editor--search-replace',
+  'screens-editor--search-light',
+  'screens-editor--search-reflow-320',
+  'screens-editor--read-only',
+  'screens-editor--crlf',
+  'screens-editor--reflow-320',
+  'screens-editor--diff-wide-dark',
+  'screens-editor--diff-wide-light',
+  'screens-editor--diff-narrow',
+  'screens-editor--harness',
+  'screens-editor--diff-harness',
+  'screens-editor--strict-harness',
   'screens-markdownpreview--document',
   'screens-markdownpreview--document-light',
   'screens-markdownpreview--remote-blocked',
@@ -46,6 +62,8 @@ const viewports: Record<string, { width: number; height: number }> = {
   'screens-workbench--zoomed-200': { width: 720, height: 450 },
   'screens-workbench--reflow-320': { width: 320, height: 256 },
   'screens-workbench--root-error-reflow-320': { width: 320, height: 256 },
+  'screens-editor--reflow-320': { width: 320, height: 256 },
+  'screens-editor--search-reflow-320': { width: 320, height: 320 },
   'screens-workbench--new-project-error-reflow-320': {
     width: 320,
     height: 256,
@@ -73,6 +91,27 @@ for (const id of screens) {
         .locator('visible=true')
         .first()
         .waitFor()
+    }
+
+    // The editor highlights a file after its language loads, and opens the
+    // search panel on `mod+F`.
+    if (id.startsWith('screens-editor--')) {
+      await page.locator('.cm-content').first().waitFor()
+      if (!id.includes('crlf'))
+        await page.locator('.cm-line span[class]').first().waitFor()
+      if (id.startsWith('screens-editor--search')) {
+        await page.locator('.cm-content').click()
+        // The editor takes its modifier from the user agent.
+        const mac = await page.evaluate(() => /Mac/.test(navigator.userAgent))
+        await page.keyboard.press(mac ? 'Meta+f' : 'Control+f')
+        await page.keyboard.type('job')
+        if (id.includes('replace') || id.includes('reflow')) {
+          await page.getByRole('button', { name: 'Show replace' }).click()
+          await page.getByRole('textbox', { name: 'Replace' }).fill('task')
+        }
+        // Turn on a toggle, to show its pressed state.
+        await page.getByRole('button', { name: 'Match case' }).click()
+      }
     }
 
     // The viewers show their images and media after they load.

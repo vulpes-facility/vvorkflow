@@ -12,22 +12,22 @@ web UI (React) ──Tauri IPC──► app core (Rust) ──local socket──
                                                  (SSH tunnel)
 ```
 
-| Part | What it does | Status |
-| --- | --- | --- |
-| Web UI | Shows the folders, the files, and the terminals, and sends requests. It does not know if the engine is local or remote. | Done for the shell, the Explorer, and the projects on the Welcome tab |
+| Part     | What it does                                                                                                                                                                              | Status                                                                     |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Web UI   | Shows the folders, the files, and the terminals, and sends requests. It does not know if the engine is local or remote.                                                                   | Done for the shell, the Explorer, and the projects on the Welcome tab      |
 | App core | The Rust part of the Tauri app. It connects to one engine, and sends the requests, the responses, and the events between the web UI and the engine. It keeps the token out of the web UI. | Done for the local engine (M3); the remote engine and the token come in M6 |
-| Engine | One Rust process. It owns the projects root, the files, git, and the terminal sessions. On the desktop, the app starts it as a daemon. On a remote machine, it runs headless. | Done as the process `vvorkflow-server` (M3) |
-| Protocol | The Rust types of `crates/vvorkflow-protocol`, their JSON Schema, and the TypeScript client that the schema makes. | Done for `hello`, the projects, the folders, and git |
+| Engine   | One Rust process. It owns the projects root, the files, git, and the terminal sessions. On the desktop, the app starts it as a daemon. On a remote machine, it runs headless.             | Done as the process `vvorkflow-server` (M3)                                |
+| Protocol | The Rust types of `crates/vvorkflow-protocol`, their JSON Schema, and the TypeScript client that the schema makes.                                                                        | Done for `hello`, the projects, the folders, and git                       |
 
 The engine continues when the app closes, so its terminal sessions continue.
 
 ## Transports
 
-| Transport | Between | Status |
-| --- | --- | --- |
-| Tauri IPC | The web UI and the app core. | Done |
-| Local socket | The app core and the engine on the same computer: a Unix socket, or a named pipe on Windows ([Engine process](#engine-process)). | Done (M3) |
-| SSH tunnel | The app core and a remote engine, through an SSH tunnel that the user opens. It requires a token. | Planned (M6) |
+| Transport    | Between                                                                                                                          | Status       |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| Tauri IPC    | The web UI and the app core.                                                                                                     | Done         |
+| Local socket | The app core and the engine on the same computer: a Unix socket, or a named pipe on Windows ([Engine process](#engine-process)). | Done (M3)    |
+| SSH tunnel   | The app core and a remote engine, through an SSH tunnel that the user opens. It requires a token.                                | Planned (M6) |
 
 Each connection of the app core carries WebSocket frames, on the local socket and in the SSH tunnel.\
 A text frame holds one JSON message of the protocol.\
@@ -286,17 +286,17 @@ a change on the disk ──► event worktree.changed ──► the web UI reads
 an image, a video ──► the app core reads the file in ranges for the web UI
 ```
 
-| Method | Params | Result |
-| --- | --- | --- |
-| `file.read` | `{worktree, path}` | `{text, version}` |
-| `file.write` | `{worktree, path, text, expected?}` | `{version}` |
-| `git.show` | `{worktree, path}` | `{text, version}` |
-| `file.readRange` | `{worktree, path, offset, length, revision?}` | `{data, size, revision}` |
-| `directory.create` | `{worktree, path}` | `{}` |
-| `entry.rename` | `{worktree, from, to}` | `{}` |
-| `entry.delete` | `{worktree, path}` | `{}` |
-| `worktree.watch` | `{worktree}` | `{}` |
-| `worktree.unwatch` | `{worktree}` | `{}` |
+| Method             | Params                                        | Result                   |
+| ------------------ | --------------------------------------------- | ------------------------ |
+| `file.read`        | `{worktree, path}`                            | `{text, version}`        |
+| `file.write`       | `{worktree, path, text, expected?}`           | `{version}`              |
+| `git.show`         | `{worktree, path}`                            | `{text, version}`        |
+| `file.readRange`   | `{worktree, path, offset, length, revision?}` | `{data, size, revision}` |
+| `directory.create` | `{worktree, path}`                            | `{}`                     |
+| `entry.rename`     | `{worktree, from, to}`                        | `{}`                     |
+| `entry.delete`     | `{worktree, path}`                            | `{}`                     |
+| `worktree.watch`   | `{worktree}`                                  | `{}`                     |
+| `worktree.unwatch` | `{worktree}`                                  | `{}`                     |
 
 M5 adds three error codes: `conflict`, the state is not the state that the client read; `notText`, the file is not text; and `tooLarge`, the file is larger than the limit of the request.
 
@@ -427,45 +427,45 @@ Each part keeps its memory in a limit.\
 The defaults are proposals.\
 A setting changes each one.
 
-| Part | Rule | Default |
-| --- | --- | --- |
-| Engine process | The engine process stops when no client is connected for a time. From M4, it does not stop while a session runs. | 5 minutes |
-| Requests | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message to the engine has at most 1 MiB, and from M5 at most 32 MiB. | - |
-| Text files | The engine reads and writes the text of a file up to a limit. | 4 MiB |
-| Sessions | The engine keeps a limited number of sessions. | 64 sessions |
-| Session screen | The engine keeps the screen and the scrollback of each session. Its title, and the part of an escape sequence that is not complete, have a limit too. | 5,000 lines; 1,024 bytes; 4 KiB |
-| Screen frame | The engine leaves the oldest lines of the scrollback out of a screen frame that would be larger than the limit. A cell keeps a limited number of bytes of text. | 32 MiB; 32 bytes |
-| Engine output | The engine sends output only for attached sessions. Each client has an output queue for each session, with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | 1 MiB |
-| Session input | The input of a session waits in a queue with a limit. The engine refuses a write to a full queue. | 1 MiB |
-| App terminal output | The app core stops to read the connection when the bytes that the terminal of the web UI did not take yet reach the limit. One frame can go above it. | 1 MiB |
-| App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |
-| Media and previews | The engine reads a large file in ranges, not all at once. The app core keeps a whole file in memory only for a request with no range. A hidden media tab stops playback and decoding. | 1 MiB ranges; 64 MiB |
-| Explorer | The web UI reads only the open folders, and drops the folders that it does not use. A large folder scrolls virtually. | 5 minutes |
-| File watch | The engine watches only the worktrees that a connection watches, not the ignored folders, and sends the changes in batches. A connection has at most one event that waits for a worktree, with a limited number of paths. | 100 ms; 256 paths |
-| Git status | The web UI reads the status again after the last batch of changes. An ignored folder is one line. | 300 ms |
+| Part                | Rule                                                                                                                                                                                                                      | Default                         |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Engine process      | The engine process stops when no client is connected for a time. From M4, it does not stop while a session runs.                                                                                                          | 5 minutes                       |
+| Requests            | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message to the engine has at most 1 MiB, and from M5 at most 32 MiB.                                  | -                               |
+| Text files          | The engine reads and writes the text of a file up to a limit.                                                                                                                                                             | 4 MiB                           |
+| Sessions            | The engine keeps a limited number of sessions.                                                                                                                                                                            | 64 sessions                     |
+| Session screen      | The engine keeps the screen and the scrollback of each session. Its title, and the part of an escape sequence that is not complete, have a limit too.                                                                     | 5,000 lines; 1,024 bytes; 4 KiB |
+| Screen frame        | The engine leaves the oldest lines of the scrollback out of a screen frame that would be larger than the limit. A cell keeps a limited number of bytes of text.                                                           | 32 MiB; 32 bytes                |
+| Engine output       | The engine sends output only for attached sessions. Each client has an output queue for each session, with a limit. When the queue is full, the engine discards the queued output and sends the current screen again.     | 1 MiB                           |
+| Session input       | The input of a session waits in a queue with a limit. The engine refuses a write to a full queue.                                                                                                                         | 1 MiB                           |
+| App terminal output | The app core stops to read the connection when the bytes that the terminal of the web UI did not take yet reach the limit. One frame can go above it.                                                                     | 1 MiB                           |
+| App terminals       | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows.                                                                                                 | 5 minutes                       |
+| Media and previews  | The engine reads a large file in ranges, not all at once. The app core keeps a whole file in memory only for a request with no range. A hidden media tab stops playback and decoding.                                     | 1 MiB ranges; 64 MiB            |
+| Explorer            | The web UI reads only the open folders, and drops the folders that it does not use. A large folder scrolls virtually.                                                                                                     | 5 minutes                       |
+| File watch          | The engine watches only the worktrees that a connection watches, not the ignored folders, and sends the changes in batches. A connection has at most one event that waits for a worktree, with a limited number of paths. | 100 ms; 256 paths               |
+| Git status          | The web UI reads the status again after the last batch of changes. An ignored folder is one line.                                                                                                                         | 300 ms                          |
 
 ## Security
 
-| Subject | Rule | Status |
-| --- | --- | --- |
-| Access | Remote access is off by default. When it is on, the engine listens only on 127.0.0.1 and requires a token. A remote client comes through an SSH tunnel. The engine checks the token in the WebSocket handshake, before each request, also before `shutdown`. | Planned (M6) |
-| Paths | A request can reach only the folders that the user opened, and the worktrees of their repositories. The engine reads the folders through directory handles, and runs git only with the git directory that it found when the folder opened. | Done |
-| Projects root | The engine also lists the [projects root](#projects-root) and makes new projects in it, through a directory handle. A remote client can open only the projects in it. | Done for the root; planned (M6) for remote clients |
-| Installs | The app does not run installs for the user. | Done |
-| Commands | The app types a command in the terminal, and the user presses Enter. A session has no command of its own: its program is the shell of the user. | Next (M4) |
-| Previews | The Markdown preview removes HTML and scripts from the document. It blocks remote images by default, and the user can allow them for each document. | Planned (M5) |
-| Files | A request reads and writes only in the open worktrees, through their handles, and never in a `.git` folder; a write also refuses a file with a second name. A write needs the version that the client read. A delete goes to the trash. A file from the file scheme of the app core is only an image or media, and never a document. | Planned (M5) |
-| Sessions | A session runs as the user that runs the engine. Each client of the engine is the same owner and can use each session. So the token of a remote engine gives a shell as that user: the roots limit the requests for files and the folder where a session starts, not the commands in a shell. | Next (M4) |
+| Subject       | Rule                                                                                                                                                                                                                                                                                                                                 | Status                                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Access        | Remote access is off by default. When it is on, the engine listens only on 127.0.0.1 and requires a token. A remote client comes through an SSH tunnel. The engine checks the token in the WebSocket handshake, before each request, also before `shutdown`.                                                                         | Planned (M6)                                       |
+| Paths         | A request can reach only the folders that the user opened, and the worktrees of their repositories. The engine reads the folders through directory handles, and runs git only with the git directory that it found when the folder opened.                                                                                           | Done                                               |
+| Projects root | The engine also lists the [projects root](#projects-root) and makes new projects in it, through a directory handle. A remote client can open only the projects in it.                                                                                                                                                                | Done for the root; planned (M6) for remote clients |
+| Installs      | The app does not run installs for the user.                                                                                                                                                                                                                                                                                          | Done                                               |
+| Commands      | The app types a command in the terminal, and the user presses Enter. A session has no command of its own: its program is the shell of the user.                                                                                                                                                                                      | Next (M4)                                          |
+| Previews      | The Markdown preview removes HTML and scripts from the document. It blocks remote images by default, and the user can allow them for each document.                                                                                                                                                                                  | Planned (M5)                                       |
+| Files         | A request reads and writes only in the open worktrees, through their handles, and never in a `.git` folder; a write also refuses a file with a second name. A write needs the version that the client read. A delete goes to the trash. A file from the file scheme of the app core is only an image or media, and never a document. | Planned (M5)                                       |
+| Sessions      | A session runs as the user that runs the engine. Each client of the engine is the same owner and can use each session. So the token of a remote engine gives a shell as that user: the roots limit the requests for files and the folder where a session starts, not the commands in a shell.                                        | Next (M4)                                          |
 
 ## Roadmap
 
-| Step | Scope | Status |
-| --- | --- | --- |
-| M1 Shell | The design tokens, the window shell, accessibility, the tabs and the menus, and the icon. | Done |
-| M2 Engine base | The protocol, the roots, the folders, git, and the Explorer on real folders. | Done |
-| M3 Engine process | The protocol envelope with the version check, the projects root and the project list, the engine as a daemon, and the local socket. | Done |
-| M4 Terminals | The sessions of the engine: the pseudo-terminal, the screen state, attach and detach, and the terminal tabs on real sessions. | Next |
-| M5 Editor and viewers | Open, edit, and save files, the diff, the Markdown preview, the media viewer, the file watch, and the Explorer menus. | Planned |
-| M6 Remote | The headless install of `vvorkflow-server`, WebSocket, the token, and the connection manager. | Planned |
-| M7 Tools | Search, the command palette, the settings, and the browser panel. | Planned |
-| M8 Release | Signing, updates, the packages of each platform, and the checks on macOS and Windows. | Planned |
+| Step                  | Scope                                                                                                                               | Status  |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| M1 Shell              | The design tokens, the window shell, accessibility, the tabs and the menus, and the icon.                                           | Done    |
+| M2 Engine base        | The protocol, the roots, the folders, git, and the Explorer on real folders.                                                        | Done    |
+| M3 Engine process     | The protocol envelope with the version check, the projects root and the project list, the engine as a daemon, and the local socket. | Done    |
+| M4 Terminals          | The sessions of the engine: the pseudo-terminal, the screen state, attach and detach, and the terminal tabs on real sessions.       | Next    |
+| M5 Editor and viewers | Open, edit, and save files, the diff, the Markdown preview, the media viewer, the file watch, and the Explorer menus.               | Planned |
+| M6 Remote             | The headless install of `vvorkflow-server`, WebSocket, the token, and the connection manager.                                       | Planned |
+| M7 Tools              | Search, the command palette, the settings, and the browser panel.                                                                   | Planned |
+| M8 Release            | Signing, updates, the packages of each platform, and the checks on macOS and Windows.                                               | Planned |

@@ -141,6 +141,89 @@ Known gaps:
   The screen reader mode of xterm.js comes with a setting.
 - Paste with Ctrl+Shift+V relies on the paste of the webview.
 
+## Editor
+
+The code editor and the diff editor are tabs of the editor area (value 5 of the [core values](../core-values.md)).\
+Both are CodeMirror 6, in `apps/desktop/src/pages/workbench/ui/editor/`.
+
+1. The theme reads only CSS variables, so the color scheme changes it with no rebuild.\
+   The syntax colors are the `--syntax-*` tokens, and each one MUST have 4.5:1 on each surface of the editor: the editor, the active line, the selection, a search match, and a changed line (`design-tokens.test.ts`).\
+   The font and the size come from `--vv-font-mono`, `--vv-editor-font-size`, and `--vv-editor-line-height`.
+2. The active line shows only while the selection is empty, so that it never hides a selection.\
+   A selection and a search match have opaque colors.\
+   The changed lines and the changed text of a diff are opaque too, and they hide the selection that CodeMirror draws below the lines.\
+   So in a diff each selected range, not only the main one, is also a mark on the text (`cm-vv-selected`), which has the selection color above those backgrounds, in each nesting order.\
+   An error in the code, such as an invalid token or a bracket with no pair, has `--editor-error`, which has 4.5:1 on each surface of the editor.
+3. A search match has a fill and an outline, and the current match has a heavier outline, so that color is not the only sign.
+4. The search panel is our own, on the query and the commands of `@codemirror/search` (`search-panel-view.tsx`).\
+   It has icon buttons and a count, and no words:
+   - The first row has the find field, the count of matches as data (`3 of 17`, `17`, or `0`; a polite live region), previous and next match, three toggles (match case, whole word, regular expression), and close.
+   - A disclosure button at the start of the first row shows the second row, with the replace field, replace, and replace all.\
+     A read-only editor has neither the button nor the row.
+   - Each button is 24 by 24 pixels or more, has an accessible name, and has a tooltip with its name and its shortcut.\
+     A pressed toggle has `aria-pressed`, a surface, and a border.
+   - A regular expression that does not compile shows `aria-invalid` on the field and an `ErrorMark` with the message.
+   - Enter and Shift+Enter move to the next and the previous match, Escape closes the panel and gives the focus back to the editor, and `mod+F` opens it with the selection as the query.\
+     The rows wrap at 320 CSS pixels.
+5. The diff shows `original` at the left and the editable text at the right when the editor is wider than `--vv-narrow-max-w` (640 CSS pixels), and one unified column when it is not.\
+   The width of the editor decides, and not the width of the window (`ResizeObserver`).\
+   A changed line has a tint and a mark in the gutter, a plus for an added line and a minus for a removed line, and a removed text has a strike.\
+   Unchanged lines far from a change collapse.\
+   `mod+Alt+U` opens the collapsed regions that show, because a region opens by a click only.\
+   The merge view is the scroll area of the wide diff: it takes the height of its host.\
+   Its rules are in `src/app/styles/editor.css`, scoped to `data-diff-host`, because the theme of an editor cannot reach the elements around it.
+6. The keyboard can always leave (SC 2.1.2).\
+   Tab indents, and Escape then Tab moves the focus on, as CodeMirror documents.\
+   F6 and Shift+F6 are not bound, so they reach the window.\
+   The content has the path as its accessible name, and a description that tells both ways out.\
+   A read-only content keeps a tab stop.
+7. The content keeps the line breaks of the text, byte for byte (`onSave` gets `state.sliceDoc()`).
+   - A text with only LF, or with no line break, uses `\n` as the line separator of the state.
+   - A text with only CRLF uses `\r\n`.
+   - A mixed text, also with a lone `\r`, uses `\n`, and each `\r` stays in the document as a character at the end of its line, which shows as a control character.
+   - A new line, and a pasted text, get the separator of the state.
+   - In a document with the `\n` separator (an LF file or a mixed file), a `\r` is an ordinary character, always, and a `\n` cannot be inside a line.\
+     So text that a command moves or copies keeps its bytes, and an escaped `\r\n` in a replacement gives exactly the bytes `\r\n`, as the user wrote them.
+   - In a document with the `\r\n` separator (a file with only CRLF), a line never holds a `\r` or a `\n`.\
+     A guard on each transaction (`separatorGuard`) turns, in the inserted text, each `\r\n` pair, each lone `\n`, and each lone `\r` into one real line break of the document, so that a replacement of the search cannot put a raw `\n` in a line.\
+     The text of the disk (`fromDisk`), and an undo or a redo, pass as they are.
+   - The line separator belongs to the document that the user edits.\
+     A text sets it only when it replaces the content: the first text, a clean disk text that differs, and `revert()`.\
+     A text that is only compared with the content, because its bytes equal the content, changes neither the document, nor the separator, nor the undo history, whatever separator it shows.
+   - A text with no line break shows no separator, because it is no evidence.\
+     A new document from such a text is an LF document, so a break that the user types gives `\n`.\
+     A document that has a separator keeps it when such a text replaces its content, so a break that the user types still gives the separator of the document.
+   - A text with no final line break keeps none.\
+     The editor detects tabs or spaces and the width from the text, and uses 2 spaces when the text shows none.
+8. A new `version` never discards unsaved edits.
+   - While the content has no unsaved edits and no IME composition is open, the editor replaces only the span that differs, so the cursor and the scroll position stay where they can.\
+     The replace is not in the undo history, and it clears the history, because the history of an old text does not belong to the new one.\
+     A text that equals the content changes nothing, and the history stays.
+   - Otherwise the editor keeps the content, takes the new `text` as the text of the disk, and calls `onConflictChange(true)` when the content differs from it.\
+     The conflict ends, with `onConflictChange(false)`, when the content is equal to the text again, as it is after a save, or after `revert()` of the handle.
+   - `onSave` always gets the content, and the owner decides whether to write it over the disk.
+   - Two rules hold on each path that sets the document, the separator, the dirty state, or the conflict (mount, a new version, a composition, `revert()`, undo and redo, the layout switch, and a new `original`):
+     what `onSave` gives is byte for byte the content that the user sees and typed, and a disk update never changes it;
+     `dirty` and `conflict` follow only the saved content and the bytes of the disk text.\
+     `tests/text-session.test.ts` checks both in a long random sequence.
+   - `revert()` is one event of the undo history, apart from the typing before it, and it brings back the line breaks with the text on an undo.
+   - A new `original` of the diff never touches the edits.
+   - Each `version` is processed once, also when the platform or the layout changes in the same render.
+   - The editor shows one file.\
+     The owner gives another file a new editor (a `key`).
+   - mod+S does nothing while an IME composition is open, because the composed text is not in the document yet.
+9. A hidden panel is detached from the document and loses its scroll positions.\
+   The editor ignores a width of 0, and puts the scroll positions back when it has a size again.
+10. The key bindings follow the `platform` prop and not the user agent: `mod` is Command on macOS and Control elsewhere.
+
+Known gaps:
+
+- The layout switch of the diff keeps the content, the cursor, the focus (not from another control, also when the search is open), and the search, and waits for the end of an IME composition.\
+  It does not keep the undo history.
+- A text with a `\r` in a line, from a mixed text, shows a control character at the end of that line.
+- In the wide diff, F6 lands on the original side first.
+- The editor has no auto-closing of brackets, no folding, and no autocomplete.
+
 ## Markdown preview and media viewer
 
 The Markdown preview and the media viewer are components for tabs of the editor area.\
