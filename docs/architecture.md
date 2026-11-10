@@ -43,7 +43,7 @@ The receiver checks each message against the schema, at run time.
 ← {"id": 7, "result": {"id": "5f0c2a9e41b7d386", "title": "zsh", "folder": "/code/app", "columns": 120, "rows": 30}}
 ← {"id": 8, "error": {"code": "permissionDenied", "message": "…"}}
 ← (binary frame: the screen of the session, then its output)
-← {"event": "session.ended", "params": {"session": "5f0c2a9e41b7d386", "exitCode": 0}}
+← {"event": "session.ended", "params": {"session": "5f0c2a9e41b7d386", "exitCode": 0, "signal": null}}
 ```
 
 1. A request has an `id`, a `method`, and `params`.\
@@ -58,7 +58,8 @@ The receiver checks each message against the schema, at run time.
 4. The protocol version changes at each change that an older client or an older engine cannot read.\
    A new method is such a change, because an older engine does not know it.
 5. `shutdown` stops the engine process: the engine stops to listen, answers `{}`, closes the connection, and stops.\
-   It is valid before `hello`, and its shape never changes, so that each app can stop an engine of an older version.
+   It is valid before `hello`.\
+   Its params are `{}` or `{"force": true}` ([Engine stop with sessions](#engine-stop-with-sessions)), and this shape never changes from M4, so that each app can stop an engine of another version.
 6. A message that is not a request with an `id` closes the connection.\
    A request with an `id` and a method or params that the engine does not know gets `invalidArgument`.
 7. Over Tauri IPC, the web UI sends only `method` and `params`, and the app core adds the `id`.
@@ -66,12 +67,18 @@ The receiver checks each message against the schema, at run time.
    The engine closes the connection of a client that sends more.
 9. An event is a text frame with an `event` and `params`.\
    The engine can send it at any time after `hello`, between the answers.
-10. The engine does `session.attach`, `session.detach`, `session.write`, and `session.resize` when it reads them, in the order of the connection.\
+10. The engine does the requests of a terminal session that must keep their order when it reads them ([Attach, output, and input](#attach-output-and-input)).\
     Each other request runs on a worker, and its answer can come in any order.
 11. Over Tauri IPC, the web UI gives the app core one channel.\
     On it, the app core sends each event as JSON and each binary frame as bytes, in the order of the connection.
-12. When the connection of the app core to the engine ends, the app core sends the event `connection.closed` on that channel.\
+12. The web UI writes the frames to its terminal in their order, one after the end of the other, and tells the app core the bytes that the terminal took.\
+    The app core keeps at most 1 MiB of frames that the terminal did not take yet.\
+    At that limit it stops to read the connection, so that the limits of the engine apply, and no queue of the app grows without a limit.
+13. When the connection of the app core to the engine ends, each open request fails, and the app core sends the event `connection.closed` on the channel:\
+    after the last frame of that connection, and before the first frame of the next connection.\
     The attachments of that connection are gone: the web UI attaches again, and the next request opens a new connection.\
+    An attach is safe to repeat, so an event that the web UI reads late only brings the screen again.\
+    The app core never sends a request again by itself.\
     The engine never sends this event.
 
 Status: the methods, the version check, `shutdown`, and the envelope with the `id` are done (M3).\
@@ -131,6 +138,7 @@ The engine process stops on a root that is not correct, and the app shows its me
    A client has 10 seconds for the WebSocket handshake and `hello`.\
    The engine reads a message of at most 1 MiB.\
    It runs each request on a blocking thread, at most 8 requests of all clients at a time, and reads the next message also while a request waits.\
+   The requests of a terminal session that keep their order are the exception: the engine does them on the connection, and they never wait.\
    A client that does not take a frame for 30 seconds loses its connection.\
    When a connection ends, its queued requests end too, and a request on a blocking thread keeps its place until it finishes.
 8. The engine stops when a client sends `shutdown`, or when no client is connected for a time ([Memory limits](#memory-limits)).
@@ -140,12 +148,13 @@ The engine process stops on a root that is not correct, and the app shows its me
    When the engine does not listen in 10 seconds, the app stops that process.\
    When `hello` fails because of the version, the app sends `shutdown`, and starts its own engine.\
    From M4, an engine with sessions refuses that `shutdown` ([Engine stop with sessions](#engine-stop-with-sessions)): the app then shows the refusal and starts no engine.\
+   The app sends a `shutdown` on a connection of its own, before `hello`, and not on the connection of the requests.\
    Only one app at a time starts or replaces the engine: the app locks `engine.turn`, and says `hello` again before it does so.\
    Thus an app does not stop the engine that another app started a moment before.\
    An engine has 10 seconds to answer `hello`; after them the app shows an error, and the next request tries again.\
    The app keeps one connection while it runs, and sends each request of the web UI on it with a new `id`.\
    It keeps at most 16 requests open; a further request waits.\
-   When the engine sends a text that is not an answer, the app ends the connection, and each open request gets an error.\
+   When the engine sends a text that is not an answer and not an event, the app ends the connection, and each open request gets an error.\
    When the engine stops, the next request opens a new connection, and starts an engine when none listens.
 10. The engine continues when the app closes, with the projects root that it started with.\
     To use another root, set `VVORKFLOW_ROOT` and start the app after the engine stops: 5 minutes after the last client leaves.
@@ -168,59 +177,98 @@ Kill (menu) / end of the shell ──► the session ends
    It uses ConPTY on Windows.
 2. `session.create` makes a session with a size in columns and rows.\
    Its folder is an open worktree, or the projects root when the request names no worktree.\
-   The request has no command: the program is always the shell of the user, and the user types each command (value 6).
-3. The shell is `$SHELL`, or `/bin/sh` when the variable is not set.\
+   The request has no command: the program is always the shell of the user, and the user types each command (value 6).\
+   When the shell does not start, the request fails (`failedPrecondition`), and no session stays.
+3. The shell is the program that `$SHELL` names, or `/bin/sh` when the variable is not set or is empty.\
    On macOS it starts as a login shell, because an app there does not get the environment of the profile.\
-   On Windows it is `pwsh.exe`, `powershell.exe`, or `%COMSPEC%`, the first that the engine finds.\
-   The shell gets the environment of the engine, with `TERM=xterm-256color`, `COLORTERM=truecolor`, and `TERM_PROGRAM=vvorkflow`.
-4. The id of a session is 16 lowercase hexadecimal characters from a random number.\
+   On Windows it is `pwsh.exe`, `powershell.exe`, or the program that `%COMSPEC%` names, the first that the engine finds.\
+   The shell gets the environment that the engine started with, without the variables that hold a secret of the engine, and with `TERM=xterm-256color`, `COLORTERM=truecolor`, and `TERM_PROGRAM=vvorkflow`.
+4. The id of a session is 16 characters, each one an ASCII digit or a lowercase letter from `a` to `f`, from a random number.\
    So an id of an engine that stopped does not name a session of the next engine.
 5. A size has 2 to 1,000 columns and 1 to 500 rows; the engine refuses another size (`invalidArgument`).\
    The engine keeps at most 64 sessions (`failedPrecondition` for one more).
 6. `session.list` answers each session in the order of its start: its id, its title, its folder, and its size.\
-   The title is the title that the program set, or the name of the shell.
-7. The engine does not read the state of an agent.\
+   The title is the last title that the program set (OSC 0 or OSC 2), cut to 1,024 bytes, or the name of the shell program before that.\
+   An attached terminal reads a new title from the output.
+7. Each client of the engine is the same owner, and can list, attach, write, resize, and kill each session.
+8. The engine does not read the state of an agent.\
    An agent is only the program in a terminal.
 
 ### Screen state
 
 1. The engine reads the output of each session, also while no client is attached, and keeps the state that the output makes:\
-   the screen, the scrollback of at most 5,000 lines, the alternate screen, the cursor, the colors and the styles, the title, and the modes that change the input, such as bracketed paste, the mouse modes, and the application cursor keys.
-2. From this state the engine makes the screen bytes: bytes that draw the same state in a terminal that was reset.\
-   A test checks this: the state that the screen bytes make is equal to the state that made them.
-3. The engine answers a query of the program, such as the cursor position, only while no client is attached.\
-   While a client is attached, its terminal answers.\
-   Known limit: when two clients are attached to one session, the program gets two answers.
+   the screen and the scrollback of at most 5,000 lines, with the lines that wrap;\
+   the alternate screen, and the normal screen under it;\
+   the cursor, its saved copy, and the scroll region;\
+   the colors and the styles;\
+   the title;\
+   and the modes that change the input or the output, such as bracketed paste, the mouse modes, the focus events, the application cursor keys, and the keyboard protocol.
+2. From this state the engine makes the screen bytes: bytes that draw the same state in a terminal that was reset to the size of the session.\
+   The terminal of the web UI is xterm.js, so the measure is xterm.js:\
+   for each recorded output in `crates/vvorkflow-engine/tests/screens/`, a terminal that gets the screen bytes of a position and then the output after it MUST show the same as a terminal that gets all the output.\
+   A Rust test keeps the screen bytes of these records current, and a Vitest test compares the two terminals: each line of both buffers, the cursor, and the modes.
+3. The engine can make the screen bytes in the middle of an escape sequence or of a character of more than one byte.\
+   The screen bytes then end with the bytes of that part, so that the next output continues it.\
+   The engine keeps at most 4 KiB of such a part.\
+   For a longer part, which is a string sequence such as an OSC, the screen bytes end with the start of that kind of sequence, so that the terminal reads the rest of the string as a string and not as text.
+4. The screen bytes have at most 8 MiB.\
+   When they would be larger, the engine leaves out the oldest lines of the scrollback.
+5. Known limits of the state, which are also the limits of the terminal that it uses:\
+   the tab stops and the character sets come back at their defaults;\
+   images are not kept.\
+   M4 names each other part that the engine cannot bring back, here.
+6. A query of the program, such as the cursor position or the colors, gets its answer from the terminal of an attached client, because that terminal has the keyboard and the colors that the answer tells.\
+   While no client is attached, the engine answers the queries for the cursor position and the device attributes, and no other query.\
+   Known limits: when two clients are attached to one session, the program gets two answers; and a query in output that the engine discarded gets no answer.
 
 ### Attach, output, and input
 
-1. `session.attach` adds the connection to the attached clients of the session, and answers the size.\
-   In the same step, the engine puts one screen frame in the queue of that client.\
+1. `session.attach` adds the connection to the attached clients of the session, and answers the session.\
+   In the same step, under the lock of the session, the engine puts one screen frame in the queue of that client.\
    So the client gets the screen, then each byte of output after it, with no byte lost and no byte twice.\
-   `session.attach` on an attached session sends the screen again.
+   `session.attach` on an attached session sends the screen again.\
+   A session that ended answers `notFound`, and sends nothing.
 2. `session.detach`, and the end of the connection, remove the client; the session continues.
-3. Terminal output is a binary frame:\
-   byte 0 is the kind, bytes 1 to 16 are the session id, and the other bytes are the data.\
-   Kind 0 is output: the next bytes of the program.\
-   Kind 1 is a screen: the client resets its terminal, then writes the data.
-4. Each attached client has an output queue for each session, with a limit of 1 MiB.\
+3. Terminal output is a binary frame.\
+   Byte 0 is the kind, and bytes 1 to 16 are the session id.\
+   Kind 0 is output: the other bytes are the next bytes of the program.\
+   Kind 1 is a screen: bytes 17 and 18 are the columns, bytes 19 and 20 are the rows, each as a big-endian number, and the other bytes are the screen bytes.\
+   The client sets its terminal to that size, resets it, and then writes the screen bytes.
+4. Each attached client has an output queue for each session, with a limit of 1 MiB for its output frames.\
    The thread that reads the pseudo-terminal never waits for a client.\
-   When a queue is full, the engine discards it, and the next frame of that session to that client is a screen.
-5. `session.write` sends text to the program, and `session.resize` changes the size of the session.\
-   The engine does both when it reads the request, in the order of the connection, and not on a worker.\
-   The input of a session waits in a queue of at most 1 MiB; the engine refuses a write to a full queue (`failedPrecondition`).\
-   A session has one size: the last `session.resize` of any client sets it.
-6. When the shell ends, the engine sends the last output, then the event `session.ended` with the exit code to each attached client, and removes the session.\
-   `session.kill` ends the shell and the programs in its terminal: SIGHUP to the process group, then SIGKILL after 3 seconds, or the end of the ConPTY on Windows.
+   When a queue is full, the engine discards it; the frames that the writer of the connection already took stay in their order.\
+   The next frame of that session to that client is then a screen, which the engine makes when the writer is ready for it, and the output after that screen follows it.\
+   A screen frame does not count for the limit.
+5. `session.write` sends input to the program.\
+   Its `data` is the input bytes in Base64 (RFC 4648, with padding): the web UI encodes the text of the keyboard as UTF-8, and takes each character of binary input, such as an old mouse report, as one byte.\
+   The engine puts all the bytes of a write in the input queue of the session, or refuses the write and takes none of them (`failedPrecondition` when the queue of 1 MiB has no room).\
+   An answer tells that the bytes are in the queue, not that the program read them.\
+   One thread of the session writes the queue to the pseudo-terminal, in order.
+6. `session.resize` changes the size of the pseudo-terminal and of the kept state.\
+   A session has one size: the last `session.resize` of any client sets it.\
+   The engine then sends the event `session.resized` with the size to each attached client, before the output that follows the change; each terminal takes that size.\
+   Known limit: the engine and the terminal each wrap the long lines of the scrollback again by their own rules, so these lines can differ until the next screen frame.
+7. The engine does `session.attach`, `session.detach`, `session.write`, and `session.resize` when it reads them, in the order of the connection, and they never wait for the pseudo-terminal.\
+   The web UI and the app core send the writes and the resizes of one session one after the other, so that their order is the order of the user.\
+   They do not send a write again that got no answer.
+8. The session ends when its shell ends.\
+   The engine then reads the output that is left, for at most 1 second, and sends it.\
+   After it, each attached client gets the event `session.ended` once, with the exit code (a number from 0 to 4,294,967,295, or none) and the signal that ended the shell (a number, or none; always none on Windows), and no frame of that session after it.\
+   Then the engine removes the session and closes the pseudo-terminal.
+9. `session.kill` does what the close of a terminal window does: the engine sends SIGHUP to the shell and to the foreground job, and closes the pseudo-terminal when the shell ends.\
+   After 3 seconds, it sends SIGKILL to the shell and to the foreground job that still run.\
+   On Windows, it closes the ConPTY, which ends the programs in it; the read of the output continues on its own thread until the end.\
+   Known limit: a program that left the terminal, or a background job that ignores SIGHUP, can continue.
 
 ### Engine stop with sessions
 
 1. The engine does not stop for the idle time while a session runs.
 2. `shutdown` has the optional param `force`.\
-   Without it, an engine with sessions refuses `shutdown` (`failedPrecondition`) and tells the number of sessions.\
-   With it, the engine ends each session, then stops.
-3. So an app of another protocol version does not end the sessions of the engine without a question to the user:\
-   it shows the refusal, and the user can stop the engine from there.
+   Without it, or with `false`, an engine with sessions refuses `shutdown` (`failedPrecondition`), tells the number of sessions, and continues to listen.\
+   With `true`, the engine takes no new session, ends all sessions at the same time as `session.kill` does, with one limit of 3 seconds for all of them, and then stops.
+3. So an app of another protocol version does not end the sessions of the engine without a question to the user.\
+   The app sends `shutdown` without `force` to an engine of another version.\
+   When that engine refuses, the app starts no engine, and shows the refusal; the user can then stop that engine, and the app sends `shutdown` with `force` on a new connection, before `hello`.
 
 Status: next (M4).
 
@@ -235,9 +283,11 @@ A setting changes each one.
 | Engine process | The engine process stops when no client is connected for a time. From M4, it does not stop while a session runs. | 5 minutes |
 | Requests | At most 32 clients; at most 8 requests of all clients run at a time; at most 16 open requests on each connection; a message to the engine has at most 1 MiB. | - |
 | Sessions | The engine keeps a limited number of sessions. | 64 sessions |
-| Session screen | The engine keeps the screen and the scrollback of each session. | 5,000 lines |
+| Session screen | The engine keeps the screen and the scrollback of each session. Its title, and the part of an escape sequence that is not complete, have a limit too. | 5,000 lines; 1,024 bytes; 4 KiB |
+| Screen frame | The engine leaves the oldest lines of the scrollback out of a screen frame that would be larger than the limit. | 8 MiB |
 | Engine output | The engine sends output only for attached sessions. Each client has an output queue for each session, with a limit. When the queue is full, the engine discards the queued output and sends the current screen again. | 1 MiB |
 | Session input | The input of a session waits in a queue with a limit. The engine refuses a write to a full queue. | 1 MiB |
+| App terminal output | The app core keeps a limited number of bytes that the terminal of the web UI did not take yet, and then stops to read the connection. | 1 MiB |
 | App terminals | The web UI drops the terminal of a hidden tab after a time, and gets the screen again from the engine when the tab shows. | 5 minutes |
 | Media and previews | The engine reads a large file in ranges, not all at once. A hidden media tab stops playback and decoding. | 1 MB ranges |
 | Explorer | The web UI reads only the open folders, and drops the folders that it does not use. A large folder scrolls virtually. | 5 minutes |
@@ -248,13 +298,13 @@ A setting changes each one.
 
 | Subject | Rule | Status |
 | --- | --- | --- |
-| Access | Remote access is off by default. When it is on, the engine listens only on 127.0.0.1 and requires a token. A remote client comes through an SSH tunnel. | Planned (M6) |
+| Access | Remote access is off by default. When it is on, the engine listens only on 127.0.0.1 and requires a token. A remote client comes through an SSH tunnel. The engine checks the token in the WebSocket handshake, before each request, also before `shutdown`. | Planned (M6) |
 | Paths | A request can reach only the folders that the user opened, and the worktrees of their repositories. The engine reads the folders through directory handles, and runs git only with the git directory that it found when the folder opened. | Done |
 | Projects root | The engine also lists the [projects root](#projects-root) and makes new projects in it, through a directory handle. A remote client can open only the projects in it. | Done for the root; planned (M6) for remote clients |
 | Installs | The app does not run installs for the user. | Done |
 | Commands | The app types a command in the terminal, and the user presses Enter. A session has no command of its own: its program is the shell of the user. | Next (M4) |
 | Previews | The Markdown preview removes HTML and scripts from the document. It blocks remote images by default, and the user can allow them for each document. | Planned (M5) |
-| Sessions | A session runs as the user that runs the engine. Each client of the engine can use each session. | Next (M4) |
+| Sessions | A session runs as the user that runs the engine. Each client of the engine is the same owner and can use each session. So the token of a remote engine gives a shell as that user: the roots limit the requests for files and the folder where a session starts, not the commands in a shell. | Next (M4) |
 
 ## Roadmap
 

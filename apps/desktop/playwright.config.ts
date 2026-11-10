@@ -13,6 +13,8 @@ import { defineConfig, devices } from '@playwright/test'
  * own build.
  */
 const port = Number(process.env.VVORKFLOW_SCREENS_PORT ?? 6007)
+if (!Number.isInteger(port) || port < 1 || port > 65535)
+  throw new Error('VVORKFLOW_SCREENS_PORT must be a port from 1 to 65535.')
 
 export default defineConfig({
   testDir: './e2e',
