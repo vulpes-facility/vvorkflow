@@ -252,7 +252,7 @@ Kill (menu) / end of the shell ──► the session ends
    Kind 0 is output: the other bytes are the next bytes of the program.\
    Kind 1 is a screen: bytes 17 and 18 are the columns, bytes 19 and 20 are the rows, each as a big-endian number, and the other bytes are the screen bytes.\
    The client sets its terminal to that size, resets it, and then writes the screen bytes.
-4. Each attached client has an output queue for each session, with a limit of 1 MiB for its output frames.\
+4. Each attached client has an output queue for each session, with a limit of 1 MiB for its output frames and its `session.resized` events, each of which counts as 128 bytes.\
    The thread that reads the pseudo-terminal never waits for a client.\
    When a queue is full, the engine discards it, and asks for a screen for that client, as an attach does; the frames that the writer of the connection already took stay in their order.\
    A screen frame does not count for the limit.

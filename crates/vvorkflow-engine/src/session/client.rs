@@ -14,10 +14,14 @@ use vvorkflow_protocol::{Event, Frame, SessionEnded, SessionResized};
 
 use super::Core;
 
-/// The bytes of output frames that the queue of a client keeps for one
-/// session. When the next output does not fit, the engine discards the
-/// queue, and sends a screen in its place.
+/// The bytes of output frames and events that the queue of a client keeps
+/// for one session. When the next item does not fit, the engine discards
+/// the queue, and sends a screen in its place.
 pub const OUTPUT_QUEUE: usize = 1 << 20;
+
+/// The bytes that a queued `session.resized` event counts for the limit of
+/// the queue: more than its text.
+const EVENT_SIZE: usize = 128;
 
 /// The most output bytes in one output frame: the writer joins the queued
 /// output of a session up to this size.
@@ -82,7 +86,7 @@ enum Screen {
 struct Slot {
     session: Arc<Core>,
     queue: VecDeque<Item>,
-    /// The bytes of the output frames in the queue.
+    /// The bytes of the output frames and the events in the queue.
     bytes: usize,
     screen: Screen,
 }
@@ -240,11 +244,14 @@ fn take_queued(outbox: &mut MutexGuard<'_, Outbox>, index: usize) -> Outgoing {
                 .encode(),
             )
         }
-        Item::Resized { columns, rows } => Outgoing::Event(Event::SessionResized(SessionResized {
-            session: slot.session.id.clone(),
-            columns,
-            rows,
-        })),
+        Item::Resized { columns, rows } => {
+            slot.bytes -= EVENT_SIZE;
+            Outgoing::Event(Event::SessionResized(SessionResized {
+                session: slot.session.id.clone(),
+                columns,
+                rows,
+            }))
+        }
         Item::Ended(ended) => {
             outbox.slots.remove(index);
             outbox.turn = 0;
@@ -267,11 +274,25 @@ impl Inner {
             .position(|slot| std::ptr::eq(Arc::as_ptr(&slot.session), session))
     }
 
-    /// Queues output of a session, unless the client waits for its screen.
-    /// When the output does not fit in the queue, the queue empties, and the
-    /// client gets a screen in its place. Never waits for the client. The
-    /// caller holds the lock of the session.
+    /// Queues output of a session. The caller holds the lock of the
+    /// session.
     pub(super) fn output(&self, session: &Core, output: &Arc<[u8]>) {
+        let size = output.len() + FRAME_HEADER;
+        self.enqueue(session, Item::Output(Arc::clone(output)), size);
+    }
+
+    /// Queues the new size of a session. The caller holds the lock of the
+    /// session.
+    pub(super) fn resized(&self, session: &Core, columns: u16, rows: u16) {
+        self.enqueue(session, Item::Resized { columns, rows }, EVENT_SIZE);
+    }
+
+    /// Queues an item of `size` bytes, unless the client waits for the
+    /// screen of the session, which shows the item. When the item does not
+    /// fit in the queue, the queue empties, and the client gets a screen in
+    /// its place: the screen shows each item that it replaces, and the items
+    /// after it keep their order. Never waits for the client.
+    fn enqueue(&self, session: &Core, item: Item, size: usize) {
         let mut outbox = self.outbox();
         let Some(index) = Self::slot(&mut outbox, session) else {
             return;
@@ -280,32 +301,14 @@ impl Inner {
         if slot.screen != Screen::None {
             return;
         }
-        let size = output.len() + FRAME_HEADER;
         if slot.bytes + size > OUTPUT_QUEUE {
             slot.queue.clear();
             slot.bytes = 0;
             slot.screen = Screen::Due;
         } else {
-            slot.queue.push_back(Item::Output(Arc::clone(output)));
+            slot.queue.push_back(item);
             slot.bytes += size;
         }
-        drop(outbox);
-        (self.wake)();
-    }
-
-    /// Queues the new size of a session, unless the client waits for its
-    /// screen, which has the size. The caller holds the lock of the
-    /// session.
-    pub(super) fn resized(&self, session: &Core, columns: u16, rows: u16) {
-        let mut outbox = self.outbox();
-        let Some(index) = Self::slot(&mut outbox, session) else {
-            return;
-        };
-        let slot = &mut outbox.slots[index];
-        if slot.screen != Screen::None {
-            return;
-        }
-        slot.queue.push_back(Item::Resized { columns, rows });
         drop(outbox);
         (self.wake)();
     }
@@ -340,5 +343,75 @@ impl Drop for Inner {
                 .clients
                 .retain(|client| client.as_ptr() != this);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use vvorkflow_protocol::FRAME_SCREEN;
+
+    use super::*;
+    use crate::screen::Screen as ScreenState;
+    use crate::session::State;
+
+    /// A session with no shell, for the queues alone.
+    fn core(id: &str) -> Arc<Core> {
+        Arc::new(Core {
+            id: id.to_owned(),
+            folder: "/".to_owned(),
+            shell: "sh".to_owned(),
+            state: Mutex::new(State {
+                screen: ScreenState::new(80, 24),
+                clients: Vec::new(),
+                ended: false,
+            }),
+        })
+    }
+
+    /// A client attached to `session`, which took its first screen.
+    fn attached(session: &Arc<Core>) -> Client {
+        let client = Client::new(ClientKind::Local, Arc::new(|| {}));
+        {
+            let _state = session.state();
+            client.attach(session);
+        }
+        client.answered();
+        assert!(is_screen(client.next()));
+        client
+    }
+
+    fn is_screen(item: Option<Outgoing>) -> bool {
+        matches!(item, Some(Outgoing::Frame(frame)) if frame[0] == FRAME_SCREEN)
+    }
+
+    /// A client that does not read, while another client resizes the session
+    /// again and again with no output: the events count for the limit, and
+    /// a screen takes their place.
+    #[test]
+    fn the_resizes_count_for_the_limit_of_the_queue() {
+        let session = core("0123456789abcdef");
+        let client = attached(&session);
+        let resizes = OUTPUT_QUEUE / EVENT_SIZE + 10;
+        for count in 0..resizes {
+            let _state = session.state();
+            let columns = 80 + u16::try_from(count % 2).unwrap();
+            client.0.resized(&session, columns, 24);
+        }
+        assert!(client.0.outbox().slots[0].bytes <= OUTPUT_QUEUE);
+        assert!(
+            is_screen(client.next()),
+            "a screen takes the place of the queue"
+        );
+        let mut after = 0;
+        while let Some(item) = client.next() {
+            assert!(matches!(item, Outgoing::Event(Event::SessionResized(_))));
+            after += 1;
+        }
+        assert!(
+            after * EVENT_SIZE <= OUTPUT_QUEUE,
+            "{after} events after the screen"
+        );
     }
 }
