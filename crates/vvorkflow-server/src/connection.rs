@@ -21,7 +21,7 @@ use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::tungstenite::protocol::frame::CloseFrame;
 use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode;
-use vvorkflow_engine::Engine;
+use vvorkflow_engine::{Client as EngineClient, ClientKind, Engine};
 use vvorkflow_protocol::{
     ClientMessage, Done, EngineError, ErrorCode, MAX_OPEN_REQUESTS, Request, Response,
     ServerMessage,
@@ -71,11 +71,12 @@ where
     let (send, outbox) = mpsc::channel::<Message>(64);
     let mut writer = tokio::spawn(write(sink, outbox));
     let mut requests = JoinSet::new();
+    let engine_client = shared.engine.connect(ClientKind::Local, Arc::new(|| {}));
     let greeted = AtomicBool::new(false);
     let stopping = AtomicBool::new(false);
 
     let writer_ended = tokio::select! {
-        () = read(&mut source, &send, &mut requests, &greeted, &stopping, &shared) => false,
+        () = read(&mut source, &send, &mut requests, &greeted, &stopping, &shared, &engine_client) => false,
         () = hello_expires(&greeted, deadline) => false,
         _ = &mut writer => true,
     };
@@ -100,6 +101,7 @@ async fn read<S>(
     greeted: &AtomicBool,
     stopping: &AtomicBool,
     shared: &Shared,
+    engine_client: &EngineClient,
 ) where
     S: AsyncRead + AsyncWrite + Unpin,
 {
@@ -171,6 +173,7 @@ async fn read<S>(
                     return;
                 }
                 let engine = Arc::clone(&shared.engine);
+                let engine_client = engine_client.clone();
                 let workers = Arc::clone(&shared.workers);
                 let send = send.clone();
                 requests.spawn(async move {
@@ -179,7 +182,7 @@ async fn read<S>(
                     };
                     let value = tokio::task::spawn_blocking(move || {
                         let _worker = worker;
-                        engine.handle(request)
+                        engine.handle(&engine_client, request)
                     })
                     .await
                     .unwrap_or_else(|error| {
