@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
-import { calls, content, mod, open } from './editor-helpers.js'
+import type { Page } from '@playwright/test'
+import { calls, content, mod, open, probe, setText } from './editor-helpers.js'
 
 // The behavior of the code editor and the diff editor.
 
@@ -280,3 +281,141 @@ for (const width of [1200, 500]) {
     expect(selection).toBe('oklch(0.31 0.011 265)')
   })
 }
+
+const searchCount = (page: Page) =>
+  page.locator('.cm-vv-search [aria-live="polite"]').first()
+
+async function openSearch(page: Page, withReplace = false) {
+  await content(page).click()
+  await page.keyboard.press(`${await mod(page)}+f`)
+  await expect(page.getByRole('textbox', { name: 'Find' })).toBeFocused()
+  if (withReplace)
+    await page.getByRole('button', { name: 'Show replace' }).click()
+}
+
+for (const [name, init] of [
+  ['isComposing', { isComposing: true }],
+  ['key code 229', { keyCode: 229 }],
+] as const) {
+  test(`a key of a composition in the search fields is not a command (${name})`, async ({
+    page,
+  }) => {
+    await open(page, 'harness')
+    await openSearch(page, true)
+    const find = page.getByRole('textbox', { name: 'Find' })
+    const replace = page.getByRole('textbox', { name: 'Replace' })
+    await find.fill('MAX_ATTEMPTS')
+    await replace.fill('LIMIT')
+    const press = (field: typeof find, key: string) =>
+      field.evaluate(
+        (element, [eventKey, eventInit]) => {
+          element.dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key: eventKey as string,
+              bubbles: true,
+              cancelable: true,
+              ...(eventInit as object),
+            }),
+          )
+        },
+        [key, init] as const,
+      )
+    // Enter confirms the composed text, and does not replace.
+    await press(replace, 'Enter')
+    await expect(content(page)).toContainText('const MAX_ATTEMPTS = 3')
+    expect(await calls(page)).toEqual([])
+    // Escape cancels the composition, and does not close the panel.
+    await press(find, 'Escape')
+    await expect(page.locator('.cm-vv-search')).toBeVisible()
+    // The same keys without a composition work.
+    // The first Enter selects the match, and the second replaces it.
+    await replace.press('Enter')
+    await replace.press('Enter')
+    await expect(content(page)).toContainText('LIMIT')
+  })
+}
+
+test('when the editor becomes read-only, the focus leaves the replace row for the find field', async ({
+  page,
+}) => {
+  await open(page, 'harness')
+  await openSearch(page, true)
+  await page.getByRole('textbox', { name: 'Replace' }).focus()
+  await probe(page, 'setReadOnly', true)
+  await expect(page.getByRole('textbox', { name: 'Find' })).toBeFocused()
+  await expect(page.getByRole('textbox', { name: 'Replace' })).toHaveCount(0)
+
+  await probe(page, 'setReadOnly', false)
+  await page.getByRole('button', { name: 'Show replace' }).focus()
+  await probe(page, 'setReadOnly', true)
+  await expect(page.getByRole('textbox', { name: 'Find' })).toBeFocused()
+})
+
+test('a regular expression that CodeMirror does not accept shows on the field', async ({
+  page,
+}) => {
+  await open(page, 'harness')
+  await openSearch(page)
+  await page.getByRole('button', { name: 'Regular expression' }).click()
+  const field = page.getByRole('textbox', { name: 'Find' })
+  // Valid without the Unicode flag, and not valid with it.
+  await field.fill('\\q')
+  await expect(field).toHaveAttribute('aria-invalid', 'true')
+  await expect(page.getByRole('alert')).toHaveCount(1)
+})
+
+test('each search panel has its own id for its error message', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 800 })
+  await open(page, 'diff-harness')
+  for (const index of [0, 1]) {
+    await page.locator('.cm-content').nth(index).click()
+    await page.keyboard.press(`${await mod(page)}+f`)
+    const panel = page.locator('.cm-vv-search').nth(index)
+    await panel.getByRole('button', { name: 'Regular expression' }).click()
+    await panel.getByRole('textbox', { name: 'Find' }).fill('(')
+  }
+  const ids = await page
+    .locator('.cm-vv-search [aria-invalid="true"]')
+    .evaluateAll((fields) =>
+      fields.map((field) => field.getAttribute('aria-describedby')),
+    )
+  expect(ids).toHaveLength(2)
+  expect(new Set(ids).size).toBe(2)
+  for (const id of ids)
+    await expect(page.locator(`[id="${id}"]`)).toHaveAttribute('role', 'alert')
+})
+
+test('a regular expression that matches the empty string gives a count and does not hang', async ({
+  page,
+}) => {
+  await open(page, 'harness')
+  await openSearch(page)
+  await page.getByRole('button', { name: 'Regular expression' }).click()
+  await page.getByRole('textbox', { name: 'Find' }).fill('x*')
+  await expect(searchCount(page)).toHaveText(/^(\d+ of )?\d+\+?$/)
+  await page.keyboard.press('Enter')
+  await page.keyboard.press('Enter')
+  await expect(searchCount(page)).toHaveText(/^\d+ of \d+\+?$/)
+})
+
+test('a large document with no match does not block the input, and the count follows the last query', async ({
+  page,
+}) => {
+  await open(page, 'harness')
+  const line = 'const value = compute(input, options) // a line of code\n'
+  await setText(page, line.repeat(200_000), '2')
+  await expect(content(page)).toContainText('const value')
+  await openSearch(page)
+  const field = page.getByRole('textbox', { name: 'Find' })
+  await field.pressSequentially('zzzz', { delay: 10 })
+  // The field takes the keys while a scan runs, and the count is of the last query.
+  await expect(field).toHaveValue('zzzz')
+  await expect(searchCount(page)).toHaveText('0', { timeout: 20_000 })
+  await field.fill('value')
+  await expect(searchCount(page)).toHaveText(/^\d+\+$/, { timeout: 20_000 })
+  // A move of the selection does not scan again: the list of matches answers.
+  await page.keyboard.press('Enter')
+  await expect(searchCount(page)).toHaveText(/^\d+ of \d+\+$/)
+})

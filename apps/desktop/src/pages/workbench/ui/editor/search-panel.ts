@@ -4,7 +4,7 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import type { Platform } from '@/shared/lib'
-import { countMatches } from './search-count'
+import { MatchCounter } from './search-count'
 import { SearchPanelView } from './search-panel-view'
 
 /**
@@ -18,9 +18,20 @@ export function createSearchPanel(platform: Platform) {
     const dom = document.createElement('div')
     dom.className = 'cm-vv-search'
     const root = createRoot(dom)
-    let count = countMatches(view)
-    const render = () =>
-      root.render(createElement(SearchPanelView, { view, platform, count }))
+    let destroyed = false
+    const render = () => {
+      if (destroyed) return
+      const { from, to } = view.state.selection.main
+      root.render(
+        createElement(SearchPanelView, {
+          view,
+          platform,
+          count: counter.count(from, to),
+        }),
+      )
+    }
+    const counter = new MatchCounter(render)
+    counter.update(view.state)
     // The first render is synchronous, so that the field exists when the
     // panel mounts and takes the focus.
     flushSync(render)
@@ -33,17 +44,32 @@ export function createSearchPanel(platform: Platform) {
         field?.select()
       },
       update(update) {
+        // A control of the replace row goes away when the editor becomes
+        // read-only. Move the focus to the find field before it does.
+        if (update.state.readOnly && !update.startState.readOnly) {
+          const active = dom.ownerDocument.activeElement
+          if (
+            active &&
+            dom.contains(active) &&
+            active.closest('[data-replace-row], [data-replace-toggle]')
+          )
+            dom.querySelector<HTMLInputElement>('[main-field]')?.focus()
+        }
         const queryChanged = update.transactions.some((transaction) =>
           transaction.effects.some((effect) => effect.is(setSearchQuery)),
         )
-        if (update.docChanged || update.selectionSet || queryChanged) {
-          count = countMatches(update.view)
+        if (update.docChanged || queryChanged) counter.update(update.state)
+        if (
+          update.docChanged ||
+          update.selectionSet ||
+          queryChanged ||
+          update.state.readOnly !== update.startState.readOnly
+        )
           render()
-        } else if (update.state.readOnly !== update.startState.readOnly) {
-          render()
-        }
       },
       destroy() {
+        destroyed = true
+        counter.destroy()
         // Unmount after the current update, as React asks of a root that is in use.
         queueMicrotask(() => root.unmount())
       },

@@ -127,7 +127,7 @@ test('a new version replaces the content while it has no unsaved edits', async (
   await open(page, 'harness')
   await setText(page, 'replaced\n', '2')
   await expect(content(page)).toHaveText('replaced')
-  expect(await calls(page)).toEqual([])
+  await expect.poll(() => calls(page)).toEqual([])
 })
 
 test('a new version while the content has unsaved edits keeps the edits and tells the conflict', async ({
@@ -137,11 +137,11 @@ test('a new version while the content has unsaved edits keeps the edits and tell
   await content(page).click()
   await page.keyboard.press('ControlOrMeta+Home')
   await page.keyboard.type('mine ')
-  expect(await calls(page)).toEqual(['dirty:true'])
+  await expect.poll(() => calls(page)).toEqual(['dirty:true'])
   await setText(page, 'from the disk\n', '2')
   await expect(content(page)).toContainText('mine import')
   await expect(content(page)).not.toContainText('from the disk')
-  expect(await calls(page)).toEqual(['dirty:true', 'conflict:true'])
+  await expect.poll(() => calls(page)).toEqual(['dirty:true', 'conflict:true'])
 
   // The next save has the edits; the dirty state compares with the new text.
   expect(await save(page)).toContain('mine import')
@@ -155,13 +155,11 @@ test('a new version that equals the content clears the dirty state, and is no co
   await page.keyboard.press('ControlOrMeta+End')
   await page.keyboard.type('x')
   const saved = await save(page)
-  expect(await calls(page)).toEqual(['dirty:true', `save:${saved}`])
+  await expect.poll(() => calls(page)).toEqual(['dirty:true', `save:${saved}`])
   await setText(page, saved ?? '', '2')
-  expect(await calls(page)).toEqual([
-    'dirty:true',
-    `save:${saved}`,
-    'dirty:false',
-  ])
+  await expect
+    .poll(() => calls(page))
+    .toEqual(['dirty:true', `save:${saved}`, 'dirty:false'])
 })
 
 test('typing after a save, and then the saved version, is a conflict until the content is equal', async ({
@@ -175,20 +173,20 @@ test('typing after a save, and then the saved version, is a conflict until the c
   await page.keyboard.type('y')
   // The save came back with a new version, after more typing.
   await setText(page, saved, '2')
-  expect(await calls(page)).toEqual([
-    'dirty:true',
-    `save:${saved}`,
-    'conflict:true',
-  ])
+  await expect
+    .poll(() => calls(page))
+    .toEqual(['dirty:true', `save:${saved}`, 'conflict:true'])
   // The content is equal to the disk text again: the conflict ends.
   await page.keyboard.press('Backspace')
-  expect(await calls(page)).toEqual([
-    'dirty:true',
-    `save:${saved}`,
-    'conflict:true',
-    'dirty:false',
-    'conflict:false',
-  ])
+  await expect
+    .poll(() => calls(page))
+    .toEqual([
+      'dirty:true',
+      `save:${saved}`,
+      'conflict:true',
+      'dirty:false',
+      'conflict:false',
+    ])
 })
 
 test('revert() replaces the content with the last text, and ends the conflict', async ({
@@ -198,17 +196,14 @@ test('revert() replaces the content with the last text, and ends the conflict', 
   await content(page).click()
   await page.keyboard.type('mine ')
   await setText(page, 'from the disk\n', '2')
-  expect(await calls(page)).toEqual(['dirty:true', 'conflict:true'])
+  await expect.poll(() => calls(page)).toEqual(['dirty:true', 'conflict:true'])
   // A revert within half a second of a keystroke joins its undo group.
   await page.waitForTimeout(700)
   await probe(page, 'revert')
   await expect(content(page)).toHaveText('from the disk')
-  expect(await calls(page)).toEqual([
-    'dirty:true',
-    'conflict:true',
-    'dirty:false',
-    'conflict:false',
-  ])
+  await expect
+    .poll(() => calls(page))
+    .toEqual(['dirty:true', 'conflict:true', 'dirty:false', 'conflict:false'])
   // The revert is in the undo history.
   await content(page).click()
   await page.keyboard.press('ControlOrMeta+z')
@@ -223,7 +218,7 @@ test('a new version during a composition keeps the content, and is not applied l
   await startComposition(page)
   await setText(page, 'from the disk\n', '2')
   await expect(content(page)).toContainText('import { EventEmitter }')
-  expect(await calls(page)).toEqual(['dirty:true', 'conflict:true'])
+  await expect.poll(() => calls(page)).toEqual(['dirty:true', 'conflict:true'])
   await endComposition(page)
   await page.waitForTimeout(200)
   await expect(content(page)).toContainText('import { EventEmitter }')
@@ -248,7 +243,7 @@ test('a real composition keeps the text that it commits, when a new version come
   await client.send('Input.insertText', { text: 'あ' })
   await expect(content(page)).toContainText('あimport')
   await expect(content(page)).not.toContainText('from the disk')
-  expect(await calls(page)).toContain('conflict:true')
+  await expect.poll(() => calls(page)).toContain('conflict:true')
 })
 
 test('mod+S during a composition does not save, and saves after it', async ({
@@ -258,7 +253,7 @@ test('mod+S during a composition does not save, and saves after it', async ({
   await content(page).click()
   await startComposition(page)
   await page.keyboard.press(`${await mod(page)}+s`)
-  expect(await calls(page)).toEqual([])
+  await expect.poll(() => calls(page)).toEqual([])
   await endComposition(page)
   await page.waitForTimeout(200)
   expect(await save(page)).toContain('import { EventEmitter }')

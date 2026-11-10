@@ -20,7 +20,7 @@ import {
   WholeWord,
   X,
 } from 'lucide-react'
-import { useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useId, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { countText, type MatchCount } from './search-count'
 import { cn, type Platform } from '@/shared/lib'
 import {
@@ -33,15 +33,19 @@ import {
   TooltipTrigger,
 } from '@/shared/ui'
 
-/** The message of a regular expression that does not compile, or undefined. */
+/**
+ * The message of a regular expression that CodeMirror does not accept, or
+ * undefined. `query.valid` is the authority; the flags of the compile are the
+ * ones of CodeMirror, so that the message is the one of its failure.
+ */
 function regexpError(query: SearchQuery): string | undefined {
-  if (!query.regexp || !query.search) return undefined
+  if (!query.regexp || !query.search || query.valid) return undefined
   try {
-    new RegExp(query.search)
-    return undefined
+    new RegExp(query.search, `mu${query.caseSensitive ? '' : 'i'}`)
   } catch (error) {
-    return error instanceof Error ? error.message : 'Not a valid expression'
+    return error instanceof Error ? error.message : undefined
   }
+  return 'Not a valid expression'
 }
 
 interface PanelButtonProps {
@@ -51,6 +55,8 @@ interface PanelButtonProps {
   platform: Platform
   pressed?: boolean
   expanded?: boolean
+  /** Marks the disclosure button of the replace row. */
+  replaceToggle?: boolean
   onClick: () => void
   children: ReactNode
 }
@@ -65,6 +71,7 @@ function PanelButton({
   platform,
   pressed,
   expanded,
+  replaceToggle,
   onClick,
   children,
 }: PanelButtonProps) {
@@ -77,6 +84,7 @@ function PanelButton({
             aria-label={label}
             aria-pressed={pressed}
             aria-expanded={expanded}
+            data-replace-toggle={replaceToggle ? '' : undefined}
             onClick={onClick}
             className={cn(
               'flex size-6 shrink-0 items-center justify-center rounded-md border border-transparent text-chrome-foreground outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring',
@@ -117,6 +125,7 @@ export function SearchPanelView({
   const [replaceOpen, setReplaceOpen] = useState(false)
   const showReplace = replaceOpen && !readOnly
   const error = regexpError(query)
+  const errorId = useId()
 
   // A field keeps its own text while the user types, and takes the query
   // when the query changes from outside, such as when the panel opens.
@@ -152,6 +161,10 @@ export function SearchPanelView({
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
+    // A key of an IME composition is not a command: Enter confirms the text,
+    // and Escape cancels it. WebKit sends the confirming Enter with key code 229.
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+      return
     // The keys of the search scope: Escape, mod+F, F3, and mod+G.
     if (runScopeHandlers(view, event.nativeEvent, 'search-panel')) {
       event.preventDefault()
@@ -177,6 +190,7 @@ export function SearchPanelView({
               label="Show replace"
               platform={platform}
               expanded={replaceOpen}
+              replaceToggle
               onClick={() => setReplaceOpen(!replaceOpen)}
             >
               {replaceOpen ? (
@@ -192,7 +206,7 @@ export function SearchPanelView({
             placeholder="Find"
             main-field="true"
             aria-invalid={error ? true : undefined}
-            aria-describedby={error ? 'search-error' : undefined}
+            aria-describedby={error ? errorId : undefined}
             value={search}
             className={fieldClass}
             onChange={(event) => {
@@ -204,7 +218,7 @@ export function SearchPanelView({
             <ErrorMark
               label="Expression error"
               message={error}
-              messageId="search-error"
+              messageId={errorId}
             />
           )}
           <span
@@ -264,7 +278,10 @@ export function SearchPanelView({
           </PanelButton>
         </div>
         {showReplace && (
-          <div className="flex flex-wrap items-center gap-1 pl-7">
+          <div
+            data-replace-row
+            className="flex flex-wrap items-center gap-1 pl-7"
+          >
             <Input
               name="replace"
               aria-label="Replace"
